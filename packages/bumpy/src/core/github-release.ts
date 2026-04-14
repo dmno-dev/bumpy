@@ -1,6 +1,6 @@
-import { tryRun, runAsync } from "../utils/shell.ts";
-import { log } from "../utils/logger.ts";
-import type { PlannedRelease, Changeset } from "../types.ts";
+import { tryRun, runAsync } from '../utils/shell.ts';
+import { log } from '../utils/logger.ts';
+import type { PlannedRelease, Changeset } from '../types.ts';
 
 export interface GitHubReleaseOptions {
   dryRun?: boolean;
@@ -15,7 +15,7 @@ export async function createIndividualReleases(
   opts: GitHubReleaseOptions = {},
 ): Promise<void> {
   if (!isGhAvailable()) {
-    log.dim("  gh CLI not found — skipping GitHub releases");
+    log.dim('  gh CLI not found — skipping GitHub releases');
     return;
   }
 
@@ -30,10 +30,9 @@ export async function createIndividualReleases(
     }
 
     try {
-      await runAsync(
-        `gh release create "${tag}" --title "${escapeShell(title)}" --notes "${escapeShell(body)}"`,
-        { cwd: rootDir },
-      );
+      await runAsync(`gh release create "${tag}" --title "${escapeShell(title)}" --notes "${escapeShell(body)}"`, {
+        cwd: rootDir,
+      });
       log.dim(`  Created GitHub release: ${title}`);
     } catch (err) {
       log.warn(`  Failed to create GitHub release for ${tag}: ${err instanceof Error ? err.message : err}`);
@@ -49,15 +48,15 @@ export async function createAggregateRelease(
   opts: GitHubReleaseOptions = {},
 ): Promise<void> {
   if (!isGhAvailable()) {
-    log.dim("  gh CLI not found — skipping GitHub release");
+    log.dim('  gh CLI not found — skipping GitHub release');
     return;
   }
 
   if (releases.length === 0) return;
 
-  const date = new Date().toISOString().split("T")[0];
-  const titleTemplate = opts.title || "Release {{date}}";
-  const title = titleTemplate.replace("{{date}}", date!);
+  const date = new Date().toISOString().split('T')[0];
+  const titleTemplate = opts.title || 'Release {{date}}';
+  const title = titleTemplate.replace('{{date}}', date!);
 
   // Use the first release's tag as the release tag, or create a date-based tag
   const tag = `release-${date}`;
@@ -73,10 +72,9 @@ export async function createAggregateRelease(
     // Create the tag if it doesn't exist
     tryRun(`git tag "${tag}"`, { cwd: rootDir });
 
-    await runAsync(
-      `gh release create "${tag}" --title "${escapeShell(title)}" --notes "${escapeShell(body)}"`,
-      { cwd: rootDir },
-    );
+    await runAsync(`gh release create "${tag}" --title "${escapeShell(title)}" --notes "${escapeShell(body)}"`, {
+      cwd: rootDir,
+    });
     log.success(`Created aggregate GitHub release: ${title}`);
   } catch (err) {
     log.warn(`Failed to create aggregate GitHub release: ${err instanceof Error ? err.message : err}`);
@@ -90,16 +88,16 @@ function buildReleaseBody(release: PlannedRelease, changesets: Changeset[]): str
   if (relevant.length > 0) {
     for (const cs of relevant) {
       if (cs.summary) {
-        lines.push(`- ${cs.summary.split("\n")[0]}`);
+        lines.push(`- ${cs.summary.split('\n')[0]}`);
       }
     }
   }
 
   if (release.isDependencyBump && relevant.length === 0) {
-    lines.push("- Updated dependencies");
+    lines.push('- Updated dependencies');
   }
 
-  return lines.join("\n") || "No changelog entries.";
+  return lines.join('\n') || 'No changelog entries.';
 }
 
 function buildAggregateBody(releases: PlannedRelease[], changesets: Changeset[]): string {
@@ -107,9 +105,9 @@ function buildAggregateBody(releases: PlannedRelease[], changesets: Changeset[])
 
   // Group by bump type
   const groups: [string, PlannedRelease[]][] = [
-    ["Major Changes", releases.filter((r) => r.type === "major")],
-    ["Minor Changes", releases.filter((r) => r.type === "minor")],
-    ["Patch Changes", releases.filter((r) => r.type === "patch")],
+    ['Major Changes', releases.filter((r) => r.type === 'major')],
+    ['Minor Changes', releases.filter((r) => r.type === 'minor')],
+    ['Patch Changes', releases.filter((r) => r.type === 'patch')],
   ];
 
   for (const [heading, group] of groups) {
@@ -122,25 +120,25 @@ function buildAggregateBody(releases: PlannedRelease[], changesets: Changeset[])
       if (relevant.length > 0) {
         for (const cs of relevant) {
           if (cs.summary) {
-            lines.push(`- ${cs.summary.split("\n")[0]}`);
+            lines.push(`- ${cs.summary.split('\n')[0]}`);
           }
         }
       } else if (release.isDependencyBump) {
-        lines.push("- Updated dependencies");
+        lines.push('- Updated dependencies');
       } else if (release.isCascadeBump) {
-        lines.push("- Version bump via cascade rule");
+        lines.push('- Version bump via cascade rule');
       }
-      lines.push("");
+      lines.push('');
     }
   }
 
-  return lines.join("\n").trim() || "No changelog entries.";
+  return lines.join('\n').trim() || 'No changelog entries.';
 }
 
 function isGhAvailable(): boolean {
-  return tryRun("gh --version") !== null;
+  return tryRun('gh --version') !== null;
 }
 
 function escapeShell(str: string): string {
-  return str.replace(/"/g, '\\"').replace(/\n/g, "\\n");
+  return str.replace(/"/g, '\\"').replace(/\n/g, '\\n');
 }

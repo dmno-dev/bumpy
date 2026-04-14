@@ -1,5 +1,7 @@
 {
   "name": "peer-dep-monorepo",
   "private": true,
-  "workspaces": ["packages/*"]
+  "workspaces": [
+    "packages/*"
+  ]
 }

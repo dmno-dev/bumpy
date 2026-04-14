@@ -1,4 +1,4 @@
-import type { WorkspacePackage, DependentInfo, DepType, DEP_TYPES } from "../types.ts";
+import type { WorkspacePackage, DependentInfo, DepType } from '../types.ts';
 
 export class DependencyGraph {
   /** Map from package name → packages that depend on it */
@@ -14,10 +14,10 @@ export class DependencyGraph {
   private build(packages: Map<string, WorkspacePackage>) {
     for (const [name, pkg] of packages) {
       const depTypes: [DepType, Record<string, string>][] = [
-        ["dependencies", pkg.dependencies],
-        ["devDependencies", pkg.devDependencies],
-        ["peerDependencies", pkg.peerDependencies],
-        ["optionalDependencies", pkg.optionalDependencies],
+        ['dependencies', pkg.dependencies],
+        ['devDependencies', pkg.devDependencies],
+        ['peerDependencies', pkg.peerDependencies],
+        ['optionalDependencies', pkg.optionalDependencies],
       ];
 
       for (const [depType, deps] of depTypes) {

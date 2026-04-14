@@ -42,10 +42,9 @@ Changeset files are markdown with YAML frontmatter, stored in `.bumpy/<name>.md`
 
 ```yaml
 ---
-"@myorg/core": minor
-"@myorg/utils": patch
+'@myorg/core': minor
+'@myorg/utils': patch
 ---
-
 Added new encryption provider for secrets management.
 ```
 
@@ -53,9 +52,8 @@ Added new encryption provider for secrets management.
 
 ```yaml
 ---
-"@myorg/utils": patch-isolated
+'@myorg/utils': patch-isolated
 ---
-
 Internal refactor — no API changes, dependents don't need to bump.
 ```
 
@@ -65,14 +63,13 @@ Valid bump types: `major`, `minor`, `patch`, `minor-isolated`, `patch-isolated`
 
 ```yaml
 ---
-"@myorg/core":
+'@myorg/core':
   bump: minor
   cascade:
-    "@myorg/plugin-*": patch
-    "@myorg/cli": minor
-"@myorg/utils": patch
+    '@myorg/plugin-*': patch
+    '@myorg/cli': minor
+'@myorg/utils': patch
 ---
-
 Added new encryption provider. Plugins need a patch bump for compatibility.
 ```
 
@@ -122,7 +119,7 @@ Added new encryption provider. Plugins need a patch bump for compatibility.
     "peerDependencies": { "trigger": "major", "bumpAs": "major" },
     // Dev dependencies never propagate by default
     "devDependencies": { "trigger": "none", "bumpAs": "patch" },
-    "optionalDependencies": { "trigger": "minor", "bumpAs": "patch" }
+    "optionalDependencies": { "trigger": "minor", "bumpAs": "patch" },
   },
 
   // Whether to version/tag private packages by default
@@ -133,11 +130,11 @@ Added new encryption provider. Plugins need a patch bump for compatibility.
     "my-vscode-ext": {
       "skipNpmPublish": true,
       "publishCommand": ["bun run package", "bunx vsce publish"],
-      "buildCommand": "bun run build"
+      "buildCommand": "bun run build",
     },
     "@myorg/plugin-*": {
-      "access": "public"
-    }
+      "access": "public",
+    },
   },
 
   // Publish pipeline configuration
@@ -152,13 +149,13 @@ Added new encryption provider. Plugins need a patch bump for compatibility.
     // "pack" = PM packs tarball (resolves protocols), then npm publishes tarball (default)
     // "in-place" = rewrite package.json before publish
     // "none" = don't resolve
-    "protocolResolution": "pack"
+    "protocolResolution": "pack",
   },
 
   // GitHub release creation (requires gh CLI). Default: individual per package.
   // true = single aggregated release for all packages
   // { enabled: true, title: "Release {{date}}" } = aggregate with custom title
-  "aggregateRelease": false
+  "aggregateRelease": false,
 }
 ```
 
@@ -187,17 +184,17 @@ Any package can have bumpy config in its own `package.json`:
 
 #### Per-package config fields
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `managed` | `boolean` | Explicitly opt in (`true`) or out (`false`) of version management. Overrides private/ignore/include. |
-| `access` | `"public" \| "restricted"` | npm access level override |
-| `publishCommand` | `string \| string[]` | Custom publish command(s). Supports `{{version}}` and `{{name}}` template variables. |
-| `buildCommand` | `string` | Build command to run before publishing |
-| `registry` | `string` | Custom npm registry URL |
-| `skipNpmPublish` | `boolean` | Skip npm publish (use with `publishCommand` for non-npm publishing) |
-| `dependencyBumpRules` | `object` | Override global dependency bump rules for this package |
-| `specificDependencyRules` | `Record<string, DependencyBumpRule>` | Rules for specific dependencies by name/glob |
-| `cascadeTo` | `Record<string, DependencyBumpRule>` | When this package bumps, cascade to these packages (supports globs) |
+| Field                     | Type                                 | Description                                                                                          |
+| ------------------------- | ------------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| `managed`                 | `boolean`                            | Explicitly opt in (`true`) or out (`false`) of version management. Overrides private/ignore/include. |
+| `access`                  | `"public" \| "restricted"`           | npm access level override                                                                            |
+| `publishCommand`          | `string \| string[]`                 | Custom publish command(s). Supports `{{version}}` and `{{name}}` template variables.                 |
+| `buildCommand`            | `string`                             | Build command to run before publishing                                                               |
+| `registry`                | `string`                             | Custom npm registry URL                                                                              |
+| `skipNpmPublish`          | `boolean`                            | Skip npm publish (use with `publishCommand` for non-npm publishing)                                  |
+| `dependencyBumpRules`     | `object`                             | Override global dependency bump rules for this package                                               |
+| `specificDependencyRules` | `Record<string, DependencyBumpRule>` | Rules for specific dependencies by name/glob                                                         |
+| `cascadeTo`               | `Record<string, DependencyBumpRule>` | When this package bumps, cascade to these packages (supports globs)                                  |
 
 ## Package Management (include/exclude)
 
@@ -236,12 +233,12 @@ When package A bumps and package B depends on A, bumpy looks for a rule in this 
 
 ### Built-in defaults (the key difference from changesets)
 
-| Dependency type | trigger | bumpAs | Changesets behavior |
-|----------------|---------|--------|-------------------|
-| `dependencies` | patch | patch | Same |
-| `peerDependencies` | **major** | major | minor → major (!) |
-| `devDependencies` | none | patch | patch → patch |
-| `optionalDependencies` | minor | patch | Same |
+| Dependency type        | trigger   | bumpAs | Changesets behavior |
+| ---------------------- | --------- | ------ | ------------------- |
+| `dependencies`         | patch     | patch  | Same                |
+| `peerDependencies`     | **major** | major  | minor → major (!)   |
+| `devDependencies`      | none      | patch  | patch → patch       |
+| `optionalDependencies` | minor     | patch  | Same                |
 
 The critical difference: changesets bumps dependents to **major** when a peer dependency gets a **minor** bump. Bumpy only propagates peer dep bumps on **major** by default.
 
@@ -255,12 +252,12 @@ Creates `.bumpy/` directory with default `config.json` and a README.
 
 Create a new changeset.
 
-| Flag | Description |
-|------|-------------|
+| Flag                | Description                                              |
+| ------------------- | -------------------------------------------------------- |
 | `--packages <list>` | Non-interactive: comma-separated `"name:bumpType"` pairs |
-| `--message <text>` | Changeset summary |
-| `--name <name>` | Changeset filename (default: random adjective-noun) |
-| `--empty` | Create an empty changeset (no packages, for CI skip) |
+| `--message <text>`  | Changeset summary                                        |
+| `--name <name>`     | Changeset filename (default: random adjective-noun)      |
+| `--empty`           | Create an empty changeset (no packages, for CI skip)     |
 
 Interactive mode prompts for: packages, bump type per package, cascade options, summary, and filename.
 
@@ -268,21 +265,33 @@ Interactive mode prompts for: packages, bump type per package, cascade options, 
 
 Show pending releases.
 
-| Flag | Description |
-|------|-------------|
-| `--json` | Full JSON output with `releases[]`, `changesets[]`, `packageNames[]` |
-| `--packages` | One package name per line (for piping to other commands) |
-| `--bump <types>` | Filter by bump type: `"major"`, `"minor,patch"` |
-| `--filter <patterns>` | Filter by package name/glob: `"@myorg/*"` |
-| `--verbose` | Show changeset details |
+| Flag                  | Description                                                          |
+| --------------------- | -------------------------------------------------------------------- |
+| `--json`              | Full JSON output with `releases[]`, `changesets[]`, `packageNames[]` |
+| `--packages`          | One package name per line (for piping to other commands)             |
+| `--bump <types>`      | Filter by bump type: `"major"`, `"minor,patch"`                      |
+| `--filter <patterns>` | Filter by package name/glob: `"@myorg/*"`                            |
+| `--verbose`           | Show changeset details                                               |
 
 Exit codes: `0` = releases pending, `1` = no releases pending.
 
 JSON output shape:
+
 ```json
 {
   "changesets": [{ "id": "...", "summary": "...", "releases": [{ "name": "...", "type": "..." }] }],
-  "releases": [{ "name": "...", "type": "...", "oldVersion": "...", "newVersion": "...", "dir": "...", "changesets": [], "isDependencyBump": false, "isCascadeBump": false }],
+  "releases": [
+    {
+      "name": "...",
+      "type": "...",
+      "oldVersion": "...",
+      "newVersion": "...",
+      "dir": "...",
+      "changesets": [],
+      "isDependencyBump": false,
+      "isCascadeBump": false
+    }
+  ],
   "packageNames": ["pkg-a", "pkg-b"]
 }
 ```
@@ -295,11 +304,11 @@ Apply all pending changesets: bump versions in `package.json`, update `CHANGELOG
 
 Publish packages with unpublished versions.
 
-| Flag | Description |
-|------|-------------|
-| `--dry-run` | Preview without publishing |
+| Flag          | Description                             |
+| ------------- | --------------------------------------- |
+| `--dry-run`   | Preview without publishing              |
 | `--tag <tag>` | npm dist-tag (`"next"`, `"beta"`, etc.) |
-| `--no-push` | Skip pushing git tags to remote |
+| `--no-push`   | Skip pushing git tags to remote         |
 
 Default flow: detects PM → packs tarball (resolves workspace:/catalog: protocols) → publishes tarball with npm → creates git tags → pushes tags → creates GitHub releases (if `gh` CLI is available).
 
@@ -307,10 +316,10 @@ Default flow: detects PM → packs tarball (resolves workspace:/catalog: protoco
 
 PR check — reports pending changesets and optionally comments on the PR with the release plan.
 
-| Flag | Description |
-|------|-------------|
-| `--comment` | Force PR commenting on/off (auto-detected in CI environments) |
-| `--fail-on-missing` | Exit 1 if no changesets found |
+| Flag                | Description                                                   |
+| ------------------- | ------------------------------------------------------------- |
+| `--comment`         | Force PR commenting on/off (auto-detected in CI environments) |
+| `--fail-on-missing` | Exit 1 if no changesets found                                 |
 
 Auto-detects PR number from `GITHUB_REF` in GitHub Actions. Also checks `BUMPY_PR_NUMBER` and `PR_NUMBER` env vars.
 
@@ -318,10 +327,10 @@ Auto-detects PR number from `GITHUB_REF` in GitHub Actions. Also checks `BUMPY_P
 
 Release automation — either creates a "Version Packages" PR or auto-publishes directly.
 
-| Flag | Description |
-|------|-------------|
-| `--auto-publish` | Version + publish directly instead of creating a PR |
-| `--tag <tag>` | npm dist-tag for auto-publish mode |
+| Flag              | Description                                                    |
+| ----------------- | -------------------------------------------------------------- |
+| `--auto-publish`  | Version + publish directly instead of creating a PR            |
+| `--tag <tag>`     | npm dist-tag for auto-publish mode                             |
 | `--branch <name>` | Branch name for version PR (default: `bumpy/version-packages`) |
 
 Default mode (`version-pr`): creates a branch, runs `bumpy version`, commits, and opens/updates a PR via `gh`. Merging that PR triggers publish.
@@ -332,8 +341,8 @@ Auto-publish mode: runs `bumpy version`, commits, pushes, then `bumpy publish` i
 
 Migrate from `.changeset/` to `.bumpy/`.
 
-| Flag | Description |
-|------|-------------|
+| Flag      | Description                                                |
+| --------- | ---------------------------------------------------------- |
 | `--force` | Skip interactive prompts (don't ask to delete .changeset/) |
 
 Migrates config.json fields, pending changeset files, and prints key differences from changesets.
@@ -347,12 +356,14 @@ The `changelog` config controls how CHANGELOG.md entries are formatted.
 ```json
 { "changelog": "default" }
 ```
+
 Simple format: version heading, date, bullet points from changeset summaries.
 
 ```json
 { "changelog": "github" }
 { "changelog": ["github", { "repo": "dmno-dev/bumpy" }] }
 ```
+
 GitHub-enhanced: adds PR links and author attribution (`- Added feature (#123) by @user`). Looks up PRs via `gh` CLI by finding the commit that introduced each changeset file.
 
 ### Custom formatter (TypeScript or JavaScript)
@@ -366,28 +377,29 @@ A custom formatter exports a function that receives full context and returns the
 
 ```ts
 // my-changelog.ts
-import type { ChangelogContext } from "@varlock/bumpy";
+import type { ChangelogContext } from '@varlock/bumpy';
 
-export default function(ctx: ChangelogContext): string {
+export default function (ctx: ChangelogContext): string {
   const { release, changesets, date } = ctx;
   const lines = [`## [${release.newVersion}] - ${date}\n`];
 
-  const relevant = changesets.filter(cs => release.changesets.includes(cs.id));
+  const relevant = changesets.filter((cs) => release.changesets.includes(cs.id));
   for (const cs of relevant) {
-    if (cs.summary) lines.push(`- ${cs.summary.split("\n")[0]}`);
+    if (cs.summary) lines.push(`- ${cs.summary.split('\n')[0]}`);
   }
 
-  lines.push("");
-  return lines.join("\n");
+  lines.push('');
+  return lines.join('\n');
 }
 ```
 
 The `ChangelogContext` interface:
+
 ```ts
 interface ChangelogContext {
-  release: PlannedRelease;  // name, type, oldVersion, newVersion, etc.
-  changesets: Changeset[];  // all changesets (filter by release.changesets for relevant ones)
-  date: string;             // ISO date (YYYY-MM-DD)
+  release: PlannedRelease; // name, type, oldVersion, newVersion, etc.
+  changesets: Changeset[]; // all changesets (filter by release.changesets for relevant ones)
+  date: string; // ISO date (YYYY-MM-DD)
 }
 ```
 
@@ -413,10 +425,7 @@ For non-npm packages (VSCode extensions, Docker images, etc.):
   "bumpy": {
     "skipNpmPublish": true,
     "buildCommand": "bun run build",
-    "publishCommand": [
-      "bunx vsce publish",
-      "bunx ovsx publish"
-    ]
+    "publishCommand": ["bunx vsce publish", "bunx ovsx publish"]
   }
 }
 ```
@@ -463,12 +472,13 @@ Both `workspace:` (pnpm, bun, yarn) and `catalog:` (pnpm, bun) protocols are res
 
 ```yaml
 ---
-"@myorg/internal-utils": patch-isolated
+'@myorg/internal-utils': patch-isolated
 ---
 Refactored internal helpers.
 ```
 
 Or permanently via config:
+
 ```json
 // In root .bumpy/config.json
 {
@@ -535,7 +545,7 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-      id-token: write  # for npm provenance
+      id-token: write # for npm provenance
     steps:
       - uses: actions/checkout@v4
         with:
@@ -574,6 +584,7 @@ By default, `bumpy publish` creates one GitHub release per package (requires `gh
 ```
 
 Or with a custom title:
+
 ```json
 {
   "aggregateRelease": {
@@ -590,11 +601,13 @@ bumpy migrate
 ```
 
 This will:
+
 1. Create `.bumpy/` and migrate `config.json` settings
 2. Copy pending changeset `.md` files
 3. Optionally remove `.changeset/` directory
 
 Key behavioral differences after migration:
+
 - Peer dependency minor bumps no longer cascade to major on dependents
 - Use `patch-isolated`/`minor-isolated` bump types to skip propagation
 - Per-package config moves to `package.json["bumpy"]` instead of root config only

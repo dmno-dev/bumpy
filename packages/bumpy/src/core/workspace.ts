@@ -1,9 +1,9 @@
-import { resolve, relative } from "node:path";
-import { readdir, stat } from "node:fs/promises";
-import { readJson, exists } from "../utils/fs.ts";
-import { detectWorkspaces, type CatalogMap } from "../utils/package-manager.ts";
-import { loadPackageConfig, isPackageManaged } from "./config.ts";
-import type { BumpyConfig, WorkspacePackage } from "../types.ts";
+import { resolve, relative } from 'node:path';
+import { readdir, stat } from 'node:fs/promises';
+import { readJson, exists } from '../utils/fs.ts';
+import { detectWorkspaces, type CatalogMap } from '../utils/package-manager.ts';
+import { loadPackageConfig, isPackageManaged } from './config.ts';
+import type { BumpyConfig, WorkspacePackage } from '../types.ts';
 
 export interface WorkspaceDiscoveryResult {
   packages: Map<string, WorkspacePackage>;
@@ -11,13 +11,10 @@ export interface WorkspaceDiscoveryResult {
 }
 
 /** Discover all workspace packages and catalogs in a monorepo */
-export async function discoverWorkspace(
-  rootDir: string,
-  config: BumpyConfig,
-): Promise<WorkspaceDiscoveryResult> {
+export async function discoverWorkspace(rootDir: string, config: BumpyConfig): Promise<WorkspaceDiscoveryResult> {
   const { globs, catalogs } = await detectWorkspaces(rootDir);
   if (globs.length === 0) {
-    throw new Error("No workspace globs found. Is this a monorepo?");
+    throw new Error('No workspace globs found. Is this a monorepo?');
   }
 
   const packages = new Map<string, WorkspacePackage>();
@@ -35,10 +32,7 @@ export async function discoverWorkspace(
 }
 
 /** Convenience wrapper that returns just packages (backwards compat) */
-export async function discoverPackages(
-  rootDir: string,
-  config: BumpyConfig,
-): Promise<Map<string, WorkspacePackage>> {
+export async function discoverPackages(rootDir: string, config: BumpyConfig): Promise<Map<string, WorkspacePackage>> {
   const { packages } = await discoverWorkspace(rootDir, config);
   return packages;
 }
@@ -47,43 +41,43 @@ export async function discoverPackages(
 async function resolveGlob(rootDir: string, pattern: string): Promise<string[]> {
   // Handle simple patterns: "packages/*", "plugins/*", "apps/*"
   // Also handle deeper patterns: "packages/**"
-  const parts = pattern.split("/");
+  const parts = pattern.split('/');
   return expandGlob(rootDir, parts);
 }
 
 async function expandGlob(baseDir: string, parts: string[]): Promise<string[]> {
   if (parts.length === 0) {
     // Check if this dir has a package.json
-    if (await exists(resolve(baseDir, "package.json"))) {
+    if (await exists(resolve(baseDir, 'package.json'))) {
       return [baseDir];
     }
     return [];
   }
 
   const [current, ...rest] = parts;
-  if (current === "*") {
+  if (current === '*') {
     // Match any single directory
     const entries = await safeReaddir(baseDir);
     const results: string[] = [];
     for (const entry of entries) {
       const entryPath = resolve(baseDir, entry);
       if (await isDirectory(entryPath)) {
-        results.push(...await expandGlob(entryPath, rest));
+        results.push(...(await expandGlob(entryPath, rest)));
       }
     }
     return results;
-  } else if (current === "**") {
+  } else if (current === '**') {
     // Match any depth
     const results: string[] = [];
     // Try matching at this level (skip the **)
-    results.push(...await expandGlob(baseDir, rest));
+    results.push(...(await expandGlob(baseDir, rest)));
     // Try descending into subdirs
     const entries = await safeReaddir(baseDir);
     for (const entry of entries) {
-      if (entry.startsWith(".") || entry === "node_modules") continue;
+      if (entry.startsWith('.') || entry === 'node_modules') continue;
       const entryPath = resolve(baseDir, entry);
       if (await isDirectory(entryPath)) {
-        results.push(...await expandGlob(entryPath, parts)); // keep the ** in pattern
+        results.push(...(await expandGlob(entryPath, parts))); // keep the ** in pattern
       }
     }
     return results;
@@ -118,7 +112,7 @@ async function loadWorkspacePackage(
   rootDir: string,
   config: BumpyConfig,
 ): Promise<WorkspacePackage | null> {
-  const pkgPath = resolve(dir, "package.json");
+  const pkgPath = resolve(dir, 'package.json');
   if (!(await exists(pkgPath))) return null;
 
   let pkg: Record<string, unknown>;
@@ -135,7 +129,7 @@ async function loadWorkspacePackage(
 
   return {
     name,
-    version: (pkg.version as string) || "0.0.0",
+    version: (pkg.version as string) || '0.0.0',
     dir: resolve(dir),
     relativeDir: relative(rootDir, dir),
     packageJson: pkg,

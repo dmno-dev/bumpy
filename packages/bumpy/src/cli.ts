@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-import { findRoot } from "./core/config.ts";
-import { log } from "./utils/logger.ts";
+import { findRoot } from './core/config.ts';
+import { log } from './utils/logger.ts';
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -10,10 +10,10 @@ function parseFlags(args: string[]): Record<string, string | boolean> {
   const flags: Record<string, string | boolean> = {};
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]!;
-    if (arg.startsWith("--")) {
+    if (arg.startsWith('--')) {
       const key = arg.slice(2);
       const next = args[i + 1];
-      if (next && !next.startsWith("--")) {
+      if (next && !next.startsWith('--')) {
         flags[key] = next;
         i++;
       } else {
@@ -29,16 +29,16 @@ async function main() {
 
   try {
     switch (command) {
-      case "init": {
+      case 'init': {
         const rootDir = await findRoot();
-        const { initCommand } = await import("./commands/init.ts");
+        const { initCommand } = await import('./commands/init.ts');
         await initCommand(rootDir);
         break;
       }
 
-      case "add": {
+      case 'add': {
         const rootDir = await findRoot();
-        const { addCommand } = await import("./commands/add.ts");
+        const { addCommand } = await import('./commands/add.ts');
         await addCommand(rootDir, {
           packages: flags.packages as string | undefined,
           message: flags.message as string | undefined,
@@ -48,9 +48,9 @@ async function main() {
         break;
       }
 
-      case "status": {
+      case 'status': {
         const rootDir = await findRoot();
-        const { statusCommand } = await import("./commands/status.ts");
+        const { statusCommand } = await import('./commands/status.ts');
         await statusCommand(rootDir, {
           json: flags.json === true,
           packagesOnly: flags.packages === true,
@@ -61,47 +61,47 @@ async function main() {
         break;
       }
 
-      case "version": {
+      case 'version': {
         const rootDir = await findRoot();
-        const { versionCommand } = await import("./commands/version.ts");
+        const { versionCommand } = await import('./commands/version.ts');
         await versionCommand(rootDir);
         break;
       }
 
-      case "generate": {
+      case 'generate': {
         const rootDir = await findRoot();
-        const { generateCommand } = await import("./commands/generate.ts");
+        const { generateCommand } = await import('./commands/generate.ts');
         await generateCommand(rootDir, {
           from: flags.from as string | undefined,
-          dryRun: flags["dry-run"] === true,
+          dryRun: flags['dry-run'] === true,
           name: flags.name as string | undefined,
         });
         break;
       }
 
-      case "migrate": {
+      case 'migrate': {
         const rootDir = await findRoot();
-        const { migrateCommand } = await import("./commands/migrate.ts");
+        const { migrateCommand } = await import('./commands/migrate.ts');
         await migrateCommand(rootDir, {
           force: flags.force === true,
         });
         break;
       }
 
-      case "ci": {
+      case 'ci': {
         const rootDir = await findRoot();
         const subcommand = args[1];
         const ciFlags = parseFlags(args.slice(2));
 
-        if (subcommand === "check") {
-          const { ciCheckCommand } = await import("./commands/ci.ts");
+        if (subcommand === 'check') {
+          const { ciCheckCommand } = await import('./commands/ci.ts');
           await ciCheckCommand(rootDir, {
             comment: ciFlags.comment !== undefined ? ciFlags.comment === true : undefined,
-            failOnMissing: ciFlags["fail-on-missing"] === true,
+            failOnMissing: ciFlags['fail-on-missing'] === true,
           });
-        } else if (subcommand === "release") {
-          const { ciReleaseCommand } = await import("./commands/ci.ts");
-          const mode = ciFlags["auto-publish"] === true ? "auto-publish" as const : "version-pr" as const;
+        } else if (subcommand === 'release') {
+          const { ciReleaseCommand } = await import('./commands/ci.ts');
+          const mode = ciFlags['auto-publish'] === true ? ('auto-publish' as const) : ('version-pr' as const);
           await ciReleaseCommand(rootDir, {
             mode,
             tag: ciFlags.tag as string | undefined,
@@ -114,25 +114,25 @@ async function main() {
         break;
       }
 
-      case "publish": {
+      case 'publish': {
         const rootDir = await findRoot();
-        const { publishCommand } = await import("./commands/publish.ts");
+        const { publishCommand } = await import('./commands/publish.ts');
         await publishCommand(rootDir, {
-          dryRun: flags["dry-run"] === true,
+          dryRun: flags['dry-run'] === true,
           tag: flags.tag as string | undefined,
-          noPush: flags["no-push"] === true,
+          noPush: flags['no-push'] === true,
           filter: flags.filter as string | undefined,
         });
         break;
       }
 
-      case "ai": {
+      case 'ai': {
         const rootDir = await findRoot();
         const subcommand = args[1];
         const aiFlags = parseFlags(args.slice(2));
 
-        if (subcommand === "setup") {
-          const { aiSetupCommand } = await import("./commands/ai.ts");
+        if (subcommand === 'setup') {
+          const { aiSetupCommand } = await import('./commands/ai.ts');
           await aiSetupCommand(rootDir, {
             target: aiFlags.target as string | undefined,
           });
@@ -143,9 +143,9 @@ async function main() {
         break;
       }
 
-      case "help":
-      case "--help":
-      case "-h":
+      case 'help':
+      case '--help':
+      case '-h':
       case undefined:
         printHelp();
         break;
@@ -163,7 +163,7 @@ async function main() {
 
 function printHelp() {
   console.log(`
-  ${log.bold ? "" : ""}bumpy - Modern monorepo versioning
+  ${log.bold('bumpy')} - Modern monorepo versioning
 
   Usage: bumpy <command> [options]
 

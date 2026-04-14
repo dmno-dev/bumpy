@@ -1,11 +1,10 @@
-import { matchGlob } from "./config.ts";
-import { DependencyGraph } from "./dep-graph.ts";
-import { bumpVersion, satisfies, stripProtocol } from "./semver.ts";
+import { matchGlob } from './config.ts';
+import { DependencyGraph } from './dep-graph.ts';
+import { bumpVersion, satisfies, stripProtocol } from './semver.ts';
 import {
   type BumpyConfig,
   type BumpType,
   type Changeset,
-  type ChangesetRelease,
   type DependencyBumpRule,
   type DepType,
   type PlannedRelease,
@@ -16,7 +15,7 @@ import {
   maxBump,
   parseIsolatedBump,
   hasCascade,
-} from "../types.ts";
+} from '../types.ts';
 
 interface PlannedBump {
   type: BumpType;
@@ -146,7 +145,7 @@ export function assembleReleasePlan(
     changed = false;
     iterations++;
 
-    for (const [pkgName, bump] of [...planned]) {
+    for (const [pkgName, bump] of planned) {
       if (bump.isolated) continue;
 
       // 4a: Apply changeset-level cascade overrides
@@ -168,7 +167,7 @@ export function assembleReleasePlan(
       if (cascadeTo) {
         for (const [pattern, rule] of Object.entries(cascadeTo)) {
           if (!shouldTrigger(bump.type, rule.trigger)) continue;
-          const cascadeBump = rule.bumpAs === "match" ? bump.type : rule.bumpAs;
+          const cascadeBump = rule.bumpAs === 'match' ? bump.type : rule.bumpAs;
           for (const [targetName] of packages) {
             if (!matchGlob(targetName, pattern)) continue;
             if (applyBump(planned, targetName, cascadeBump, false, true, bump.changesets)) {
@@ -185,14 +184,14 @@ export function assembleReleasePlan(
         if (!shouldTrigger(bump.type, rule.trigger)) continue;
 
         // Check out-of-range setting
-        if (config.updateInternalDependencies === "out-of-range") {
+        if (config.updateInternalDependencies === 'out-of-range') {
           const newVersion = bumpVersion(packages.get(pkgName)!.version, bump.type);
           if (satisfies(newVersion, stripProtocol(dep.versionRange))) continue;
         }
-        if (config.updateInternalDependencies === "none") continue;
-        if (config.updateInternalDependencies === "minor" && bumpLevel(bump.type) < bumpLevel("minor")) continue;
+        if (config.updateInternalDependencies === 'none') continue;
+        if (config.updateInternalDependencies === 'minor' && bumpLevel(bump.type) < bumpLevel('minor')) continue;
 
-        const depBump = rule.bumpAs === "match" ? bump.type : rule.bumpAs;
+        const depBump = rule.bumpAs === 'match' ? bump.type : rule.bumpAs;
         if (applyBump(planned, dep.name, depBump, true, false, bump.changesets)) {
           changed = true;
         }
@@ -255,8 +254,8 @@ function applyBump(
 }
 
 /** Check if a bump level meets the trigger threshold */
-function shouldTrigger(bumpType: BumpType, trigger: BumpType | "none"): boolean {
-  if (trigger === "none") return false;
+function shouldTrigger(bumpType: BumpType, trigger: BumpType | 'none'): boolean {
+  if (trigger === 'none') return false;
   return bumpLevel(bumpType) >= bumpLevel(trigger);
 }
 
@@ -295,5 +294,5 @@ function resolveRule(
   }
 
   // Built-in defaults
-  return DEFAULT_BUMP_RULES[depType] || { trigger: "patch", bumpAs: "patch" };
+  return DEFAULT_BUMP_RULES[depType] || { trigger: 'patch', bumpAs: 'patch' };
 }

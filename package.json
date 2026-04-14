@@ -1,5 +1,20 @@
 {
   "name": "bumpy-monorepo",
   "private": true,
-  "workspaces": ["packages/*"]
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix",
+    "fmt": "oxfmt",
+    "fmt:check": "oxfmt --check",
+    "check": "oxlint && oxfmt --check && bunx tsc -p packages/bumpy --noEmit",
+    "postinstall": "lefthook install"
+  },
+  "devDependencies": {
+    "lefthook": "^2.1.5",
+    "oxfmt": "^0.45.0",
+    "oxlint": "^1.60.0"
+  }
 }

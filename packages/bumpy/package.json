@@ -2,10 +2,10 @@
   "name": "@dmno-dev/bumpy",
   "version": "0.0.0",
   "description": "Modern monorepo versioning and changelog tool",
-  "type": "module",
   "bin": {
     "bumpy": "./src/cli.ts"
   },
+  "type": "module",
   "scripts": {
     "test": "bun test"
   },

@@ -1,7 +1,7 @@
 // ---- Bump types ----
 
-export type BumpType = "major" | "minor" | "patch";
-export type BumpTypeWithIsolated = BumpType | "minor-isolated" | "patch-isolated";
+export type BumpType = 'major' | 'minor' | 'patch';
+export type BumpTypeWithIsolated = BumpType | 'minor-isolated' | 'patch-isolated';
 
 export const BUMP_LEVELS: Record<BumpType, number> = {
   patch: 0,
@@ -14,8 +14,8 @@ export function bumpLevel(type: BumpType): number {
 }
 
 export function parseIsolatedBump(type: BumpTypeWithIsolated): { bump: BumpType; isolated: boolean } {
-  if (type.endsWith("-isolated")) {
-    return { bump: type.replace("-isolated", "") as BumpType, isolated: true };
+  if (type.endsWith('-isolated')) {
+    return { bump: type.replace('-isolated', '') as BumpType, isolated: true };
   }
   return { bump: type as BumpType, isolated: false };
 }
@@ -29,28 +29,28 @@ export function maxBump(a: BumpType | undefined, b: BumpType): BumpType {
 
 export interface DependencyBumpRule {
   /** What bump level in the dependency triggers propagation */
-  trigger: BumpType | "none";
+  trigger: BumpType | 'none';
   /** What bump to apply to the dependent */
-  bumpAs: BumpType | "match";
+  bumpAs: BumpType | 'match';
 }
 
 export const DEFAULT_BUMP_RULES: Record<string, DependencyBumpRule> = {
-  dependencies: { trigger: "patch", bumpAs: "patch" },
-  peerDependencies: { trigger: "major", bumpAs: "major" },
-  devDependencies: { trigger: "none", bumpAs: "patch" },
-  optionalDependencies: { trigger: "minor", bumpAs: "patch" },
+  dependencies: { trigger: 'patch', bumpAs: 'patch' },
+  peerDependencies: { trigger: 'major', bumpAs: 'major' },
+  devDependencies: { trigger: 'none', bumpAs: 'patch' },
+  optionalDependencies: { trigger: 'minor', bumpAs: 'patch' },
 };
 
-export type DepType = "dependencies" | "devDependencies" | "peerDependencies" | "optionalDependencies";
-export const DEP_TYPES: DepType[] = ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"];
+export type DepType = 'dependencies' | 'devDependencies' | 'peerDependencies' | 'optionalDependencies';
+export const DEP_TYPES: DepType[] = ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'];
 
 // ---- Config ----
 
 export interface PublishConfig {
   /** Package manager to use for packing. "auto" detects from lockfile. Default: "auto" */
-  packManager: "auto" | "npm" | "pnpm" | "bun" | "yarn";
+  packManager: 'auto' | 'npm' | 'pnpm' | 'bun' | 'yarn';
   /** Command to use for publishing. "npm" uses npm publish (supports OIDC). Default: "npm" */
-  publishManager: "npm" | "pnpm" | "bun" | "yarn";
+  publishManager: 'npm' | 'pnpm' | 'bun' | 'yarn';
   /** Extra args appended to the publish command (e.g., "--provenance") */
   publishArgs: string[];
   /**
@@ -60,12 +60,12 @@ export interface PublishConfig {
    * "none" = don't resolve (only if PM's publish handles it natively)
    * Default: "pack"
    */
-  protocolResolution: "pack" | "in-place" | "none";
+  protocolResolution: 'pack' | 'in-place' | 'none';
 }
 
 export interface BumpyConfig {
   baseBranch: string;
-  access: "public" | "restricted";
+  access: 'public' | 'restricted';
   commit: boolean;
   changelog: string | [string, Record<string, unknown>];
   fixed: string[][];
@@ -74,7 +74,7 @@ export interface BumpyConfig {
   ignore: string[];
   /** Package names/globs to explicitly include (overrides private + ignore) */
   include: string[];
-  updateInternalDependencies: "patch" | "minor" | "out-of-range" | "none";
+  updateInternalDependencies: 'patch' | 'minor' | 'out-of-range' | 'none';
   dependencyBumpRules: Partial<Record<DepType, DependencyBumpRule>>;
   privatePackages: { version: boolean; tag: boolean };
   packages: Record<string, PackageConfig>;
@@ -91,7 +91,7 @@ export interface BumpyConfig {
 export interface PackageConfig {
   /** Explicitly opt in or out of version management (overrides private/ignore/include) */
   managed?: boolean;
-  access?: "public" | "restricted";
+  access?: 'public' | 'restricted';
   publishCommand?: string | string[];
   buildCommand?: string;
   registry?: string;
@@ -102,22 +102,22 @@ export interface PackageConfig {
 }
 
 export const DEFAULT_PUBLISH_CONFIG: PublishConfig = {
-  packManager: "auto",
-  publishManager: "npm",
+  packManager: 'auto',
+  publishManager: 'npm',
   publishArgs: [],
-  protocolResolution: "pack",
+  protocolResolution: 'pack',
 };
 
 export const DEFAULT_CONFIG: BumpyConfig = {
-  baseBranch: "main",
-  access: "public",
+  baseBranch: 'main',
+  access: 'public',
   commit: false,
-  changelog: "default",
+  changelog: 'default',
   fixed: [],
   linked: [],
   ignore: [],
   include: [],
-  updateInternalDependencies: "out-of-range",
+  updateInternalDependencies: 'out-of-range',
   dependencyBumpRules: {},
   privatePackages: { version: false, tag: false },
   packages: {},
@@ -141,7 +141,7 @@ export interface ChangesetReleaseCascade {
 export type ChangesetRelease = ChangesetReleaseSimple | ChangesetReleaseCascade;
 
 export function hasCascade(r: ChangesetRelease): r is ChangesetReleaseCascade {
-  return "cascade" in r && Object.keys(r.cascade).length > 0;
+  return 'cascade' in r && Object.keys(r.cascade).length > 0;
 }
 
 export interface Changeset {
@@ -166,7 +166,7 @@ export interface WorkspacePackage {
   bumpy?: PackageConfig; // per-package config from package.json or .bumpy.config.json
 }
 
-export type PackageManager = "npm" | "pnpm" | "yarn" | "bun";
+export type PackageManager = 'npm' | 'pnpm' | 'yarn' | 'bun';
 
 // ---- Dependency graph ----
 

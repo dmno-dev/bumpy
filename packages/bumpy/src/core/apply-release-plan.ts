@@ -1,18 +1,8 @@
-import { resolve } from "node:path";
-import { readJson, writeJson, readText, writeText, exists } from "../utils/fs.ts";
-import { deleteChangesets } from "./changeset.ts";
-import {
-  generateChangelogEntry,
-  prependToChangelog,
-  loadFormatter,
-  type ChangelogFormatter,
-} from "./changelog.ts";
-import { stripProtocol } from "./semver.ts";
-import type {
-  ReleasePlan,
-  WorkspacePackage,
-  BumpyConfig,
-} from "../types.ts";
+import { resolve } from 'node:path';
+import { readJson, writeJson, readText, writeText, exists } from '../utils/fs.ts';
+import { deleteChangesets } from './changeset.ts';
+import { generateChangelogEntry, prependToChangelog, loadFormatter } from './changelog.ts';
+import type { ReleasePlan, WorkspacePackage, BumpyConfig } from '../types.ts';
 
 /** Apply the release plan: bump versions, update changelogs, delete changesets */
 export async function applyReleasePlan(
@@ -27,14 +17,14 @@ export async function applyReleasePlan(
   // 1. Update package.json versions and internal dependency ranges
   for (const release of releasePlan.releases) {
     const pkg = packages.get(release.name)!;
-    const pkgJsonPath = resolve(pkg.dir, "package.json");
+    const pkgJsonPath = resolve(pkg.dir, 'package.json');
     const pkgJson = await readJson<Record<string, unknown>>(pkgJsonPath);
 
     // Bump the version
     pkgJson.version = release.newVersion;
 
     // Update internal dependency ranges
-    for (const depField of ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"] as const) {
+    for (const depField of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'] as const) {
       const deps = pkgJson[depField] as Record<string, string> | undefined;
       if (!deps) continue;
       for (const [depName, range] of Object.entries(deps)) {
@@ -50,10 +40,10 @@ export async function applyReleasePlan(
   // 2. Update changelogs
   for (const release of releasePlan.releases) {
     const pkg = packages.get(release.name)!;
-    const changelogPath = resolve(pkg.dir, "CHANGELOG.md");
+    const changelogPath = resolve(pkg.dir, 'CHANGELOG.md');
 
     const entry = await generateChangelogEntry(release, releasePlan.changesets, formatter);
-    let existingContent = "";
+    let existingContent = '';
     if (await exists(changelogPath)) {
       existingContent = await readText(changelogPath);
     }
@@ -69,7 +59,7 @@ export async function applyReleasePlan(
 /** Update a version range to include a new version, preserving the range prefix */
 function updateRange(range: string, newVersion: string): string {
   // Preserve workspace:/catalog: protocols
-  let protocol = "";
+  let protocol = '';
   let cleanRange = range;
   const protoMatch = range.match(/^(workspace:|catalog:)/);
   if (protoMatch) {
@@ -79,10 +69,10 @@ function updateRange(range: string, newVersion: string): string {
 
   // Preserve the range prefix (^, ~, >=, etc.)
   const prefixMatch = cleanRange.match(/^(\^|~|>=|>|<=|<|=)?/);
-  const prefix = prefixMatch?.[1] ?? "^";
+  const prefix = prefixMatch?.[1] ?? '^';
 
   // Handle wildcard ranges
-  if (cleanRange === "*" || cleanRange === "") {
+  if (cleanRange === '*' || cleanRange === '') {
     return range; // don't touch wildcards
   }
 

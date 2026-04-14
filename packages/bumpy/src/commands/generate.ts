@@ -1,12 +1,12 @@
-import { log, colorize } from "../utils/logger.ts";
-import { run, tryRun } from "../utils/shell.ts";
-import { loadConfig } from "../core/config.ts";
-import { discoverPackages } from "../core/workspace.ts";
-import { writeChangeset } from "../core/changeset.ts";
-import { getBumpyDir } from "../core/config.ts";
-import { ensureDir } from "../utils/fs.ts";
-import { slugify, randomName } from "../utils/names.ts";
-import type { BumpType, BumpTypeWithIsolated, ChangesetRelease, WorkspacePackage } from "../types.ts";
+import { log, colorize } from '../utils/logger.ts';
+import { tryRun } from '../utils/shell.ts';
+import { loadConfig } from '../core/config.ts';
+import { discoverPackages } from '../core/workspace.ts';
+import { writeChangeset } from '../core/changeset.ts';
+import { getBumpyDir } from '../core/config.ts';
+import { ensureDir } from '../utils/fs.ts';
+import { slugify, randomName } from '../utils/names.ts';
+import type { BumpType, BumpTypeWithIsolated, BumpyConfig, ChangesetRelease, WorkspacePackage } from '../types.ts';
 
 interface GenerateOptions {
   from?: string; // git ref to start from (default: auto-detect last version tag)
@@ -24,16 +24,16 @@ interface ConventionalCommit {
 }
 
 const BUMP_MAP: Record<string, BumpType> = {
-  feat: "minor",
-  fix: "patch",
-  perf: "patch",
-  refactor: "patch",
-  docs: "patch",
-  style: "patch",
-  test: "patch",
-  build: "patch",
-  ci: "patch",
-  chore: "patch",
+  feat: 'minor',
+  fix: 'patch',
+  perf: 'patch',
+  refactor: 'patch',
+  docs: 'patch',
+  style: 'patch',
+  test: 'patch',
+  build: 'patch',
+  ci: 'patch',
+  chore: 'patch',
 };
 
 export async function generateCommand(rootDir: string, opts: GenerateOptions): Promise<void> {
@@ -43,30 +43,25 @@ export async function generateCommand(rootDir: string, opts: GenerateOptions): P
   // Determine the starting ref
   const from = opts.from || findLastVersionTag(rootDir);
   if (!from) {
-    log.error("Could not detect last version tag. Use --from <ref> to specify.");
+    log.error('Could not detect last version tag. Use --from <ref> to specify.');
     process.exit(1);
   }
 
-  log.step(`Scanning commits from ${colorize(from, "cyan")}...`);
+  log.step(`Scanning commits from ${colorize(from, 'cyan')}...`);
 
   // Get commits since ref
-  const rawLog = tryRun(
-    `git log ${from}..HEAD --format="%H%n%s%n%b%n---END---"`,
-    { cwd: rootDir },
-  );
+  const rawLog = tryRun(`git log ${from}..HEAD --format="%H%n%s%n%b%n---END---"`, { cwd: rootDir });
 
   if (!rawLog) {
-    log.info("No commits found since " + from);
+    log.info('No commits found since ' + from);
     return;
   }
 
   const commits = parseGitLog(rawLog);
-  const conventional = commits
-    .map(parseConventionalCommit)
-    .filter((c): c is ConventionalCommit => c !== null);
+  const conventional = commits.map(parseConventionalCommit).filter((c): c is ConventionalCommit => c !== null);
 
   if (conventional.length === 0) {
-    log.info("No conventional commits found. Commits must follow the format: type(scope): description");
+    log.info('No conventional commits found. Commits must follow the format: type(scope): description');
     return;
   }
 
@@ -79,7 +74,7 @@ export async function generateCommand(rootDir: string, opts: GenerateOptions): P
   const releaseMap = new Map<string, { type: BumpType; messages: string[] }>();
 
   for (const commit of conventional) {
-    const bump: BumpType = commit.breaking ? "major" : (BUMP_MAP[commit.type] || "patch");
+    const bump: BumpType = commit.breaking ? 'major' : BUMP_MAP[commit.type] || 'patch';
 
     // Resolve scope to package name
     let pkgNames: string[] = [];
@@ -112,7 +107,7 @@ export async function generateCommand(rootDir: string, opts: GenerateOptions): P
   }
 
   if (releaseMap.size === 0) {
-    log.info("No package bumps detected from conventional commits.");
+    log.info('No package bumps detected from conventional commits.');
     return;
   }
 
@@ -128,12 +123,14 @@ export async function generateCommand(rootDir: string, opts: GenerateOptions): P
   }
 
   if (opts.dryRun) {
-    log.bold("Would create changeset:");
+    log.bold('Would create changeset:');
     for (const r of releases) {
-      console.log(`  ${r.name}: ${colorize(r.type, r.type === "major" ? "red" : r.type === "minor" ? "yellow" : "green")}`);
+      console.log(
+        `  ${r.name}: ${colorize(r.type, r.type === 'major' ? 'red' : r.type === 'minor' ? 'yellow' : 'green')}`,
+      );
     }
     console.log();
-    log.dim("Summary:");
+    log.dim('Summary:');
     for (const line of summaryLines) {
       log.dim(`  ${line}`);
     }
@@ -143,7 +140,7 @@ export async function generateCommand(rootDir: string, opts: GenerateOptions): P
   // Write the changeset
   await ensureDir(getBumpyDir(rootDir));
   const filename = opts.name ? slugify(opts.name) : randomName();
-  const summary = summaryLines.join("\n");
+  const summary = summaryLines.join('\n');
   await writeChangeset(rootDir, filename, releases, summary);
 
   log.success(`Created changeset: .bumpy/${filename}.md`);
@@ -155,15 +152,15 @@ export async function generateCommand(rootDir: string, opts: GenerateOptions): P
 /** Parse raw git log output into individual commits */
 function parseGitLog(raw: string): { hash: string; subject: string; body: string }[] {
   const commits: { hash: string; subject: string; body: string }[] = [];
-  const entries = raw.split("---END---").filter((e) => e.trim());
+  const entries = raw.split('---END---').filter((e) => e.trim());
 
   for (const entry of entries) {
-    const lines = entry.trim().split("\n");
+    const lines = entry.trim().split('\n');
     if (lines.length < 2) continue;
     commits.push({
       hash: lines[0]!.trim(),
       subject: lines[1]!.trim(),
-      body: lines.slice(2).join("\n").trim(),
+      body: lines.slice(2).join('\n').trim(),
     });
   }
   return commits;
@@ -176,7 +173,7 @@ function parseConventionalCommit(commit: { hash: string; subject: string; body: 
   if (!match) return null;
 
   const [, type, bang1, scope, bang2, description] = match;
-  const breaking = !!bang1 || !!bang2 || commit.body.includes("BREAKING CHANGE");
+  const breaking = !!bang1 || !!bang2 || commit.body.includes('BREAKING CHANGE');
 
   return {
     hash: commit.hash,
@@ -189,16 +186,13 @@ function parseConventionalCommit(commit: { hash: string; subject: string; body: 
 }
 
 /** Build a map of scope aliases → package names from config and package names */
-function buildScopeMap(
-  packages: Map<string, WorkspacePackage>,
-  config: Record<string, unknown>,
-): Map<string, string[]> {
+function buildScopeMap(packages: Map<string, WorkspacePackage>, _config: BumpyConfig): Map<string, string[]> {
   const map = new Map<string, string[]>();
 
   for (const [name, pkg] of packages) {
     // Use the last segment of the package name as a scope alias
     // e.g., @myorg/core → "core", my-pkg → "my-pkg"
-    const shortName = name.includes("/") ? name.split("/").pop()! : name;
+    const shortName = name.includes('/') ? name.split('/').pop()! : name;
     if (!map.has(shortName)) map.set(shortName, []);
     map.get(shortName)!.push(name);
 
@@ -207,7 +201,7 @@ function buildScopeMap(
     map.get(name)!.push(name);
 
     // Use the directory name as an alias too
-    const dirName = pkg.relativeDir.split("/").pop()!;
+    const dirName = pkg.relativeDir.split('/').pop()!;
     if (dirName !== shortName) {
       if (!map.has(dirName)) map.set(dirName, []);
       map.get(dirName)!.push(name);
@@ -239,7 +233,7 @@ function resolveScope(
 }
 
 function bumpPriority(type: BumpType): number {
-  return type === "major" ? 2 : type === "minor" ? 1 : 0;
+  return type === 'major' ? 2 : type === 'minor' ? 1 : 0;
 }
 
 /** Find the most recent version tag in the repo */

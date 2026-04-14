@@ -1,21 +1,21 @@
-import { readFile, writeFile, readdir, unlink, mkdir, access } from "node:fs/promises";
-import { join } from "node:path";
+import { readFile, writeFile, readdir, unlink, mkdir, access } from 'node:fs/promises';
+import { join } from 'node:path';
 
 export async function readJson<T = Record<string, unknown>>(filePath: string): Promise<T> {
-  const content = await readFile(filePath, "utf-8");
+  const content = await readFile(filePath, 'utf-8');
   return JSON.parse(content) as T;
 }
 
 export async function writeJson(filePath: string, data: unknown, indent = 2): Promise<void> {
-  await writeFile(filePath, JSON.stringify(data, null, indent) + "\n", "utf-8");
+  await writeFile(filePath, JSON.stringify(data, null, indent) + '\n', 'utf-8');
 }
 
 export async function readText(filePath: string): Promise<string> {
-  return readFile(filePath, "utf-8");
+  return readFile(filePath, 'utf-8');
 }
 
 export async function writeText(filePath: string, content: string): Promise<void> {
-  await writeFile(filePath, content, "utf-8");
+  await writeFile(filePath, content, 'utf-8');
 }
 
 export async function exists(filePath: string): Promise<boolean> {
