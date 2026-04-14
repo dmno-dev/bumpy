@@ -42,7 +42,7 @@ By default, bumpy uses your package manager to pack a tarball (resolving `worksp
 - **Configurable propagation** — the dependency bump algorithm is the core differentiator
 - **Node.js compatible** — developed with Bun but runs on Node.js too
 - **All package managers** — npm, pnpm, yarn, and bun workspaces
-- **Zero runtime dependencies** — all dependencies are bundled
+- **Zero runtime dependencies** — dependencies are minimal and are bundled at release time
 
 ## Getting Started
 
@@ -153,22 +153,9 @@ bun test
 bun src/cli.ts --help
 ```
 
-## Implementation Status
+## Roadmap
 
-- [x] Core release plan algorithm with configurable dependency propagation
-- [x] Isolated bumps, cascade rules, fixed/linked groups
-- [x] Changeset parsing (simple + nested with cascade)
-- [x] Workspace discovery (npm, pnpm, yarn, bun)
-- [x] Catalog support (pnpm-workspace.yaml + package.json)
-- [x] CLI: init, add, status (with --json/--packages/--filter), version, publish
-- [x] Pack-then-publish pipeline with custom command support
-- [x] Fine-grained package include/exclude with glob support
-- [x] Migration from changesets (`bumpy migrate`)
-- [x] GitHub releases (individual + aggregate)
-- [x] CI commands (`bumpy ci check` / `bumpy ci release`) — no separate action needed
-- [x] Conventional commits bridge (`bumpy generate`)
-- [x] Pluggable changelog formatters (default, github, custom .ts/.js)
-- [x] AI integration (Claude Code plugin + `bumpy ai setup` for OpenCode, Cursor, Codex)
-- [x] 47 tests passing
-- [ ] Prerelease mode (deferred — use pkg.pr.new for preview packages)
-- [ ] Bun standalone binary build
+- Prerelease mode (for now, use [pkg.pr.new](https://github.com/stackblitz-labs/pkg.pr.new) for preview packages)
+- Bun standalone binary for use outside of JS projects
+- Better support for versioning non-JS packages and usage without package.json files
+- Tracking workspace-level / non-publishable changes
