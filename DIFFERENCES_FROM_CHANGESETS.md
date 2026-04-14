@@ -95,6 +95,13 @@ Bumpy includes the release date in every changelog heading by default.
 
 - [changesets#862](https://github.com/changesets/changesets/issues/862) — conventional commits integration (70 thumbs-up, 21 comments)
 
+### Pluggable changelog formatters
+Custom changelog formatters with full context (release info, changesets, dates). Built-in `"default"` and `"github"` (with PR links + author attribution) formatters. Users can write custom formatters in TypeScript or JavaScript. Changesets' API is limited to two awkward string-returning functions — bumpy gives you the full context and you return the complete entry.
+
+- [changesets#658](https://github.com/changesets/changesets/issues/658) — changelog titles not customizable (12 thumbs-up)
+- [changesets#556](https://github.com/changesets/changesets/issues/556) — changelog formatting (11 thumbs-up)
+- [changesets#995](https://github.com/changesets/changesets/issues/995) — getChangelogEntry API (12 thumbs-up)
+
 ### CI without a separate action
 `bumpy ci check` and `bumpy ci release` handle PR checks and release automation without needing a separate GitHub Action or bot installation. Just `bunx @dmno-dev/bumpy ci check` in any workflow.
 
@@ -117,12 +124,6 @@ Track changes to CI, tooling, and monorepo-root-level config in changelogs — n
 - [changesets#1137](https://github.com/changesets/changesets/issues/1137) — root workspace support (26 thumbs-up)
 
 
-### Changelog customization
-Pluggable changelog formatters with access to git metadata, PR numbers, and author attribution.
-
-- [changesets#658](https://github.com/changesets/changesets/issues/658) — changelog titles not customizable (12 thumbs-up)
-- [changesets#556](https://github.com/changesets/changesets/issues/556) — changelog formatting (11 thumbs-up)
-- [changesets#995](https://github.com/changesets/changesets/issues/995) — getChangelogEntry API (12 thumbs-up)
 
 ### Non-JS ecosystem support
 Support versioning and publishing beyond npm — Rust crates, .NET NuGet, Python packages, etc. — via a package manifest that doesn't require wrapper `package.json` files.

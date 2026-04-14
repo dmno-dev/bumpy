@@ -91,7 +91,7 @@ Added new encryption provider. Plugins need a patch bump for compatibility.
   // Auto-commit after `bumpy version` (default: false)
   "commit": false,
 
-  // Changelog generator (default: "default")
+  // Changelog formatter: "default", "github", ["github", { repo: "..." }], or "./path.ts"
   "changelog": "default",
 
   // Packages whose versions are always bumped together to the same version
@@ -337,6 +337,61 @@ Migrate from `.changeset/` to `.bumpy/`.
 | `--force` | Skip interactive prompts (don't ask to delete .changeset/) |
 
 Migrates config.json fields, pending changeset files, and prints key differences from changesets.
+
+## Changelog Customization
+
+The `changelog` config controls how CHANGELOG.md entries are formatted.
+
+### Built-in formatters
+
+```json
+{ "changelog": "default" }
+```
+Simple format: version heading, date, bullet points from changeset summaries.
+
+```json
+{ "changelog": "github" }
+{ "changelog": ["github", { "repo": "dmno-dev/bumpy" }] }
+```
+GitHub-enhanced: adds PR links and author attribution (`- Added feature (#123) by @user`). Looks up PRs via `gh` CLI by finding the commit that introduced each changeset file.
+
+### Custom formatter (TypeScript or JavaScript)
+
+```json
+{ "changelog": "./my-changelog.ts" }
+{ "changelog": ["./my-changelog.ts", { "someOption": true }] }
+```
+
+A custom formatter exports a function that receives full context and returns the complete changelog entry:
+
+```ts
+// my-changelog.ts
+import type { ChangelogContext } from "@dmno-dev/bumpy";
+
+export default function(ctx: ChangelogContext): string {
+  const { release, changesets, date } = ctx;
+  const lines = [`## [${release.newVersion}] - ${date}\n`];
+
+  const relevant = changesets.filter(cs => release.changesets.includes(cs.id));
+  for (const cs of relevant) {
+    if (cs.summary) lines.push(`- ${cs.summary.split("\n")[0]}`);
+  }
+
+  lines.push("");
+  return lines.join("\n");
+}
+```
+
+The `ChangelogContext` interface:
+```ts
+interface ChangelogContext {
+  release: PlannedRelease;  // name, type, oldVersion, newVersion, etc.
+  changesets: Changeset[];  // all changesets (filter by release.changesets for relevant ones)
+  date: string;             // ISO date (YYYY-MM-DD)
+}
+```
+
+If the config is `["./my-changelog.ts", { ... }]`, the options object is passed to the exported function. If the function returns another function, it's treated as a factory pattern.
 
 ## Publish Pipeline
 
