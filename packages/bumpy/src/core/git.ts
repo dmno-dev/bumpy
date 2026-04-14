@@ -27,8 +27,7 @@ export function commitFiles(files: string[], message: string, opts?: { cwd?: str
     // Use -- to prevent filenames from being interpreted as flags
     run(`git add -- "${file}"`, opts);
   }
-  // Use a temp file approach to avoid shell escaping issues with commit messages
-  run(`git commit -m "${message.replace(/"/g, '\\"')}"`, opts);
+  run('git commit -F -', { ...opts, input: message });
 }
 
 /** Check if a tag already exists */

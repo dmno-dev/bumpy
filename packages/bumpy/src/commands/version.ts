@@ -56,8 +56,8 @@ export async function versionCommand(rootDir: string): Promise<void> {
       for (const lockfile of ['bun.lock', 'bun.lockb', 'pnpm-lock.yaml', 'yarn.lock', 'package-lock.json']) {
         tryRun(`git add "${lockfile}"`, { cwd: rootDir });
       }
-      const msg = `Version packages\n\n${plan.releases.map((r) => `${r.name}@${r.newVersion}`).join('\n')}`;
-      run(`git commit -m "${msg.replace(/"/g, '\\"')}"`, { cwd: rootDir });
+      const msg = ['Version packages', '', ...plan.releases.map((r) => `${r.name}@${r.newVersion}`)].join('\n');
+      run('git commit -F -', { cwd: rootDir, input: msg });
       log.success('Created git commit');
     } catch (e) {
       log.warn(`Git commit failed: ${e}`);
