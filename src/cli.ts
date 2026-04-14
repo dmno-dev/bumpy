@@ -77,6 +77,32 @@ async function main() {
         break;
       }
 
+      case "ci": {
+        const rootDir = await findRoot();
+        const subcommand = args[1];
+        const ciFlags = parseFlags(args.slice(2));
+
+        if (subcommand === "check") {
+          const { ciCheckCommand } = await import("./commands/ci.ts");
+          await ciCheckCommand(rootDir, {
+            comment: ciFlags.comment !== undefined ? ciFlags.comment === true : undefined,
+            failOnMissing: ciFlags["fail-on-missing"] === true,
+          });
+        } else if (subcommand === "release") {
+          const { ciReleaseCommand } = await import("./commands/ci.ts");
+          const mode = ciFlags["auto-publish"] === true ? "auto-publish" as const : "version-pr" as const;
+          await ciReleaseCommand(rootDir, {
+            mode,
+            tag: ciFlags.tag as string | undefined,
+            branch: ciFlags.branch as string | undefined,
+          });
+        } else {
+          log.error(`Unknown ci subcommand: ${subcommand}. Use "ci check" or "ci release".`);
+          process.exit(1);
+        }
+        break;
+      }
+
       case "publish": {
         const rootDir = await findRoot();
         const { publishCommand } = await import("./commands/publish.ts");
@@ -118,6 +144,8 @@ function printHelp() {
     status                  Show pending releases
     version                 Apply changesets and bump versions
     publish                 Publish versioned packages
+    ci check                PR check — report pending releases, comment on PR
+    ci release              Release — create version PR or auto-publish
     migrate                 Migrate from .changeset/ to .bumpy/
 
   Add options:
@@ -137,6 +165,15 @@ function printHelp() {
     --dry-run               Preview without publishing
     --tag <tag>             npm dist-tag (e.g., "next", "beta")
     --no-push               Skip pushing git tags to remote
+
+  CI check options:
+    --comment               Force PR comment on/off (auto-detected in CI)
+    --fail-on-missing       Exit 1 if no changesets found
+
+  CI release options:
+    --auto-publish          Version + publish directly (default: create version PR)
+    --tag <tag>             npm dist-tag for auto-publish
+    --branch <name>         Branch name for version PR (default: bumpy/version-packages)
 `);
 }
 
