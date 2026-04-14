@@ -59,7 +59,7 @@ Added new encryption provider for secrets management.
 Internal refactor — no API changes, dependents don't need to bump.
 ```
 
-Valid bump types: `major`, `minor`, `patch`, `major-isolated`, `minor-isolated`, `patch-isolated`
+Valid bump types: `major`, `minor`, `patch`, `minor-isolated`, `patch-isolated`
 
 ### Nested format with explicit cascade control
 
@@ -598,3 +598,41 @@ Key behavioral differences after migration:
 - Peer dependency minor bumps no longer cascade to major on dependents
 - Use `patch-isolated`/`minor-isolated` bump types to skip propagation
 - Per-package config moves to `package.json["bumpy"]` instead of root config only
+
+## AI Integration
+
+Bumpy ships with an AI skill that teaches LLMs how to create changesets.
+
+### Claude Code (plugin)
+
+```bash
+claude plugin install @dmno-dev/bumpy
+```
+
+Then use `/bumpy:add-change` in Claude Code to create a changeset.
+
+### OpenCode / Cursor / Codex (setup command)
+
+```bash
+# OpenCode (creates .opencode/commands/add-bumpy-change.md)
+bumpy ai setup --target opencode
+
+# Cursor (creates .cursor/rules/add-bumpy-change.mdc)
+bumpy ai setup --target cursor
+
+# Codex (creates .codex/add-bumpy-change.md)
+bumpy ai setup --target codex
+```
+
+### Any AI tool (non-interactive CLI)
+
+Any LLM can create changesets using the non-interactive CLI:
+
+```bash
+bumpy add \
+  --packages "@myorg/core:minor,@myorg/cli:patch" \
+  --message "Added new encryption API" \
+  --name "add-encryption-api"
+```
+
+See the "Non-interactive changeset creation" section above for details.

@@ -1,7 +1,7 @@
 // ---- Bump types ----
 
 export type BumpType = "major" | "minor" | "patch";
-export type BumpTypeWithIsolated = BumpType | "major-isolated" | "minor-isolated" | "patch-isolated";
+export type BumpTypeWithIsolated = BumpType | "minor-isolated" | "patch-isolated";
 
 export const BUMP_LEVELS: Record<BumpType, number> = {
   patch: 0,
