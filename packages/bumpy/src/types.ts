@@ -139,7 +139,7 @@ export const DEFAULT_CONFIG: BumpyConfig = {
     title: '🐸 Versioned release',
     branch: 'bumpy/version-packages',
     preamble:
-      "This PR was opened by [bumpy](https://github.com/dmno-dev/bumpy). When you're ready to do a release, you can merge this and the packages will be published. If you're not ready to do a release yet, that's fine — whenever you add more changesets to main, this PR will be updated.",
+      'Merge this PR to publish the listed packages. This PR will be automatically updated as new changesets are added to main.',
   },
 };
 

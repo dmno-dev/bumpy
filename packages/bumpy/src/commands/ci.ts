@@ -237,6 +237,8 @@ function formatVersionPrBody(plan: ReleasePlan, preamble: string): string {
   const lines: string[] = [];
   lines.push(preamble);
   lines.push('');
+  lines.push('---');
+  lines.push('');
 
   for (const r of plan.releases) {
     const suffix = r.isDependencyBump ? ' (dep)' : r.isCascadeBump ? ' (cascade)' : '';
