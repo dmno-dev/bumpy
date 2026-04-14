@@ -155,7 +155,9 @@ Added new encryption provider. Plugins need a patch bump for compatibility.
     "protocolResolution": "pack"
   },
 
-  // Create a single aggregated GitHub release instead of one per package
+  // GitHub release creation (requires gh CLI). Default: individual per package.
+  // true = single aggregated release for all packages
+  // { enabled: true, title: "Release {{date}}" } = aggregate with custom title
   "aggregateRelease": false
 }
 ```
@@ -299,7 +301,17 @@ Publish packages with unpublished versions.
 | `--tag <tag>` | npm dist-tag (`"next"`, `"beta"`, etc.) |
 | `--no-push` | Skip pushing git tags to remote |
 
-Default flow: detects PM → packs tarball (resolves workspace:/catalog: protocols) → publishes tarball with npm → creates git tags → pushes tags.
+Default flow: detects PM → packs tarball (resolves workspace:/catalog: protocols) → publishes tarball with npm → creates git tags → pushes tags → creates GitHub releases (if `gh` CLI is available).
+
+### `bumpy migrate`
+
+Migrate from `.changeset/` to `.bumpy/`.
+
+| Flag | Description |
+|------|-------------|
+| `--force` | Skip interactive prompts (don't ask to delete .changeset/) |
+
+Migrates config.json fields, pending changeset files, and prints key differences from changesets.
 
 ## Publish Pipeline
 
@@ -417,3 +429,40 @@ bumpy add \
   --message "Added new API for encryption providers" \
   --name "add-encryption-api"
 ```
+
+### Aggregate GitHub releases
+
+By default, `bumpy publish` creates one GitHub release per package (requires `gh` CLI). To create a single aggregated release instead:
+
+```json
+// .bumpy/config.json
+{
+  "aggregateRelease": true
+}
+```
+
+Or with a custom title:
+```json
+{
+  "aggregateRelease": {
+    "enabled": true,
+    "title": "Release {{date}}"
+  }
+}
+```
+
+### Migrating from changesets
+
+```bash
+bumpy migrate
+```
+
+This will:
+1. Create `.bumpy/` and migrate `config.json` settings
+2. Copy pending changeset `.md` files
+3. Optionally remove `.changeset/` directory
+
+Key behavioral differences after migration:
+- Peer dependency minor bumps no longer cascade to major on dependents
+- Use `patch-isolated`/`minor-isolated` bump types to skip propagation
+- Per-package config moves to `package.json["bumpy"]` instead of root config only

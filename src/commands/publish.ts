@@ -4,6 +4,7 @@ import { discoverWorkspace } from "../core/workspace.ts";
 import { DependencyGraph } from "../core/dep-graph.ts";
 import { pushWithTags, hasUncommittedChanges } from "../core/git.ts";
 import { publishPackages, type PublishOptions } from "../core/publish-pipeline.ts";
+import { createIndividualReleases, createAggregateRelease } from "../core/github-release.ts";
 import { detectWorkspaces } from "../utils/package-manager.ts";
 import type { ReleasePlan, PlannedRelease, WorkspacePackage } from "../types.ts";
 
@@ -78,6 +79,27 @@ export async function publishCommand(rootDir: string, opts: PublishCommandOption
       log.success("Pushed tags to remote");
     } catch (err) {
       log.warn(`Failed to push tags: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+
+  // GitHub releases
+  if (result.published.length > 0) {
+    const publishedReleases = releasePlan.releases.filter((r) =>
+      result.published.some((p) => p.name === r.name)
+    );
+    const aggConfig = config.aggregateRelease;
+    const isAggregate = aggConfig === true || (typeof aggConfig === "object" && aggConfig.enabled);
+    const aggTitle = typeof aggConfig === "object" ? aggConfig.title : undefined;
+
+    if (isAggregate) {
+      await createAggregateRelease(publishedReleases, releasePlan.changesets, rootDir, {
+        dryRun: opts.dryRun,
+        title: aggTitle,
+      });
+    } else {
+      await createIndividualReleases(publishedReleases, releasePlan.changesets, rootDir, {
+        dryRun: opts.dryRun,
+      });
     }
   }
 }
