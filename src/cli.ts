@@ -53,6 +53,10 @@ async function main() {
         const { statusCommand } = await import("./commands/status.ts");
         await statusCommand(rootDir, {
           json: flags.json === true,
+          packagesOnly: flags.packages === true,
+          bumpType: flags.bump as string | undefined,
+          filter: flags.filter as string | undefined,
+          verbose: flags.verbose === true,
         });
         break;
       }
@@ -113,7 +117,11 @@ function printHelp() {
     --empty                 Create an empty changeset
 
   Status options:
-    --json                  Output as JSON
+    --json                  Output as JSON (includes dirs, changesets, packageNames)
+    --packages              Output only package names, one per line
+    --bump <types>          Filter by bump type (e.g., "major", "minor,patch")
+    --filter <names>        Filter by package name/glob (e.g., "@myorg/*")
+    --verbose               Show changeset details
 
   Publish options:
     --dry-run               Preview without publishing
