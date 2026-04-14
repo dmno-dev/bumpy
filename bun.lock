@@ -3,7 +3,14 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "bumpy",
+      "name": "bumpy-monorepo",
+    },
+    "packages/bumpy": {
+      "name": "@dmno-dev/bumpy",
+      "version": "0.0.1",
+      "bin": {
+        "bumpy": "./src/cli.ts",
+      },
       "dependencies": {
         "js-yaml": "^4.1.0",
         "semver": "^7.7.2",
@@ -17,8 +24,16 @@
         "typescript": "^5",
       },
     },
+    "packages/website": {
+      "name": "@dmno-dev/bumpy-website",
+      "version": "0.0.1",
+    },
   },
   "packages": {
+    "@dmno-dev/bumpy": ["@dmno-dev/bumpy@workspace:packages/bumpy"],
+
+    "@dmno-dev/bumpy-website": ["@dmno-dev/bumpy-website@workspace:packages/website"],
+
     "@types/bun": ["@types/bun@1.3.12", "", { "dependencies": { "bun-types": "1.3.12" } }, "sha512-DBv81elK+/VSwXHDlnH3Qduw+KxkTIWi7TXkAeh24zpi5l0B2kUg9Ga3tb4nJaPcOFswflgi/yAvMVBPrxMB+A=="],
 
     "@types/js-yaml": ["@types/js-yaml@4.0.9", "", {}, "sha512-k4MGaQl5TGo/iipqb2UDG2UwjXziSWkh0uysQelTlJpX1qGlpUZYm8PnO4DxG1qBomtJUdYJ6qR6xdIah10JLg=="],
