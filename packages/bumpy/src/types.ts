@@ -88,6 +88,15 @@ export interface BumpyConfig {
   aggregateRelease: boolean | { enabled: boolean; title?: string };
   /** Git identity used for CI commits. Defaults to bumpy-bot. */
   gitUser: { name: string; email: string };
+  /** Version PR settings */
+  versionPr: {
+    /** PR title. Default: "🐸 Versioned release" */
+    title: string;
+    /** Branch name. Default: "bumpy/version-packages" */
+    branch: string;
+    /** Preamble text shown at the top of the PR body */
+    preamble: string;
+  };
 }
 
 export interface PackageConfig {
@@ -126,6 +135,12 @@ export const DEFAULT_CONFIG: BumpyConfig = {
   publish: { ...DEFAULT_PUBLISH_CONFIG },
   aggregateRelease: false,
   gitUser: { name: 'bumpy-bot', email: '276066384+bumpy-bot@users.noreply.github.com' },
+  versionPr: {
+    title: '🐸 Versioned release',
+    branch: 'bumpy/version-packages',
+    preamble:
+      "This PR was opened by [bumpy](https://github.com/dmno-dev/bumpy). When you're ready to do a release, you can merge this and the packages will be published. If you're not ready to do a release yet, that's fine — whenever you add more changesets to main, this PR will be updated.",
+  },
 };
 
 // ---- Changeset ----
