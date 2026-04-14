@@ -163,7 +163,7 @@ async function main() {
 
 function printHelp() {
   console.log(`
-  ${log.bold('bumpy')} - Modern monorepo versioning
+  ${log.bold('🐸 bumpy')} - Modern monorepo versioning
 
   Usage: bumpy <command> [options]
 
