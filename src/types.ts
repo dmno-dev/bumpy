@@ -70,7 +70,10 @@ export interface BumpyConfig {
   changelog: string | [string, Record<string, unknown>];
   fixed: string[][];
   linked: string[][];
+  /** Package names/globs to exclude from version management */
   ignore: string[];
+  /** Package names/globs to explicitly include (overrides private + ignore) */
+  include: string[];
   updateInternalDependencies: "patch" | "minor" | "out-of-range" | "none";
   dependencyBumpRules: Partial<Record<DepType, DependencyBumpRule>>;
   privatePackages: { version: boolean; tag: boolean };
@@ -80,6 +83,8 @@ export interface BumpyConfig {
 }
 
 export interface PackageConfig {
+  /** Explicitly opt in or out of version management (overrides private/ignore/include) */
+  managed?: boolean;
   access?: "public" | "restricted";
   publishCommand?: string | string[];
   buildCommand?: string;
@@ -105,6 +110,7 @@ export const DEFAULT_CONFIG: BumpyConfig = {
   fixed: [],
   linked: [],
   ignore: [],
+  include: [],
   updateInternalDependencies: "out-of-range",
   dependencyBumpRules: {},
   privatePackages: { version: false, tag: false },

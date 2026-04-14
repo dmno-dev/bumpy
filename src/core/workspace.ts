@@ -2,7 +2,7 @@ import { resolve, relative } from "node:path";
 import { readdir, stat } from "node:fs/promises";
 import { readJson, exists } from "../utils/fs.ts";
 import { detectWorkspaces, type CatalogMap } from "../utils/package-manager.ts";
-import { loadPackageConfig } from "./config.ts";
+import { loadPackageConfig, isPackageManaged } from "./config.ts";
 import type { BumpyConfig, WorkspacePackage } from "../types.ts";
 
 export interface WorkspaceDiscoveryResult {
@@ -26,7 +26,7 @@ export async function discoverWorkspace(
     for (const dir of dirs) {
       const pkg = await loadWorkspacePackage(dir, rootDir, config);
       if (pkg) {
-        if (config.ignore.includes(pkg.name)) continue;
+        if (!isPackageManaged(pkg.name, pkg.private, config, pkg.bumpy)) continue;
         packages.set(pkg.name, pkg);
       }
     }

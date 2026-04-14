@@ -60,11 +60,10 @@ export async function addCommand(rootDir: string, opts: AddOptions): Promise<voi
     const pkgs = await discoverPackages(rootDir, config);
     const depGraph = new DependencyGraph(pkgs);
 
-    // Select packages
+    // Select packages (discoverPackages already filters to managed packages only)
     const selected = await multiSelect<string>(
       "Which packages should be included in this changeset?",
       [...pkgs.values()]
-        .filter((p) => !p.private || config.privatePackages.version)
         .map((p) => ({ label: `${p.name} (${p.version})`, value: p.name })),
     );
 

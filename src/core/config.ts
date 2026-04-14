@@ -134,3 +134,43 @@ function mergePackageConfig(...configs: PackageConfig[]): PackageConfig {
 export function getBumpyDir(rootDir: string): string {
   return resolve(rootDir, BUMPY_DIR);
 }
+
+/**
+ * Determine if a package should be managed by bumpy.
+ * Resolution order:
+ * 1. Per-package `managed: false` → skip (explicit opt-out)
+ * 2. `config.ignore` glob match → skip
+ * 3. Per-package `managed: true` → include (explicit opt-in, overrides private)
+ * 4. `config.include` glob match → include (overrides private)
+ * 5. Private package + `config.privatePackages.version` false → skip
+ * 6. Otherwise → include
+ */
+export function isPackageManaged(
+  pkgName: string,
+  isPrivate: boolean,
+  config: BumpyConfig,
+  pkgBumpy?: PackageConfig,
+): boolean {
+  // 1. Explicit opt-out via per-package config
+  if (pkgBumpy?.managed === false) return false;
+
+  // 2. Ignored by glob
+  if (config.ignore.some((pattern) => matchGlob(pkgName, pattern))) {
+    // ...unless explicitly opted in
+    if (pkgBumpy?.managed === true) return true;
+    if (config.include.some((pattern) => matchGlob(pkgName, pattern))) return true;
+    return false;
+  }
+
+  // 3. Explicit opt-in via per-package config
+  if (pkgBumpy?.managed === true) return true;
+
+  // 4. Included by glob (overrides private)
+  if (config.include.some((pattern) => matchGlob(pkgName, pattern))) return true;
+
+  // 5. Private package check
+  if (isPrivate && !config.privatePackages.version) return false;
+
+  // 6. Default: managed
+  return true;
+}
