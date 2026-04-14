@@ -184,17 +184,18 @@ Any package can have bumpy config in its own `package.json`:
 
 #### Per-package config fields
 
-| Field                     | Type                                 | Description                                                                                          |
-| ------------------------- | ------------------------------------ | ---------------------------------------------------------------------------------------------------- |
-| `managed`                 | `boolean`                            | Explicitly opt in (`true`) or out (`false`) of version management. Overrides private/ignore/include. |
-| `access`                  | `"public" \| "restricted"`           | npm access level override                                                                            |
-| `publishCommand`          | `string \| string[]`                 | Custom publish command(s). Supports `{{version}}` and `{{name}}` template variables.                 |
-| `buildCommand`            | `string`                             | Build command to run before publishing                                                               |
-| `registry`                | `string`                             | Custom npm registry URL                                                                              |
-| `skipNpmPublish`          | `boolean`                            | Skip npm publish (use with `publishCommand` for non-npm publishing)                                  |
-| `dependencyBumpRules`     | `object`                             | Override global dependency bump rules for this package                                               |
-| `specificDependencyRules` | `Record<string, DependencyBumpRule>` | Rules for specific dependencies by name/glob                                                         |
-| `cascadeTo`               | `Record<string, DependencyBumpRule>` | When this package bumps, cascade to these packages (supports globs)                                  |
+| Field                     | Type                                 | Description                                                                                           |
+| ------------------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------- |
+| `managed`                 | `boolean`                            | Explicitly opt in (`true`) or out (`false`) of version management. Overrides private/ignore/include.  |
+| `access`                  | `"public" \| "restricted"`           | npm access level override                                                                             |
+| `publishCommand`          | `string \| string[]`                 | Custom publish command(s). Supports `{{version}}` and `{{name}}` template variables.                  |
+| `buildCommand`            | `string`                             | Build command to run before publishing                                                                |
+| `registry`                | `string`                             | Custom npm registry URL                                                                               |
+| `skipNpmPublish`          | `boolean`                            | Skip npm publish (use with `publishCommand` for non-npm publishing)                                   |
+| `checkPublished`          | `string`                             | Command to check if version is published. Should output the version string. Used for non-npm targets. |
+| `dependencyBumpRules`     | `object`                             | Override global dependency bump rules for this package                                                |
+| `specificDependencyRules` | `Record<string, DependencyBumpRule>` | Rules for specific dependencies by name/glob                                                          |
+| `cascadeTo`               | `Record<string, DependencyBumpRule>` | When this package bumps, cascade to these packages (supports globs)                                   |
 
 ## Package Management (include/exclude)
 
@@ -431,6 +432,28 @@ For non-npm packages (VSCode extensions, Docker images, etc.):
 ```
 
 Custom commands support `{{version}}` and `{{name}}` template variables. Bumpy resolves `workspace:`/`catalog:` protocols in-place before running custom commands.
+
+#### Publish detection
+
+When running `bumpy publish` or `bumpy ci release`, bumpy checks which packages need publishing using a layered strategy:
+
+1. **Custom `checkPublished` command** — if set, bumpy runs it and compares the output to the current version
+2. **Non-npm packages** (`skipNpmPublish` or custom `publishCommand`) — checks for a git tag (`<name>@<version>`)
+3. **Default (npm packages)** — checks the npm registry via `npm info`
+
+For VS Code extensions, you can provide a check command:
+
+```json
+{
+  "bumpy": {
+    "skipNpmPublish": true,
+    "publishCommand": "bunx vsce publish",
+    "checkPublished": "bunx vsce show my-ext --json | jq -r '.versions[0].version'"
+  }
+}
+```
+
+Or simply rely on git tags (the default for non-npm packages) — no extra config needed.
 
 ## workspace: and catalog: Protocol Handling
 

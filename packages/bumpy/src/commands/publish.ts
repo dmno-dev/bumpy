@@ -6,7 +6,7 @@ import { pushWithTags, hasUncommittedChanges } from '../core/git.ts';
 import { publishPackages } from '../core/publish-pipeline.ts';
 import { createIndividualReleases, createAggregateRelease } from '../core/github-release.ts';
 import { detectWorkspaces } from '../utils/package-manager.ts';
-import type { BumpyConfig, ReleasePlan, PlannedRelease, WorkspacePackage } from '../types.ts';
+import type { BumpyConfig, PackageConfig, ReleasePlan, PlannedRelease, WorkspacePackage } from '../types.ts';
 
 interface PublishCommandOptions {
   dryRun?: boolean;
@@ -121,8 +121,12 @@ export async function publishCommand(rootDir: string, opts: PublishCommandOption
 }
 
 /**
- * Find packages whose current version is not on the npm registry.
- * Falls back to checking git tags if npm info fails.
+ * Find packages whose current version is not yet published.
+ *
+ * Detection strategy (per package):
+ * 1. Custom `checkPublished` command → run it, compare output to current version
+ * 2. `skipNpmPublish` or custom `publishCommand` → check git tags
+ * 3. Default → check npm registry via `npm info`
  */
 async function findUnpublishedPackages(
   packages: Map<string, WorkspacePackage>,
@@ -136,7 +140,7 @@ async function findUnpublishedPackages(
     // Skip ignored
     if (pkg.version === '0.0.0') continue;
 
-    const isPublished = await checkIfPublished(name, pkg.version, pkg.bumpy?.registry);
+    const isPublished = await checkIfPublished(name, pkg.version, pkg.bumpy);
     if (!isPublished) {
       unpublished.push({
         name,
@@ -153,14 +157,32 @@ async function findUnpublishedPackages(
   return unpublished;
 }
 
-async function checkIfPublished(name: string, version: string, registry?: string): Promise<boolean> {
+async function checkIfPublished(name: string, version: string, pkgConfig?: PackageConfig): Promise<boolean> {
+  const { runAsync } = await import('../utils/shell.ts');
+  const { tryRun } = await import('../utils/shell.ts');
+
+  // 1. Custom check command
+  if (pkgConfig?.checkPublished) {
+    try {
+      const result = await runAsync(pkgConfig.checkPublished);
+      return result.trim() === version;
+    } catch {
+      return false;
+    }
+  }
+
+  // 2. Non-npm packages — check git tags
+  if (pkgConfig?.skipNpmPublish || pkgConfig?.publishCommand) {
+    const tag = `${name}@${version}`;
+    return tryRun(`git tag -l "${tag}"`) === tag;
+  }
+
+  // 3. Default — check npm registry
   try {
-    const { runAsync } = await import('../utils/shell.ts');
-    const regFlag = registry ? `--registry ${registry}` : '';
+    const regFlag = pkgConfig?.registry ? `--registry ${pkgConfig.registry}` : '';
     const result = await runAsync(`npm info "${name}@${version}" version ${regFlag}`.trim());
     return result === version;
   } catch {
-    // Package doesn't exist on registry yet, or network error
     return false;
   }
 }
