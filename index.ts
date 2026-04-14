@@ -6,4 +6,5 @@ export { readChangesets, parseChangeset, writeChangeset } from "./src/core/chang
 export { assembleReleasePlan } from "./src/core/release-plan.ts";
 export { applyReleasePlan } from "./src/core/apply-release-plan.ts";
 export { bumpVersion, satisfies, stripProtocol } from "./src/core/semver.ts";
+export { publishPackages } from "./src/core/publish-pipeline.ts";
 export * from "./src/types.ts";

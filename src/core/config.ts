@@ -102,6 +102,10 @@ function mergeConfig(defaults: BumpyConfig, user: Partial<BumpyConfig>): BumpyCo
       ...defaults.privatePackages,
       ...user.privatePackages,
     },
+    publish: {
+      ...defaults.publish,
+      ...user.publish,
+    },
     packages: {
       ...defaults.packages,
       ...user.packages,

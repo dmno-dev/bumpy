@@ -64,6 +64,17 @@ async function main() {
         break;
       }
 
+      case "publish": {
+        const rootDir = await findRoot();
+        const { publishCommand } = await import("./commands/publish.ts");
+        await publishCommand(rootDir, {
+          dryRun: flags["dry-run"] === true,
+          tag: flags.tag as string | undefined,
+          noPush: flags["no-push"] === true,
+        });
+        break;
+      }
+
       case "help":
       case "--help":
       case "-h":
@@ -93,6 +104,7 @@ function printHelp() {
     add                     Create a new changeset
     status                  Show pending releases
     version                 Apply changesets and bump versions
+    publish                 Publish versioned packages
 
   Add options:
     --packages <list>       Package bumps (e.g., "pkg-a:minor,pkg-b:patch")
@@ -102,6 +114,11 @@ function printHelp() {
 
   Status options:
     --json                  Output as JSON
+
+  Publish options:
+    --dry-run               Preview without publishing
+    --tag <tag>             npm dist-tag (e.g., "next", "beta")
+    --no-push               Skip pushing git tags to remote
 `);
 }
 

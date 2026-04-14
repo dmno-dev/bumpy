@@ -46,6 +46,23 @@ export const DEP_TYPES: DepType[] = ["dependencies", "devDependencies", "peerDep
 
 // ---- Config ----
 
+export interface PublishConfig {
+  /** Package manager to use for packing. "auto" detects from lockfile. Default: "auto" */
+  packManager: "auto" | "npm" | "pnpm" | "bun" | "yarn";
+  /** Command to use for publishing. "npm" uses npm publish (supports OIDC). Default: "npm" */
+  publishManager: "npm" | "pnpm" | "bun" | "yarn";
+  /** Extra args appended to the publish command (e.g., "--provenance") */
+  publishArgs: string[];
+  /**
+   * How to handle workspace:/catalog: protocol resolution.
+   * "pack" = use PM's pack to build a clean tarball, then publish the tarball (recommended)
+   * "in-place" = resolve protocols by rewriting package.json before publish
+   * "none" = don't resolve (only if PM's publish handles it natively)
+   * Default: "pack"
+   */
+  protocolResolution: "pack" | "in-place" | "none";
+}
+
 export interface BumpyConfig {
   baseBranch: string;
   access: "public" | "restricted";
@@ -58,7 +75,7 @@ export interface BumpyConfig {
   dependencyBumpRules: Partial<Record<DepType, DependencyBumpRule>>;
   privatePackages: { version: boolean; tag: boolean };
   packages: Record<string, PackageConfig>;
-  resolveWorkspaceProtocols: boolean;
+  publish: PublishConfig;
   aggregateRelease: boolean | { title?: string };
 }
 
@@ -73,6 +90,13 @@ export interface PackageConfig {
   cascadeTo?: Record<string, DependencyBumpRule>;
 }
 
+export const DEFAULT_PUBLISH_CONFIG: PublishConfig = {
+  packManager: "auto",
+  publishManager: "npm",
+  publishArgs: [],
+  protocolResolution: "pack",
+};
+
 export const DEFAULT_CONFIG: BumpyConfig = {
   baseBranch: "main",
   access: "public",
@@ -85,7 +109,7 @@ export const DEFAULT_CONFIG: BumpyConfig = {
   dependencyBumpRules: {},
   privatePackages: { version: false, tag: false },
   packages: {},
-  resolveWorkspaceProtocols: true,
+  publish: { ...DEFAULT_PUBLISH_CONFIG },
   aggregateRelease: false,
 };
 
