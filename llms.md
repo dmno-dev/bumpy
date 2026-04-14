@@ -156,6 +156,22 @@ Added new encryption provider. Plugins need a patch bump for compatibility.
   // true = single aggregated release for all packages
   // { enabled: true, title: "Release {{date}}" } = aggregate with custom title
   "aggregateRelease": false,
+
+  // Git identity for CI commits (default: bumpy-bot)
+  "gitUser": {
+    "name": "bumpy-bot",
+    "email": "276066384+bumpy-bot@users.noreply.github.com",
+  },
+
+  // Version PR settings
+  "versionPr": {
+    // PR title (default: "🐸 Versioned release")
+    "title": "🐸 Versioned release",
+    // Branch name (default: "bumpy/version-packages")
+    "branch": "bumpy/version-packages",
+    // Preamble text shown at the top of the PR body
+    "preamble": "Merge this PR when you are ready to release...",
+  },
 }
 ```
 
@@ -247,7 +263,7 @@ The critical difference: changesets bumps dependents to **major** when a peer de
 
 ### `bumpy init`
 
-Creates `.bumpy/` directory with default `config.json` and a README.
+Creates `.bumpy/` directory with default `_config.json` and a README.
 
 ### `bumpy add`
 
@@ -346,7 +362,7 @@ Migrate from `.changeset/` to `.bumpy/`.
 | --------- | ---------------------------------------------------------- |
 | `--force` | Skip interactive prompts (don't ask to delete .changeset/) |
 
-Migrates config.json fields, pending changeset files, and prints key differences from changesets.
+Migrates `.changeset/config.json` fields to `.bumpy/_config.json`, copies pending changeset files, and prints key differences from changesets.
 
 ## Changelog Customization
 
@@ -625,7 +641,7 @@ bumpy migrate
 
 This will:
 
-1. Create `.bumpy/` and migrate `config.json` settings
+1. Create `.bumpy/` and migrate settings to `_config.json`
 2. Copy pending changeset `.md` files
 3. Optionally remove `.changeset/` directory
 

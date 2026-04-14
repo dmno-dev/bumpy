@@ -42,7 +42,7 @@ By default, bumpy uses your package manager to pack a tarball (resolving `worksp
 - **Configurable propagation** — the dependency bump algorithm is the core differentiator
 - **Node.js compatible** — developed with Bun but runs on Node.js too
 - **All package managers** — npm, pnpm, yarn, and bun workspaces
-- **Minimal dependencies** — only `semver` and `js-yaml`
+- **Zero runtime dependencies** — all dependencies are bundled
 
 ## Getting Started
 
