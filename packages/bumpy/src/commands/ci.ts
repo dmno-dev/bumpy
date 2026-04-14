@@ -7,6 +7,17 @@ import { assembleReleasePlan } from '../core/release-plan.ts';
 import { run, tryRun, runAsync } from '../utils/shell.ts';
 import type { BumpyConfig, ReleasePlan, PlannedRelease } from '../types.ts';
 
+/** Configure git identity for CI commits if not already set */
+function ensureGitIdentity(rootDir: string, config: BumpyConfig): void {
+  const name = tryRun('git config user.name', { cwd: rootDir });
+  if (!name) {
+    const { name: gitName, email: gitEmail } = config.gitUser;
+    run(`git config user.name "${gitName}"`, { cwd: rootDir });
+    run(`git config user.email "${gitEmail}"`, { cwd: rootDir });
+    log.dim(`  Using git identity: ${gitName} <${gitEmail}>`);
+  }
+}
+
 // ---- ci check ----
 
 interface CheckOptions {
@@ -72,6 +83,7 @@ interface ReleaseOptions {
  */
 export async function ciReleaseCommand(rootDir: string, opts: ReleaseOptions): Promise<void> {
   const config = await loadConfig(rootDir);
+  ensureGitIdentity(rootDir, config);
   const { packages } = await discoverWorkspace(rootDir, config);
   const depGraph = new DependencyGraph(packages);
   const changesets = await readChangesets(rootDir);

@@ -86,6 +86,8 @@ export interface BumpyConfig {
    * { enabled: true, title: "..." } = aggregate with custom title (supports {{date}})
    */
   aggregateRelease: boolean | { enabled: boolean; title?: string };
+  /** Git identity used for CI commits. Defaults to bumpy-bot. */
+  gitUser: { name: string; email: string };
 }
 
 export interface PackageConfig {
@@ -123,6 +125,7 @@ export const DEFAULT_CONFIG: BumpyConfig = {
   packages: {},
   publish: { ...DEFAULT_PUBLISH_CONFIG },
   aggregateRelease: false,
+  gitUser: { name: 'bumpy-bot', email: '276066384+bumpy-bot@users.noreply.github.com' },
 };
 
 // ---- Changeset ----
