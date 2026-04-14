@@ -68,6 +68,17 @@ async function main() {
         break;
       }
 
+      case "generate": {
+        const rootDir = await findRoot();
+        const { generateCommand } = await import("./commands/generate.ts");
+        await generateCommand(rootDir, {
+          from: flags.from as string | undefined,
+          dryRun: flags["dry-run"] === true,
+          name: flags.name as string | undefined,
+        });
+        break;
+      }
+
       case "migrate": {
         const rootDir = await findRoot();
         const { migrateCommand } = await import("./commands/migrate.ts");
@@ -110,6 +121,7 @@ async function main() {
           dryRun: flags["dry-run"] === true,
           tag: flags.tag as string | undefined,
           noPush: flags["no-push"] === true,
+          filter: flags.filter as string | undefined,
         });
         break;
       }
@@ -141,6 +153,7 @@ function printHelp() {
   Commands:
     init                    Initialize .bumpy/ directory
     add                     Create a new changeset
+    generate                Generate changeset from conventional commits
     status                  Show pending releases
     version                 Apply changesets and bump versions
     publish                 Publish versioned packages
@@ -154,6 +167,11 @@ function printHelp() {
     --name <name>           Changeset filename
     --empty                 Create an empty changeset
 
+  Generate options:
+    --from <ref>            Git ref to scan from (default: last version tag)
+    --dry-run               Preview without creating a changeset
+    --name <name>           Changeset filename
+
   Status options:
     --json                  Output as JSON (includes dirs, changesets, packageNames)
     --packages              Output only package names, one per line
@@ -165,6 +183,7 @@ function printHelp() {
     --dry-run               Preview without publishing
     --tag <tag>             npm dist-tag (e.g., "next", "beta")
     --no-push               Skip pushing git tags to remote
+    --filter <names>        Publish only matching packages (e.g., "@myorg/*")
 
   CI check options:
     --comment               Force PR comment on/off (auto-detected in CI)
