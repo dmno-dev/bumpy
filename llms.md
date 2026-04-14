@@ -303,6 +303,31 @@ Publish packages with unpublished versions.
 
 Default flow: detects PM → packs tarball (resolves workspace:/catalog: protocols) → publishes tarball with npm → creates git tags → pushes tags → creates GitHub releases (if `gh` CLI is available).
 
+### `bumpy ci check`
+
+PR check — reports pending changesets and optionally comments on the PR with the release plan.
+
+| Flag | Description |
+|------|-------------|
+| `--comment` | Force PR commenting on/off (auto-detected in CI environments) |
+| `--fail-on-missing` | Exit 1 if no changesets found |
+
+Auto-detects PR number from `GITHUB_REF` in GitHub Actions. Also checks `BUMPY_PR_NUMBER` and `PR_NUMBER` env vars.
+
+### `bumpy ci release`
+
+Release automation — either creates a "Version Packages" PR or auto-publishes directly.
+
+| Flag | Description |
+|------|-------------|
+| `--auto-publish` | Version + publish directly instead of creating a PR |
+| `--tag <tag>` | npm dist-tag for auto-publish mode |
+| `--branch <name>` | Branch name for version PR (default: `bumpy/version-packages`) |
+
+Default mode (`version-pr`): creates a branch, runs `bumpy version`, commits, and opens/updates a PR via `gh`. Merging that PR triggers publish.
+
+Auto-publish mode: runs `bumpy version`, commits, pushes, then `bumpy publish` in one step.
+
 ### `bumpy migrate`
 
 Migrate from `.changeset/` to `.bumpy/`.
@@ -419,6 +444,58 @@ fi
 ```bash
 bumpy version
 bumpy publish --tag preview --no-push
+```
+
+### GitHub Actions — PR check + version PR workflow
+
+```yaml
+# .github/workflows/bumpy-check.yml
+name: Bumpy Check
+on: pull_request
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install
+      - run: bunx @dmno-dev/bumpy ci check
+        env:
+          GH_TOKEN: ${{ github.token }}
+```
+
+```yaml
+# .github/workflows/bumpy-release.yml
+name: Bumpy Release
+on:
+  push:
+    branches: [main]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write  # for npm provenance
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install
+      # Option A: Create a "Version Packages" PR
+      - run: bunx @dmno-dev/bumpy ci release
+        env:
+          GH_TOKEN: ${{ github.token }}
+      # Option B: Auto-publish directly
+      # - run: bunx @dmno-dev/bumpy ci release --auto-publish
+      #   env:
+      #     GH_TOKEN: ${{ github.token }}
+      #     NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 ```
 
 ### Non-interactive changeset creation (AI/CI)
