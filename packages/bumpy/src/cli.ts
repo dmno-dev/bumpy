@@ -2,7 +2,7 @@
 
 import { findRoot } from './core/config.ts';
 import { log, colorize } from './utils/logger.ts';
-import { getVersion } from './version-info.ts';
+import { getVersion, getWebsiteUrl } from './version-info.ts';
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -228,6 +228,8 @@ function printHelp() {
 
   AI setup options:
     --target <tool>         Target AI tool: opencode, cursor, codex
+
+  ${colorize(getWebsiteUrl(), 'dim')}
 `);
 }
 
