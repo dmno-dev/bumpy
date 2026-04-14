@@ -19,8 +19,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
       - run: bun install
-      # Build first since we use the local workspace package
+      # Build first since we use the local workspace package instead of the published one
       - run: bun run --filter @varlock/bumpy build
-      - run: ./node_modules/.bin/bumpy ci check
+      - run: bunx @varlock/bumpy ci check
         env:
           GH_TOKEN: ${{ github.token }}
