@@ -1,4 +1,4 @@
-# @dmno-dev/bumpy
+# @varlock/bumpy
 
 A modern monorepo versioning and changelog tool. Built as a replacement for [@changesets/changesets](https://github.com/changesets/changesets) — simpler, more flexible, and with sane defaults.
 
@@ -47,7 +47,7 @@ By default, bumpy uses your package manager to pack a tarball (resolving `worksp
 
 ```bash
 # Install
-bun add -d @dmno-dev/bumpy  # or npm/pnpm/yarn
+bun add -d @varlock/bumpy  # or npm/pnpm/yarn
 
 # Initialize
 bumpy init
@@ -85,7 +85,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
       - run: bun install
-      - run: bunx @dmno-dev/bumpy ci check
+      - run: bunx @varlock/bumpy ci check
         env:
           GH_TOKEN: ${{ github.token }}
 ```
@@ -112,7 +112,7 @@ jobs:
           fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
       - run: bun install
-      - run: bunx @dmno-dev/bumpy ci release
+      - run: bunx @varlock/bumpy ci release
         env:
           GH_TOKEN: ${{ github.token }}
 ```
@@ -125,7 +125,7 @@ Bumpy ships with an AI skill that teaches LLMs how to create changesets.
 
 ```bash
 # Claude Code — install as a plugin
-claude plugin install @dmno-dev/bumpy
+claude plugin install @varlock/bumpy
 # then use /bumpy:add-change
 
 # OpenCode / Cursor / Codex — copy a command file into your project

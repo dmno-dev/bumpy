@@ -16,7 +16,7 @@ export async function aiSetupCommand(rootDir: string, opts: AiSetupOptions): Pro
 
   if (!target) {
     log.error(`Please specify a target: bumpy ai setup --target <${SUPPORTED_TARGETS.join("|")}>`);
-    log.dim("  Claude Code users: install the plugin instead — claude plugin install @dmno-dev/bumpy");
+    log.dim("  Claude Code users: install the plugin instead — claude plugin install @varlock/bumpy");
     process.exit(1);
   }
 

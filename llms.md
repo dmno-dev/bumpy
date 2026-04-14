@@ -1,4 +1,4 @@
-# @dmno-dev/bumpy — LLM Reference
+# @varlock/bumpy — LLM Reference
 
 > Bumpy is a modern monorepo versioning and changelog tool. It replaces @changesets/changesets with simpler config, sane defaults, and flexible dependency bump control.
 
@@ -366,7 +366,7 @@ A custom formatter exports a function that receives full context and returns the
 
 ```ts
 // my-changelog.ts
-import type { ChangelogContext } from "@dmno-dev/bumpy";
+import type { ChangelogContext } from "@varlock/bumpy";
 
 export default function(ctx: ChangelogContext): string {
   const { release, changesets, date } = ctx;
@@ -517,7 +517,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
       - run: bun install
-      - run: bunx @dmno-dev/bumpy ci check
+      - run: bunx @varlock/bumpy ci check
         env:
           GH_TOKEN: ${{ github.token }}
 ```
@@ -543,11 +543,11 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - run: bun install
       # Option A: Create a "Version Packages" PR
-      - run: bunx @dmno-dev/bumpy ci release
+      - run: bunx @varlock/bumpy ci release
         env:
           GH_TOKEN: ${{ github.token }}
       # Option B: Auto-publish directly
-      # - run: bunx @dmno-dev/bumpy ci release --auto-publish
+      # - run: bunx @varlock/bumpy ci release --auto-publish
       #   env:
       #     GH_TOKEN: ${{ github.token }}
       #     NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -606,7 +606,7 @@ Bumpy ships with an AI skill that teaches LLMs how to create changesets.
 ### Claude Code (plugin)
 
 ```bash
-claude plugin install @dmno-dev/bumpy
+claude plugin install @varlock/bumpy
 ```
 
 Then use `/bumpy:add-change` in Claude Code to create a changeset.

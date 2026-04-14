@@ -1,6 +1,6 @@
 {
   "name": "@dmno-dev/bumpy",
-  "version": "0.0.1",
+  "version": "0.0.0",
   "description": "Modern monorepo versioning and changelog tool",
   "type": "module",
   "bin": {

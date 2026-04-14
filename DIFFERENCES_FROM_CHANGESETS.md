@@ -103,7 +103,7 @@ Custom changelog formatters with full context (release info, changesets, dates).
 - [changesets#995](https://github.com/changesets/changesets/issues/995) — getChangelogEntry API (12 thumbs-up)
 
 ### CI without a separate action
-`bumpy ci check` and `bumpy ci release` handle PR checks and release automation without needing a separate GitHub Action or bot installation. Just `bunx @dmno-dev/bumpy ci check` in any workflow.
+`bumpy ci check` and `bumpy ci release` handle PR checks and release automation without needing a separate GitHub Action or bot installation. Just `bunx @varlock/bumpy ci check` in any workflow.
 
 ---
 
