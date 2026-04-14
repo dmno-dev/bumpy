@@ -201,11 +201,11 @@ export function assembleReleasePlan(
   }
 
   // Step 5: Calculate new versions
+  // Note: packages map already contains only managed packages (filtered by discoverPackages)
   const releases: PlannedRelease[] = [];
   for (const [name, bump] of planned) {
-    const pkg = packages.get(name)!;
-    // Skip private packages unless config says to version them
-    if (pkg.private && !config.privatePackages.version) continue;
+    const pkg = packages.get(name);
+    if (!pkg) continue; // skip if not in managed packages
 
     const newVersion = bumpVersion(pkg.version, bump.type);
     releases.push({
