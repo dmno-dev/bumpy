@@ -1,4 +1,4 @@
-# @varlock/bumpy — LLM Reference
+# 🐸 @varlock/bumpy — LLM Reference
 
 > Bumpy is a modern monorepo versioning and changelog tool. It replaces @changesets/changesets with simpler config, sane defaults, and flexible dependency bump control.
 

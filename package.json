@@ -1,9 +1,15 @@
 {
   "name": "bumpy-monorepo",
   "private": true,
-  "workspaces": [
-    "packages/*"
-  ],
+  "workspaces": {
+    "packages": [
+      "packages/*"
+    ],
+    "catalog": {
+      "tsdown": "^0.21.8",
+      "typescript": "^6.0.2"
+    }
+  },
   "scripts": {
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",

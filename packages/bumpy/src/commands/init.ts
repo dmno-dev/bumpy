@@ -23,7 +23,7 @@ export async function initCommand(rootDir: string): Promise<void> {
   // Write a README explaining the directory
   await writeText(
     resolve(bumpyDir, 'README.md'),
-    `# Bumpy\n\nThis directory is used by [bumpy](https://github.com/dmno-dev/bumpy) to manage versioning.\n\nChangeset files (\`.md\`) in this directory describe pending version bumps.\nRun \`bumpy add\` to create a new changeset.\n`,
+    `# 🐸 Bumpy\n\nThis directory is used by [bumpy](https://github.com/dmno-dev/bumpy) to manage versioning.\n\nChangeset files (\`.md\`) in this directory describe pending version bumps.\nRun \`bumpy add\` to create a new changeset.\n`,
   );
 
   log.success('Initialized .bumpy/ directory');

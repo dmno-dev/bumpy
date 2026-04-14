@@ -1,24 +1,32 @@
 {
-  "name": "@dmno-dev/bumpy",
+  "name": "@varlock/bumpy",
   "version": "0.0.0",
   "description": "Modern monorepo versioning and changelog tool",
   "bin": {
-    "bumpy": "./src/cli.ts"
+    "bumpy": "./dist/cli.mjs"
   },
+  "files": [
+    "dist",
+    ".claude-plugin",
+    "skills"
+  ],
   "type": "module",
-  "scripts": {
-    "test": "bun test"
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "types": "./dist/index.d.mts"
+    }
   },
-  "dependencies": {
-    "js-yaml": "^4.1.0",
-    "semver": "^7.7.2"
+  "scripts": {
+    "build": "tsdown",
+    "test": "bun test"
   },
   "devDependencies": {
     "@types/bun": "latest",
     "@types/js-yaml": "^4.0.9",
-    "@types/semver": "^7.7.0"
-  },
-  "peerDependencies": {
-    "typescript": "^5"
+    "@types/semver": "^7.7.0",
+    "js-yaml": "^4.1.0",
+    "semver": "^7.7.2",
+    "tsdown": "catalog:"
   }
 }

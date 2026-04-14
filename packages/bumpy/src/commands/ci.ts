@@ -162,7 +162,7 @@ async function createVersionPr(rootDir: string, plan: ReleasePlan, branchName?: 
     log.success(`Updated PR #${existingPr}`);
   } else {
     log.step('Creating version PR...');
-    const prTitle = 'Version Packages';
+    const prTitle = '🐸 Version Packages';
     const result = await runAsync(
       `gh pr create --title "${prTitle}" --body "${escapeShell(prBody)}" --base "${baseBranch}" --head "${branch}"`,
       { cwd: rootDir },
@@ -178,7 +178,7 @@ async function createVersionPr(rootDir: string, plan: ReleasePlan, branchName?: 
 
 function formatReleasePlanComment(plan: ReleasePlan, changesetCount: number): string {
   const lines: string[] = [];
-  lines.push('## 📦 Bumpy Release Plan\n');
+  lines.push('## 🐸 Bumpy Release Plan\n');
   lines.push(`**${changesetCount}** changeset(s) → **${plan.releases.length}** package(s) to release\n`);
 
   const groups: [string, PlannedRelease[]][] = [
@@ -206,7 +206,7 @@ function formatReleasePlanComment(plan: ReleasePlan, changesetCount: number): st
 
 function formatNoChangesetsComment(): string {
   return [
-    '## 📦 Bumpy Release Plan\n',
+    '## 🐸 Bumpy Release Plan\n',
     'No changesets found in this PR. If this PR should trigger a release, run:\n',
     '```bash',
     'bumpy add',

@@ -1,4 +1,4 @@
-# @varlock/bumpy
+# 🐸 @varlock/bumpy
 
 A modern monorepo versioning and changelog tool. Built as a replacement for [@changesets/changesets](https://github.com/changesets/changesets) — simpler, more flexible, and with sane defaults.
 
