@@ -119,6 +119,23 @@ jobs:
 
 Or use `bumpy ci release --auto-publish` to version + publish directly without a PR.
 
+## AI Integration
+
+Bumpy ships with an AI skill that teaches LLMs how to create changesets.
+
+```bash
+# Claude Code — install as a plugin
+claude plugin install @dmno-dev/bumpy
+# then use /bumpy:add-change
+
+# OpenCode / Cursor / Codex — copy a command file into your project
+bumpy ai setup --target opencode
+bumpy ai setup --target cursor
+bumpy ai setup --target codex
+```
+
+The skill teaches the AI to examine git changes, identify affected packages, choose bump levels, and run `bumpy add` with the right arguments.
+
 ## Documentation
 
 See [llms.md](./llms.md) for the full configuration reference, CLI reference, and usage examples.
@@ -144,6 +161,9 @@ bun src/cli.ts --help
 - [x] Migration from changesets (`bumpy migrate`)
 - [x] GitHub releases (individual + aggregate)
 - [x] CI commands (`bumpy ci check` / `bumpy ci release`) — no separate action needed
+- [x] Conventional commits bridge (`bumpy generate`)
+- [x] Pluggable changelog formatters (default, github, custom .ts/.js)
+- [x] AI integration (Claude Code plugin + `bumpy ai setup` for OpenCode, Cursor, Codex)
 - [x] 47 tests passing
 - [ ] Prerelease mode (deferred — use pkg.pr.new for preview packages)
 - [ ] Bun standalone binary build

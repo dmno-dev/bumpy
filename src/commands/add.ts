@@ -29,7 +29,6 @@ const BUMP_CHOICES: { label: string; value: BumpTypeWithIsolated }[] = [
   { label: "major", value: "major" },
   { label: "patch (isolated - no cascade)", value: "patch-isolated" },
   { label: "minor (isolated - no cascade)", value: "minor-isolated" },
-  { label: "major (isolated - no cascade)", value: "major-isolated" },
 ];
 
 export async function addCommand(rootDir: string, opts: AddOptions): Promise<void> {
