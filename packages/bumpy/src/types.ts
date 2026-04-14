@@ -107,6 +107,8 @@ export interface PackageConfig {
   buildCommand?: string;
   registry?: string;
   skipNpmPublish?: boolean;
+  /** Command to check if a version is already published. Should output the published version string. */
+  checkPublished?: string;
   dependencyBumpRules?: Partial<Record<DepType, DependencyBumpRule>>;
   specificDependencyRules?: Record<string, DependencyBumpRule>;
   cascadeTo?: Record<string, DependencyBumpRule>;
@@ -142,6 +144,7 @@ export const DEFAULT_CONFIG: BumpyConfig = {
       '<img src="https://raw.githubusercontent.com/dmno-dev/bumpy/main/images/frog-talking.png" alt="bumpy" width="60" align="left" style="image-rendering: pixelated;" />',
       '',
       'This PR was created and will be kept in sync by [bumpy](https://github.com/dmno-dev/bumpy) based on your .bumpy changeset files. Merge it when you are ready to release the packages listed below:',
+      '<br clear="left" />',
     ].join('\n'),
   },
 };

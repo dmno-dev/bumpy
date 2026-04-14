@@ -89,7 +89,11 @@ export async function ciReleaseCommand(rootDir: string, opts: ReleaseOptions): P
   const changesets = await readChangesets(rootDir);
 
   if (changesets.length === 0) {
-    log.info('No pending changesets. Nothing to release.');
+    // No changesets — check if there are unpublished packages to publish
+    // (this handles the case where a version PR was just merged)
+    log.info('No pending changesets — checking for unpublished packages...');
+    const { publishCommand } = await import('./publish.ts');
+    await publishCommand(rootDir, { tag: opts.tag });
     return;
   }
 
