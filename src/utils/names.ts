@@ -1,0 +1,36 @@
+/** Generate a random adjective-noun name for changeset files */
+export function randomName(): string {
+  const adj = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)]!;
+  const noun = NOUNS[Math.floor(Math.random() * NOUNS.length)]!;
+  return `${adj}-${noun}`;
+}
+
+/** Sanitize a user-provided name into a valid filename slug */
+export function slugify(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+const ADJECTIVES = [
+  "brave", "calm", "dark", "eager", "fair", "gentle", "happy", "icy",
+  "jolly", "keen", "lively", "merry", "neat", "odd", "proud", "quiet",
+  "rare", "shy", "tall", "warm", "young", "bold", "cool", "dry",
+  "fast", "glad", "huge", "kind", "lazy", "mild", "new", "old",
+  "pink", "red", "safe", "thin", "vast", "wide", "witty", "zany",
+  "bright", "clean", "deep", "fresh", "grand", "light", "pure", "rich",
+  "sharp", "smooth", "soft", "swift", "tough", "wild", "wise", "tidy",
+  "silver", "golden", "copper", "amber", "coral", "jade", "violet", "rusty",
+];
+
+const NOUNS = [
+  "ant", "bee", "cat", "dog", "elk", "fox", "gnu", "hen",
+  "ibis", "jay", "koi", "lark", "moth", "newt", "owl", "pug",
+  "quail", "ram", "seal", "toad", "urchin", "vole", "wasp", "yak",
+  "bass", "clam", "dove", "eel", "frog", "goat", "hawk", "igloo",
+  "jade", "kite", "lake", "moon", "nest", "oak", "pine", "reef",
+  "star", "tree", "wave", "fern", "lily", "rose", "sage", "vine",
+  "dawn", "dusk", "mist", "rain", "snow", "wind", "glow", "haze",
+  "crab", "deer", "finch", "heron", "crane", "robin", "swift", "trout",
+];

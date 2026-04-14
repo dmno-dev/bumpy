@@ -1,0 +1,10 @@
+{
+  "name": "pkg-c",
+  "version": "1.5.0",
+  "dependencies": {
+    "pkg-b": "^2.0.0"
+  },
+  "peerDependencies": {
+    "pkg-a": "^1.0.0"
+  }
+}

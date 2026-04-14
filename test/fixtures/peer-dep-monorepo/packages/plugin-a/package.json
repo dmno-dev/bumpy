@@ -1,0 +1,10 @@
+{
+  "name": "@myorg/plugin-a",
+  "version": "1.0.0",
+  "dependencies": {
+    "@myorg/core": "^1.0.0"
+  },
+  "peerDependencies": {
+    "@myorg/core": "^1.0.0"
+  }
+}

@@ -1,0 +1,132 @@
+import { resolve } from "node:path";
+import { readJson, exists } from "../utils/fs.ts";
+import {
+  type BumpyConfig,
+  type PackageConfig,
+  DEFAULT_CONFIG,
+} from "../types.ts";
+
+const BUMPY_DIR = ".bumpy";
+const CONFIG_FILE = "config.json";
+
+/** Find the monorepo root by walking up from cwd looking for .bumpy/ */
+export async function findRoot(startDir: string = process.cwd()): Promise<string> {
+  let dir = resolve(startDir);
+  while (true) {
+    if (await exists(resolve(dir, BUMPY_DIR))) return dir;
+    // Also check for package.json with workspaces as a fallback
+    if (await exists(resolve(dir, "package.json"))) {
+      try {
+        const pkg = await readJson<Record<string, unknown>>(resolve(dir, "package.json"));
+        if (pkg.workspaces) return dir;
+      } catch {
+        // ignore
+      }
+    }
+    const parent = resolve(dir, "..");
+    if (parent === dir) break; // reached filesystem root
+    dir = parent;
+  }
+  // Default to cwd if nothing found
+  return resolve(startDir);
+}
+
+/** Load the root bumpy config, merging with defaults */
+export async function loadConfig(rootDir: string): Promise<BumpyConfig> {
+  const configPath = resolve(rootDir, BUMPY_DIR, CONFIG_FILE);
+  let userConfig: Partial<BumpyConfig> = {};
+  if (await exists(configPath)) {
+    userConfig = await readJson<Partial<BumpyConfig>>(configPath);
+  }
+  return mergeConfig(DEFAULT_CONFIG, userConfig);
+}
+
+/** Load per-package bumpy config from package.json["bumpy"] or .bumpy.config.json */
+export async function loadPackageConfig(
+  pkgDir: string,
+  rootConfig: BumpyConfig,
+  pkgName: string,
+): Promise<PackageConfig> {
+  // Start with what's in the root config's packages map
+  const rootPkgConfig = findPackageConfig(rootConfig, pkgName);
+
+  // Layer on package.json["bumpy"]
+  let pkgJsonConfig: PackageConfig = {};
+  try {
+    const pkg = await readJson<Record<string, unknown>>(resolve(pkgDir, "package.json"));
+    if (pkg.bumpy && typeof pkg.bumpy === "object") {
+      pkgJsonConfig = pkg.bumpy as PackageConfig;
+    }
+  } catch {
+    // ignore
+  }
+
+  // Merge: root packages map → package.json["bumpy"] (later wins)
+  return mergePackageConfig(rootPkgConfig, pkgJsonConfig);
+}
+
+/** Find a package config from the root config, supporting glob patterns */
+function findPackageConfig(config: BumpyConfig, pkgName: string): PackageConfig {
+  // Exact match first
+  if (config.packages[pkgName]) return config.packages[pkgName];
+  // Try glob matches
+  for (const [pattern, pkgConfig] of Object.entries(config.packages)) {
+    if (matchGlob(pkgName, pattern)) return pkgConfig;
+  }
+  return {};
+}
+
+/** Simple glob matching for package names (supports * and **) */
+export function matchGlob(name: string, pattern: string): boolean {
+  // Exact match
+  if (name === pattern) return true;
+  // Convert glob to regex
+  const regexStr = pattern
+    .replace(/[.+^${}()|[\]\\]/g, "\\$&") // escape regex special chars
+    .replace(/\*\*/g, "{{DOUBLE}}") // placeholder for **
+    .replace(/\*/g, "[^/]*") // * matches anything except /
+    .replace(/{{DOUBLE}}/g, ".*"); // ** matches anything
+  const regex = new RegExp(`^${regexStr}$`);
+  return regex.test(name);
+}
+
+function mergeConfig(defaults: BumpyConfig, user: Partial<BumpyConfig>): BumpyConfig {
+  return {
+    ...defaults,
+    ...user,
+    dependencyBumpRules: {
+      ...defaults.dependencyBumpRules,
+      ...user.dependencyBumpRules,
+    },
+    privatePackages: {
+      ...defaults.privatePackages,
+      ...user.privatePackages,
+    },
+    packages: {
+      ...defaults.packages,
+      ...user.packages,
+    },
+  };
+}
+
+function mergePackageConfig(...configs: PackageConfig[]): PackageConfig {
+  const result: PackageConfig = {};
+  for (const cfg of configs) {
+    Object.assign(result, cfg);
+    // Deep merge nested objects
+    if (cfg.dependencyBumpRules) {
+      result.dependencyBumpRules = { ...result.dependencyBumpRules, ...cfg.dependencyBumpRules };
+    }
+    if (cfg.specificDependencyRules) {
+      result.specificDependencyRules = { ...result.specificDependencyRules, ...cfg.specificDependencyRules };
+    }
+    if (cfg.cascadeTo) {
+      result.cascadeTo = { ...result.cascadeTo, ...cfg.cascadeTo };
+    }
+  }
+  return result;
+}
+
+export function getBumpyDir(rootDir: string): string {
+  return resolve(rootDir, BUMPY_DIR);
+}
