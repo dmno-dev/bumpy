@@ -1,4 +1,4 @@
 {
   "baseBranch": "main",
-  "changelog": "default"
+  "changelog": "./changelog-formatter.ts"
 }
