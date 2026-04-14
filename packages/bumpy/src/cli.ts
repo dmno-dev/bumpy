@@ -89,6 +89,13 @@ async function main() {
         break;
       }
 
+      case 'check': {
+        const rootDir = await findRoot();
+        const { checkCommand } = await import('./commands/check.ts');
+        await checkCommand(rootDir);
+        break;
+      }
+
       case 'ci': {
         const rootDir = await findRoot();
         const subcommand = args[1];
@@ -178,6 +185,7 @@ function printHelp() {
     add                     Create a new changeset
     generate                Generate changeset from conventional commits
     status                  Show pending releases
+    check                   Verify changed packages have changesets (for pre-push hooks)
     version                 Apply changesets and bump versions
     publish                 Publish versioned packages
     ci check                PR check — report pending releases, comment on PR

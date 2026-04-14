@@ -121,6 +121,12 @@ Custom changelog formatters with full context (release info, changesets, dates).
 
 `bumpy ci check` and `bumpy ci release` handle PR checks and release automation without needing a separate GitHub Action or bot installation. Just `bunx @varlock/bumpy ci check` in any workflow.
 
+### Local changeset verification
+
+`bumpy check` verifies that all changed packages on the current branch have corresponding changesets. Designed for pre-push hooks — compares your branch to the base branch, maps changed files to packages, and exits non-zero if any are missing. No GitHub API needed.
+
+Changesets has no built-in equivalent — users rely on the CI bot comment to catch missing changesets after pushing.
+
 ---
 
 ## Planned / Not Yet Implemented
