@@ -1,16 +1,21 @@
 import { resolve, relative } from "node:path";
 import { readdir, stat } from "node:fs/promises";
 import { readJson, exists } from "../utils/fs.ts";
-import { detectWorkspaces } from "../utils/package-manager.ts";
+import { detectWorkspaces, type CatalogMap } from "../utils/package-manager.ts";
 import { loadPackageConfig } from "./config.ts";
 import type { BumpyConfig, WorkspacePackage } from "../types.ts";
 
-/** Discover all workspace packages in a monorepo */
-export async function discoverPackages(
+export interface WorkspaceDiscoveryResult {
+  packages: Map<string, WorkspacePackage>;
+  catalogs: CatalogMap;
+}
+
+/** Discover all workspace packages and catalogs in a monorepo */
+export async function discoverWorkspace(
   rootDir: string,
   config: BumpyConfig,
-): Promise<Map<string, WorkspacePackage>> {
-  const { globs } = await detectWorkspaces(rootDir);
+): Promise<WorkspaceDiscoveryResult> {
+  const { globs, catalogs } = await detectWorkspaces(rootDir);
   if (globs.length === 0) {
     throw new Error("No workspace globs found. Is this a monorepo?");
   }
@@ -26,6 +31,15 @@ export async function discoverPackages(
       }
     }
   }
+  return { packages, catalogs };
+}
+
+/** Convenience wrapper that returns just packages (backwards compat) */
+export async function discoverPackages(
+  rootDir: string,
+  config: BumpyConfig,
+): Promise<Map<string, WorkspacePackage>> {
+  const { packages } = await discoverWorkspace(rootDir, config);
   return packages;
 }
 
