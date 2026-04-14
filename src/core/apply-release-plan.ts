@@ -1,7 +1,12 @@
 import { resolve } from "node:path";
 import { readJson, writeJson, readText, writeText, exists } from "../utils/fs.ts";
 import { deleteChangesets } from "./changeset.ts";
-import { generateChangelogEntry, prependToChangelog } from "./changelog.ts";
+import {
+  generateChangelogEntry,
+  prependToChangelog,
+  loadFormatter,
+  type ChangelogFormatter,
+} from "./changelog.ts";
 import { stripProtocol } from "./semver.ts";
 import type {
   ReleasePlan,
@@ -17,6 +22,7 @@ export async function applyReleasePlan(
   config: BumpyConfig,
 ): Promise<void> {
   const releaseMap = new Map(releasePlan.releases.map((r) => [r.name, r]));
+  const formatter = await loadFormatter(config.changelog, rootDir);
 
   // 1. Update package.json versions and internal dependency ranges
   for (const release of releasePlan.releases) {
@@ -46,7 +52,7 @@ export async function applyReleasePlan(
     const pkg = packages.get(release.name)!;
     const changelogPath = resolve(pkg.dir, "CHANGELOG.md");
 
-    const entry = generateChangelogEntry(release, releasePlan.changesets);
+    const entry = await generateChangelogEntry(release, releasePlan.changesets, formatter);
     let existingContent = "";
     if (await exists(changelogPath)) {
       existingContent = await readText(changelogPath);
