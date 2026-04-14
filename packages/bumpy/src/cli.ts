@@ -2,7 +2,6 @@
 
 import { findRoot } from './core/config.ts';
 import { log, colorize } from './utils/logger.ts';
-import { getVersion, getWebsiteUrl } from './version-info.ts';
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -153,7 +152,7 @@ async function main() {
 
       case '--version':
       case '-v':
-        console.log(`bumpy ${getVersion()}`);
+        console.log(`bumpy ${__BUMPY_VERSION__}`);
         break;
 
       case 'help':
@@ -176,7 +175,7 @@ async function main() {
 
 function printHelp() {
   console.log(`
-  ${colorize(`🐸 bumpy v${getVersion()}`, 'bold')} - Modern monorepo versioning
+  ${colorize(`🐸 bumpy v${__BUMPY_VERSION__}`, 'bold')} - Modern monorepo versioning
 
   Usage: bumpy <command> [options]
 
@@ -229,7 +228,7 @@ function printHelp() {
   AI setup options:
     --target <tool>         Target AI tool: opencode, cursor, codex
 
-  ${colorize(getWebsiteUrl(), 'dim')}
+  ${colorize(__BUMPY_WEBSITE_URL__, 'dim')}
 `);
 }
 

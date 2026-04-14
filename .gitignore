@@ -14,6 +14,7 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 .env.local
 .env.*.local
+env.d.ts
 
 *.tsbuildinfo
 

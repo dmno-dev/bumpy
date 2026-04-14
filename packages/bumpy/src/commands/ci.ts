@@ -224,7 +224,7 @@ function formatReleasePlanComment(plan: ReleasePlan, changesetCount: number): st
   }
 
   lines.push('---');
-  lines.push('_This comment is maintained by [bumpy](https://github.com/dmno-dev/bumpy)._');
+  lines.push(`_This comment is maintained by [bumpy](${__BUMPY_WEBSITE_URL__})._`);
   return lines.join('\n');
 }
 
@@ -236,7 +236,7 @@ function formatNoChangesetsComment(): string {
     'bumpy add',
     '```\n',
     '---',
-    '_This comment is maintained by [bumpy](https://github.com/dmno-dev/bumpy)._',
+    `_This comment is maintained by [bumpy](${__BUMPY_WEBSITE_URL__})._`,
   ].join('\n');
 }
 
