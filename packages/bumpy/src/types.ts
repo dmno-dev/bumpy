@@ -141,9 +141,9 @@ export const DEFAULT_CONFIG: BumpyConfig = {
     title: '🐸 Versioned release',
     branch: 'bumpy/version-packages',
     preamble: [
-      '<img src="https://raw.githubusercontent.com/dmno-dev/bumpy/main/images/frog-talking.png" alt="bumpy" width="60" align="left" style="image-rendering: pixelated;" />',
+      `<a href="${__BUMPY_WEBSITE_URL__}"><img src="https://raw.githubusercontent.com/dmno-dev/bumpy/main/images/frog-talking.png" alt="bumpy" width="60" align="left" style="image-rendering: pixelated;" alt="Hi! I'm bumpy!" /></a>`,
       '',
-      'This PR was created and will be kept in sync by [bumpy](https://github.com/dmno-dev/bumpy) based on your .bumpy changeset files. Merge it when you are ready to release the packages listed below:',
+      `This PR was created and will be kept in sync by [bumpy](${__BUMPY_WEBSITE_URL__}) based on your .bumpy changeset files. Merge it when you are ready to release the packages listed below:`,
       '<br clear="left" />',
     ].join('\n'),
   },

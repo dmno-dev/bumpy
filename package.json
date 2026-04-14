@@ -22,6 +22,7 @@
     "@varlock/bumpy": "workspace:*",
     "lefthook": "^2.1.5",
     "oxfmt": "^0.45.0",
-    "oxlint": "^1.60.0"
+    "oxlint": "^1.60.0",
+    "varlock": "^0.8.1"
   }
 }
