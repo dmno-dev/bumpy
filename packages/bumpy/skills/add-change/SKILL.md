@@ -1,7 +1,7 @@
 ---
 name: add-change
 description: Create a bumpy changeset describing which packages changed and how, for version bumping and changelog generation. Use when the user wants to record a change, add a changeset, or prepare packages for release.
-argument-hint: "[description of changes]"
+argument-hint: '[description of changes]'
 allowed-tools: Read Grep Glob Bash Edit Write
 ---
 
@@ -28,6 +28,7 @@ Review the diff output to understand the scope of changes.
 Determine which workspace packages are affected by the changes. Map changed files to their packages based on directory structure.
 
 If unsure which packages exist, run:
+
 ```bash
 bumpy status --packages 2>/dev/null || cat package.json
 ```
@@ -36,13 +37,14 @@ bumpy status --packages 2>/dev/null || cat package.json
 
 For each affected package, choose the appropriate bump level:
 
-| Level | When to use |
-|-------|-------------|
+| Level     | When to use                                                                             |
+| --------- | --------------------------------------------------------------------------------------- |
 | **major** | Breaking changes: removed/renamed exports, changed function signatures, dropped support |
-| **minor** | New features: added exports, new options, new functionality |
-| **patch** | Bug fixes, internal refactors, documentation, dependency updates |
+| **minor** | New features: added exports, new options, new functionality                             |
+| **patch** | Bug fixes, internal refactors, documentation, dependency updates                        |
 
 Append `-isolated` (e.g., `patch-isolated`) if the change is purely internal and dependents should NOT be bumped. Use this for:
+
 - Internal refactors with no API changes
 - Dev tooling / test changes
 - Documentation-only changes
@@ -50,6 +52,7 @@ Append `-isolated` (e.g., `patch-isolated`) if the change is purely internal and
 ### 4. Write a clear summary
 
 Write a concise summary (1-3 sentences) describing **what** changed and **why**. This becomes the CHANGELOG entry. Good summaries:
+
 - Start with a verb: "Added...", "Fixed...", "Refactored..."
 - Focus on user-facing impact, not implementation details
 - Are specific enough to be useful months later

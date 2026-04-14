@@ -1,22 +1,16 @@
-import { resolve } from "node:path";
-import yaml from "js-yaml";
-import { readText, writeText, listFiles, removeFile } from "../utils/fs.ts";
-import { getBumpyDir } from "./config.ts";
-import type {
-  Changeset,
-  ChangesetRelease,
-  ChangesetReleaseCascade,
-  BumpType,
-  BumpTypeWithIsolated,
-} from "../types.ts";
+import { resolve } from 'node:path';
+import yaml from 'js-yaml';
+import { readText, writeText, listFiles, removeFile } from '../utils/fs.ts';
+import { getBumpyDir } from './config.ts';
+import type { Changeset, ChangesetRelease, ChangesetReleaseCascade, BumpType, BumpTypeWithIsolated } from '../types.ts';
 
 /** Read all changeset files from .bumpy/ directory */
 export async function readChangesets(rootDir: string): Promise<Changeset[]> {
   const dir = getBumpyDir(rootDir);
-  const files = await listFiles(dir, ".md");
+  const files = await listFiles(dir, '.md');
   const changesets: Changeset[] = [];
   for (const file of files) {
-    if (file === "README.md") continue;
+    if (file === 'README.md') continue;
     const cs = await parseChangesetFile(resolve(dir, file));
     if (cs) changesets.push(cs);
   }
@@ -38,14 +32,14 @@ export function parseChangeset(content: string, id: string): Changeset | null {
   const summary = match[2]!.trim();
 
   const parsed = yaml.load(frontmatter) as Record<string, unknown>;
-  if (!parsed || typeof parsed !== "object") return null;
+  if (!parsed || typeof parsed !== 'object') return null;
 
   const releases: ChangesetRelease[] = [];
   for (const [name, value] of Object.entries(parsed)) {
-    if (typeof value === "string") {
+    if (typeof value === 'string') {
       // Simple format: "pkg-name": minor
       releases.push({ name, type: value as BumpTypeWithIsolated });
-    } else if (value && typeof value === "object") {
+    } else if (value && typeof value === 'object') {
       // Nested format: "pkg-name": { bump: minor, cascade: { ... } }
       const obj = value as { bump: BumpTypeWithIsolated; cascade?: Record<string, BumpType> };
       const release: ChangesetReleaseCascade = {
@@ -74,7 +68,7 @@ export async function writeChangeset(
   // Build frontmatter object
   const frontmatter: Record<string, unknown> = {};
   for (const release of releases) {
-    if ("cascade" in release && Object.keys(release.cascade).length > 0) {
+    if ('cascade' in release && Object.keys(release.cascade).length > 0) {
       frontmatter[release.name] = { bump: release.type, cascade: release.cascade };
     } else {
       frontmatter[release.name] = release.type;
@@ -96,6 +90,6 @@ export async function deleteChangesets(rootDir: string, ids: string[]): Promise<
 }
 
 function fileToId(filePath: string): string {
-  const base = filePath.split("/").pop()!;
-  return base.replace(/\.md$/, "");
+  const base = filePath.split('/').pop()!;
+  return base.replace(/\.md$/, '');
 }

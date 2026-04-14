@@ -11,6 +11,7 @@ Changesets is mature and widely adopted, but has stagnated. The community has hu
 Changesets hardcodes aggressive behavior: a **minor** bump on a package triggers a **major** bump on all packages that peer-depend on it. This is the #1 community complaint with 8+ open issues and no fix in sight.
 
 Bumpy makes this **fully configurable** at multiple levels, with sensible defaults:
+
 - **Global rules by dependency type** — e.g., peer dep bumps only propagate on major (not minor)
 - **Per-package overrides** — in `package.json["bumpy"]`
 - **Per-specific-dependency rules** — "when core bumps, bump me at X"

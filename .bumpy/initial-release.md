@@ -1,5 +1,5 @@
 ---
-"@varlock/bumpy": patch
+'@varlock/bumpy': patch
 ---
 
 Initial release of bumpy - a modern monorepo versioning and changelog tool.

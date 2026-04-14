@@ -1,19 +1,13 @@
-import { resolve } from "node:path";
-import { unlink } from "node:fs/promises";
-import { readJson, writeJson, readText } from "../utils/fs.ts";
-import { runAsync } from "../utils/shell.ts";
-import { log, colorize } from "../utils/logger.ts";
-import { createTag, tagExists } from "./git.ts";
-import { DependencyGraph } from "./dep-graph.ts";
-import { stripProtocol } from "./semver.ts";
-import { resolveCatalogDep, type CatalogMap } from "../utils/package-manager.ts";
-import type {
-  ReleasePlan,
-  PlannedRelease,
-  WorkspacePackage,
-  BumpyConfig,
-  PackageManager,
-} from "../types.ts";
+import { resolve } from 'node:path';
+import { unlink } from 'node:fs/promises';
+import { readJson, writeJson } from '../utils/fs.ts';
+import { runAsync } from '../utils/shell.ts';
+import { log, colorize } from '../utils/logger.ts';
+import { createTag, tagExists } from './git.ts';
+import { DependencyGraph } from './dep-graph.ts';
+import { stripProtocol } from './semver.ts';
+import { resolveCatalogDep, type CatalogMap } from '../utils/package-manager.ts';
+import type { ReleasePlan, PlannedRelease, WorkspacePackage, BumpyConfig, PackageManager } from '../types.ts';
 
 export interface PublishOptions {
   dryRun?: boolean;
@@ -38,13 +32,13 @@ export async function publishPackages(
   rootDir: string,
   opts: PublishOptions = {},
   catalogs: CatalogMap = new Map(),
-  detectedPm: PackageManager = "npm",
+  detectedPm: PackageManager = 'npm',
 ): Promise<PublishResult> {
   const result: PublishResult = { published: [], skipped: [], failed: [] };
   const publishConfig = config.publish;
 
   // Resolve "auto" pack manager to detected PM
-  const packManager = publishConfig.packManager === "auto" ? detectedPm : publishConfig.packManager;
+  const packManager = publishConfig.packManager === 'auto' ? detectedPm : publishConfig.packManager;
 
   // Topological sort for correct publish order
   const topoOrder = depGraph.topologicalSort(packages);
@@ -66,11 +60,11 @@ export async function publishPackages(
       if (config.privatePackages.tag) {
         createGitTag(release, rootDir, opts);
       }
-      result.skipped.push({ name: release.name, reason: "private" });
+      result.skipped.push({ name: release.name, reason: 'private' });
       continue;
     }
 
-    log.step(`Publishing ${colorize(release.name, "cyan")}@${release.newVersion}`);
+    log.step(`Publishing ${colorize(release.name, 'cyan')}@${release.newVersion}`);
 
     try {
       // 1. Build
@@ -83,9 +77,7 @@ export async function publishPackages(
 
       // 2. Resolve workspace:/catalog: protocols if using in-place mode
       //    (for pack mode, the PM pack command handles this; for custom commands, always resolve)
-      const needsInPlaceResolve =
-        pkgConfig.publishCommand ||
-        publishConfig.protocolResolution === "in-place";
+      const needsInPlaceResolve = pkgConfig.publishCommand || publishConfig.protocolResolution === 'in-place';
       if (needsInPlaceResolve) {
         // Always write resolved protocols — dryRun only skips the actual publish command
         await resolveProtocolsInPlace(pkg, packages, releasePlan, catalogs);
@@ -99,9 +91,7 @@ export async function publishPackages(
           : [pkgConfig.publishCommand];
 
         for (const cmd of commands) {
-          const expanded = cmd
-            .replace(/\{\{version\}\}/g, release.newVersion)
-            .replace(/\{\{name\}\}/g, release.name);
+          const expanded = cmd.replace(/\{\{version\}\}/g, release.newVersion).replace(/\{\{name\}\}/g, release.name);
           log.dim(`  Running: ${expanded}`);
           if (!opts.dryRun) {
             await runAsync(expanded, { cwd: pkg.dir });
@@ -109,14 +99,14 @@ export async function publishPackages(
         }
       } else if (!pkgConfig.skipNpmPublish) {
         // Standard publish flow
-        if (publishConfig.protocolResolution === "pack") {
+        if (publishConfig.protocolResolution === 'pack') {
           await packThenPublish(pkg, pkgConfig, config, packManager, opts);
         } else {
           // "in-place" already resolved above; "none" skips resolution
           await npmPublishDirect(pkg, pkgConfig, config, opts);
         }
       } else {
-        result.skipped.push({ name: release.name, reason: "skipNpmPublish" });
+        result.skipped.push({ name: release.name, reason: 'skipNpmPublish' });
         createGitTag(release, rootDir, opts);
         continue;
       }
@@ -142,7 +132,7 @@ export async function publishPackages(
  */
 async function packThenPublish(
   pkg: WorkspacePackage,
-  pkgConfig: WorkspacePackage["bumpy"] & {},
+  pkgConfig: WorkspacePackage['bumpy'] & {},
   config: BumpyConfig,
   packManager: PackageManager,
   opts: PublishOptions,
@@ -151,7 +141,7 @@ async function packThenPublish(
   log.dim(`  Packing with: ${packCmd}`);
 
   if (opts.dryRun) {
-    const publishCmd = buildPublishCommand(pkg, pkgConfig, config, opts, "<tarball>");
+    const publishCmd = buildPublishCommand(pkg, pkgConfig, config, opts, '<tarball>');
     log.dim(`  Would publish with: ${publishCmd}`);
     return;
   }
@@ -168,14 +158,18 @@ async function packThenPublish(
     await runAsync(publishCmd, { cwd: pkg.dir });
   } finally {
     // Clean up tarball
-    try { await unlink(tarball); } catch { /* ignore */ }
+    try {
+      await unlink(tarball);
+    } catch {
+      /* ignore */
+    }
   }
 }
 
 /** Publish directly from the package directory (no tarball) */
 async function npmPublishDirect(
   pkg: WorkspacePackage,
-  pkgConfig: WorkspacePackage["bumpy"] & {},
+  pkgConfig: WorkspacePackage['bumpy'] & {},
   config: BumpyConfig,
   opts: PublishOptions,
 ): Promise<void> {
@@ -188,17 +182,21 @@ async function npmPublishDirect(
 
 function getPackCommand(pm: PackageManager): string {
   switch (pm) {
-    case "pnpm": return "pnpm pack";
-    case "bun": return "bun pm pack";
-    case "yarn": return "yarn pack";
-    case "npm":
-    default: return "npm pack";
+    case 'pnpm':
+      return 'pnpm pack';
+    case 'bun':
+      return 'bun pm pack';
+    case 'yarn':
+      return 'yarn pack';
+    case 'npm':
+    default:
+      return 'npm pack';
   }
 }
 
 function buildPublishCommand(
   pkg: WorkspacePackage,
-  pkgConfig: WorkspacePackage["bumpy"] & {},
+  pkgConfig: WorkspacePackage['bumpy'] & {},
   config: BumpyConfig,
   opts: PublishOptions,
   tarball?: string,
@@ -207,8 +205,8 @@ function buildPublishCommand(
   const parts: string[] = [];
 
   // Base command
-  if (publishManager === "yarn") {
-    parts.push("yarn npm publish");
+  if (publishManager === 'yarn') {
+    parts.push('yarn npm publish');
   } else {
     parts.push(`${publishManager} publish`);
   }
@@ -231,27 +229,23 @@ function buildPublishCommand(
     parts.push(...config.publish.publishArgs);
   }
 
-  return parts.join(" ");
+  return parts.join(' ');
 }
 
 /** Parse the tarball path from pack command output */
 function parseTarballPath(output: string, cwd: string): string {
   // Most PMs output the tarball filename on the last non-empty line
-  const lines = output.trim().split("\n").filter(Boolean);
-  const lastLine = lines[lines.length - 1]?.trim() || "";
+  const lines = output.trim().split('\n').filter(Boolean);
+  const lastLine = lines[lines.length - 1]?.trim() || '';
 
   // If it's an absolute path, use it directly
-  if (lastLine.startsWith("/")) return lastLine;
+  if (lastLine.startsWith('/')) return lastLine;
 
   // Otherwise treat it as relative to cwd
   return resolve(cwd, lastLine);
 }
 
-function createGitTag(
-  release: PlannedRelease,
-  rootDir: string,
-  opts: PublishOptions,
-): void {
+function createGitTag(release: PlannedRelease, rootDir: string, opts: PublishOptions): void {
   const tag = `${release.name}@${release.newVersion}`;
   if (opts.dryRun) {
     log.dim(`  Would create tag: ${tag}`);
@@ -275,33 +269,33 @@ async function resolveProtocolsInPlace(
   releasePlan: ReleasePlan,
   catalogs: CatalogMap,
 ): Promise<void> {
-  const pkgJsonPath = resolve(pkg.dir, "package.json");
+  const pkgJsonPath = resolve(pkg.dir, 'package.json');
   const pkgJson = await readJson<Record<string, unknown>>(pkgJsonPath);
   let modified = false;
 
   const releaseMap = new Map(releasePlan.releases.map((r) => [r.name, r]));
 
-  for (const depField of ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"] as const) {
+  for (const depField of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'] as const) {
     const deps = pkgJson[depField] as Record<string, string> | undefined;
     if (!deps) continue;
 
     for (const [depName, range] of Object.entries(deps)) {
       let resolved: string | null = null;
 
-      if (range.startsWith("catalog:")) {
+      if (range.startsWith('catalog:')) {
         resolved = resolveCatalogDep(depName, range, catalogs);
         if (!resolved) {
           log.warn(`  Could not resolve ${depName}: "${range}" — catalog entry not found`);
           continue;
         }
-      } else if (range.startsWith("workspace:")) {
+      } else if (range.startsWith('workspace:')) {
         const cleanRange = stripProtocol(range);
 
-        if (cleanRange === "*" || cleanRange === "^" || cleanRange === "~") {
+        if (cleanRange === '*' || cleanRange === '^' || cleanRange === '~') {
           const depPkg = packages.get(depName);
           const depRelease = releaseMap.get(depName);
-          const version = depRelease?.newVersion || depPkg?.version || "0.0.0";
-          const prefix = cleanRange === "*" ? "^" : cleanRange;
+          const version = depRelease?.newVersion || depPkg?.version || '0.0.0';
+          const prefix = cleanRange === '*' ? '^' : cleanRange;
           resolved = `${prefix}${version}`;
         } else {
           resolved = cleanRange;

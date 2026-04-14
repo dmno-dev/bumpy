@@ -1,13 +1,9 @@
-import { resolve } from "node:path";
-import { readJson, exists } from "../utils/fs.ts";
-import {
-  type BumpyConfig,
-  type PackageConfig,
-  DEFAULT_CONFIG,
-} from "../types.ts";
+import { resolve } from 'node:path';
+import { readJson, exists } from '../utils/fs.ts';
+import { type BumpyConfig, type PackageConfig, DEFAULT_CONFIG } from '../types.ts';
 
-const BUMPY_DIR = ".bumpy";
-const CONFIG_FILE = "config.json";
+const BUMPY_DIR = '.bumpy';
+const CONFIG_FILE = 'config.json';
 
 /** Find the monorepo root by walking up from cwd looking for .bumpy/ */
 export async function findRoot(startDir: string = process.cwd()): Promise<string> {
@@ -15,15 +11,15 @@ export async function findRoot(startDir: string = process.cwd()): Promise<string
   while (true) {
     if (await exists(resolve(dir, BUMPY_DIR))) return dir;
     // Also check for package.json with workspaces as a fallback
-    if (await exists(resolve(dir, "package.json"))) {
+    if (await exists(resolve(dir, 'package.json'))) {
       try {
-        const pkg = await readJson<Record<string, unknown>>(resolve(dir, "package.json"));
+        const pkg = await readJson<Record<string, unknown>>(resolve(dir, 'package.json'));
         if (pkg.workspaces) return dir;
       } catch {
         // ignore
       }
     }
-    const parent = resolve(dir, "..");
+    const parent = resolve(dir, '..');
     if (parent === dir) break; // reached filesystem root
     dir = parent;
   }
@@ -53,8 +49,8 @@ export async function loadPackageConfig(
   // Layer on package.json["bumpy"]
   let pkgJsonConfig: PackageConfig = {};
   try {
-    const pkg = await readJson<Record<string, unknown>>(resolve(pkgDir, "package.json"));
-    if (pkg.bumpy && typeof pkg.bumpy === "object") {
+    const pkg = await readJson<Record<string, unknown>>(resolve(pkgDir, 'package.json'));
+    if (pkg.bumpy && typeof pkg.bumpy === 'object') {
       pkgJsonConfig = pkg.bumpy as PackageConfig;
     }
   } catch {
@@ -82,10 +78,10 @@ export function matchGlob(name: string, pattern: string): boolean {
   if (name === pattern) return true;
   // Convert glob to regex
   const regexStr = pattern
-    .replace(/[.+^${}()|[\]\\]/g, "\\$&") // escape regex special chars
-    .replace(/\*\*/g, "{{DOUBLE}}") // placeholder for **
-    .replace(/\*/g, "[^/]*") // * matches anything except /
-    .replace(/{{DOUBLE}}/g, ".*"); // ** matches anything
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&') // escape regex special chars
+    .replace(/\*\*/g, '{{DOUBLE}}') // placeholder for **
+    .replace(/\*/g, '[^/]*') // * matches anything except /
+    .replace(/{{DOUBLE}}/g, '.*'); // ** matches anything
   const regex = new RegExp(`^${regexStr}$`);
   return regex.test(name);
 }

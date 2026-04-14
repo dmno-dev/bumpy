@@ -1,0 +1,10 @@
+pre-commit:
+  jobs:
+    - name: lint-fix
+      glob: '*.{js,ts,tsx,jsx}'
+      run: bunx oxlint --fix {staged_files}
+      stage_fixed: true
+    - name: fmt-fix
+      glob: '*.{js,ts,tsx,jsx,json,css,md,yml,yaml}'
+      run: bunx oxfmt {staged_files}
+      stage_fixed: true
