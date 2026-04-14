@@ -12,6 +12,8 @@ interface PublishCommandOptions {
   dryRun?: boolean;
   tag?: string;
   noPush?: boolean;
+  /** Filter to specific packages by name/glob (comma-separated) */
+  filter?: string;
 }
 
 /**
@@ -31,7 +33,16 @@ export async function publishCommand(rootDir: string, opts: PublishCommandOption
 
   // Find packages that need publishing by checking which ones have versions
   // not yet on the registry
-  const toPublish = await findUnpublishedPackages(packages, config);
+  let toPublish = await findUnpublishedPackages(packages, config);
+
+  // Apply filter
+  if (opts.filter) {
+    const { matchGlob } = await import("../core/config.ts");
+    const patterns = opts.filter.split(",").map((p) => p.trim());
+    toPublish = toPublish.filter((r) =>
+      patterns.some((p) => matchGlob(r.name, p))
+    );
+  }
 
   if (toPublish.length === 0) {
     log.info("No unpublished packages found.");

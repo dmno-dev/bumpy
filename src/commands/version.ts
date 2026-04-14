@@ -5,7 +5,8 @@ import { DependencyGraph } from "../core/dep-graph.ts";
 import { readChangesets } from "../core/changeset.ts";
 import { assembleReleasePlan } from "../core/release-plan.ts";
 import { applyReleasePlan } from "../core/apply-release-plan.ts";
-import { run } from "../utils/shell.ts";
+import { run, tryRun } from "../utils/shell.ts";
+import { detectWorkspaces } from "../utils/package-manager.ts";
 
 export async function versionCommand(rootDir: string): Promise<void> {
   const config = await loadConfig(rootDir);
@@ -38,17 +39,22 @@ export async function versionCommand(rootDir: string): Promise<void> {
   log.success(`Updated ${plan.releases.length} package(s)`);
   log.dim(`  Deleted ${changesets.length} changeset file(s)`);
 
+  // Update lockfile so it stays in sync with bumped versions
+  await updateLockfile(rootDir);
+
   // Optionally commit
   if (config.commit) {
-    const files = plan.releases.flatMap((r) => {
-      const pkg = packages.get(r.name)!;
-      return [`${pkg.relativeDir}/package.json`, `${pkg.relativeDir}/CHANGELOG.md`];
-    });
-    // Also stage the deleted changeset files
     try {
+      // Stage version changes, changelogs, deleted changesets, and lockfile
       run("git add -A .bumpy/", { cwd: rootDir });
-      for (const file of files) {
-        run(`git add "${file}"`, { cwd: rootDir });
+      for (const r of plan.releases) {
+        const pkg = packages.get(r.name)!;
+        run(`git add "${pkg.relativeDir}/package.json"`, { cwd: rootDir });
+        run(`git add "${pkg.relativeDir}/CHANGELOG.md"`, { cwd: rootDir });
+      }
+      // Stage lockfile if it changed
+      for (const lockfile of ["bun.lock", "bun.lockb", "pnpm-lock.yaml", "yarn.lock", "package-lock.json"]) {
+        tryRun(`git add "${lockfile}"`, { cwd: rootDir });
       }
       const msg = `Version packages\n\n${plan.releases.map((r) => `${r.name}@${r.newVersion}`).join("\n")}`;
       run(`git commit -m "${msg.replace(/"/g, '\\"')}"`, { cwd: rootDir });
@@ -56,5 +62,28 @@ export async function versionCommand(rootDir: string): Promise<void> {
     } catch (e) {
       log.warn(`Git commit failed: ${e}`);
     }
+  }
+}
+
+/** Run the package manager's install to update the lockfile */
+async function updateLockfile(rootDir: string): Promise<void> {
+  const { packageManager } = await detectWorkspaces(rootDir);
+  const installCmd = getInstallCommand(packageManager);
+
+  log.step(`Updating lockfile (${installCmd})...`);
+  try {
+    run(installCmd, { cwd: rootDir });
+    log.dim("  Lockfile updated");
+  } catch (err) {
+    log.warn(`  Lockfile update failed: ${err instanceof Error ? err.message : err}`);
+  }
+}
+
+function getInstallCommand(pm: string): string {
+  switch (pm) {
+    case "pnpm": return "pnpm install --lockfile-only";
+    case "bun": return "bun install";
+    case "yarn": return "yarn install --mode update-lockfile";
+    default: return "npm install --package-lock-only";
   }
 }
