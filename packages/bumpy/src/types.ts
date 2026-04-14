@@ -141,8 +141,7 @@ export const DEFAULT_CONFIG: BumpyConfig = {
     preamble: [
       '<img src="https://raw.githubusercontent.com/dmno-dev/bumpy/main/images/frog-talking.png" alt="bumpy" width="60" align="left" style="image-rendering: pixelated;" />',
       '',
-      'This PR is created/managed by [bumpy](https://github.com/dmno-dev/bumpy) - merge it when you are ready to release the packages listed below.',
-      '<br clear="left" />',
+      'This PR was created and will be kept in sync by [bumpy](https://github.com/dmno-dev/bumpy) based on your .bumpy changeset files. Merge it when you are ready to release the packages listed below:',
     ].join('\n'),
   },
 };

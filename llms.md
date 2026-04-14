@@ -75,7 +75,7 @@ Added new encryption provider. Plugins need a patch bump for compatibility.
 
 ## Configuration
 
-### Root config: `.bumpy/config.json`
+### Root config: `.bumpy/_config.json`
 
 ```jsonc
 {
@@ -480,7 +480,7 @@ Refactored internal helpers.
 Or permanently via config:
 
 ```json
-// In root .bumpy/config.json
+// In root .bumpy/_config.json
 {
   "packages": {
     "@myorg/internal-*": {
@@ -577,7 +577,7 @@ bumpy add \
 By default, `bumpy publish` creates one GitHub release per package (requires `gh` CLI). To create a single aggregated release instead:
 
 ```json
-// .bumpy/config.json
+// .bumpy/_config.json
 {
   "aggregateRelease": true
 }
