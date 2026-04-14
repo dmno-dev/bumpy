@@ -65,6 +65,60 @@ bumpy version
 bumpy publish
 ```
 
+## CI / GitHub Actions
+
+No separate action to install — just call `bumpy ci` directly in your workflows.
+
+**PR check** — comments on PRs with a release plan:
+
+```yaml
+# .github/workflows/bumpy-check.yml
+name: Bumpy Check
+on: pull_request
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install
+      - run: bunx @dmno-dev/bumpy ci check
+        env:
+          GH_TOKEN: ${{ github.token }}
+```
+
+**Release** — create a "Version Packages" PR on merge to main:
+
+```yaml
+# .github/workflows/bumpy-release.yml
+name: Bumpy Release
+on:
+  push:
+    branches: [main]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install
+      - run: bunx @dmno-dev/bumpy ci release
+        env:
+          GH_TOKEN: ${{ github.token }}
+```
+
+Or use `bumpy ci release --auto-publish` to version + publish directly without a PR.
+
 ## Documentation
 
 See [llms.md](./llms.md) for the full configuration reference, CLI reference, and usage examples.
@@ -89,7 +143,7 @@ bun src/cli.ts --help
 - [x] Fine-grained package include/exclude with glob support
 - [x] Migration from changesets (`bumpy migrate`)
 - [x] GitHub releases (individual + aggregate)
+- [x] CI commands (`bumpy ci check` / `bumpy ci release`) — no separate action needed
 - [x] 47 tests passing
 - [ ] Prerelease mode (deferred — use pkg.pr.new for preview packages)
-- [ ] GitHub Action / PR bot
 - [ ] Bun standalone binary build
