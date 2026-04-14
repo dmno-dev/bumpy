@@ -6,8 +6,8 @@ import type { BumpyConfig } from '../types.ts';
 export async function initCommand(rootDir: string): Promise<void> {
   const bumpyDir = resolve(rootDir, '.bumpy');
 
-  if (await exists(resolve(bumpyDir, 'config.json'))) {
-    log.warn('.bumpy/config.json already exists');
+  if (await exists(resolve(bumpyDir, '_config.json'))) {
+    log.warn('.bumpy/_config.json already exists');
     return;
   }
 
@@ -18,7 +18,7 @@ export async function initCommand(rootDir: string): Promise<void> {
     baseBranch: 'main',
     changelog: 'default',
   };
-  await writeJson(resolve(bumpyDir, 'config.json'), config);
+  await writeJson(resolve(bumpyDir, '_config.json'), config);
 
   // Write a README explaining the directory
   await writeText(
@@ -27,6 +27,6 @@ export async function initCommand(rootDir: string): Promise<void> {
   );
 
   log.success('Initialized .bumpy/ directory');
-  log.dim('  Created .bumpy/config.json');
+  log.dim('  Created .bumpy/_config.json');
   log.dim('  Created .bumpy/README.md');
 }

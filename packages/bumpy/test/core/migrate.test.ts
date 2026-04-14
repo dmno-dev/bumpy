@@ -40,10 +40,10 @@ describe('migrate command', () => {
     await migrateCommand(tmpDir, { force: true });
 
     // Check .bumpy/ was created
-    expect(await exists(resolve(tmpDir, '.bumpy/config.json'))).toBe(true);
+    expect(await exists(resolve(tmpDir, '.bumpy/_config.json'))).toBe(true);
 
     // Check config was migrated
-    const config = await readJson<Record<string, unknown>>(resolve(tmpDir, '.bumpy/config.json'));
+    const config = await readJson<Record<string, unknown>>(resolve(tmpDir, '.bumpy/_config.json'));
     expect(config.baseBranch).toBe('develop');
     expect(config.access).toBe('restricted');
     expect(config.commit).toBe(true);

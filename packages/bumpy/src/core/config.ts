@@ -3,7 +3,7 @@ import { readJson, exists } from '../utils/fs.ts';
 import { type BumpyConfig, type PackageConfig, DEFAULT_CONFIG } from '../types.ts';
 
 const BUMPY_DIR = '.bumpy';
-const CONFIG_FILE = 'config.json';
+const CONFIG_FILE = '_config.json';
 
 /** Find the monorepo root by walking up from cwd looking for .bumpy/ */
 export async function findRoot(startDir: string = process.cwd()): Promise<string> {

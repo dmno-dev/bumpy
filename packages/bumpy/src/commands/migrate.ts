@@ -21,7 +21,7 @@ export async function migrateCommand(rootDir: string, opts: MigrateOptions): Pro
   }
 
   const bumpyDir = getBumpyDir(rootDir);
-  const bumpyExists = await exists(resolve(bumpyDir, 'config.json'));
+  const bumpyExists = await exists(resolve(bumpyDir, '_config.json'));
 
   // Step 1: Migrate config
   if (!bumpyExists) {
@@ -82,7 +82,7 @@ export async function migrateCommand(rootDir: string, opts: MigrateOptions): Pro
 
   console.log();
   log.success('Migration complete!');
-  log.dim('Review .bumpy/config.json and adjust settings as needed.');
+  log.dim('Review .bumpy/_config.json and adjust settings as needed.');
   log.dim('Key differences from changesets:');
   log.dim('  - peerDependency bumps only propagate on major (not minor)');
   log.dim("  - Use 'patch-isolated'/'minor-isolated' to skip propagation");
@@ -91,7 +91,7 @@ export async function migrateCommand(rootDir: string, opts: MigrateOptions): Pro
 
 async function migrateConfig(changesetConfigPath: string, bumpyDir: string): Promise<void> {
   const csConfig = await readJson<Record<string, unknown>>(changesetConfigPath);
-  const bumpyConfigPath = resolve(bumpyDir, 'config.json');
+  const bumpyConfigPath = resolve(bumpyDir, '_config.json');
   let bumpyConfig: Record<string, unknown> = {};
 
   if (await exists(bumpyConfigPath)) {
