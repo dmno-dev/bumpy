@@ -4,9 +4,18 @@ import { discoverPackages } from "../core/workspace.ts";
 import { DependencyGraph } from "../core/dep-graph.ts";
 import { readChangesets } from "../core/changeset.ts";
 import { assembleReleasePlan } from "../core/release-plan.ts";
+import type { PlannedRelease, WorkspacePackage } from "../types.ts";
 
 interface StatusOptions {
   json?: boolean;
+  /** Output only package names, one per line (useful for piping) */
+  packagesOnly?: boolean;
+  /** Filter to specific bump types: "major", "minor", "patch" */
+  bumpType?: string;
+  /** Filter to specific packages (comma-separated names or globs) */
+  filter?: string;
+  /** Show verbose output including changeset details */
+  verbose?: boolean;
 }
 
 export async function statusCommand(rootDir: string, opts: StatusOptions): Promise<void> {
@@ -17,8 +26,8 @@ export async function statusCommand(rootDir: string, opts: StatusOptions): Promi
 
   if (changesets.length === 0) {
     if (opts.json) {
-      console.log(JSON.stringify({ changesets: [], releases: [] }, null, 2));
-    } else {
+      console.log(JSON.stringify({ changesets: [], releases: [], packageNames: [] }, null, 2));
+    } else if (!opts.packagesOnly) {
       log.info("No pending changesets.");
     }
     process.exit(1); // exit 1 = no releases pending (useful for CI)
@@ -26,46 +35,98 @@ export async function statusCommand(rootDir: string, opts: StatusOptions): Promi
 
   const plan = assembleReleasePlan(changesets, packages, depGraph, config);
 
+  // Apply filters
+  let releases = plan.releases;
+  if (opts.bumpType) {
+    const types = opts.bumpType.split(",").map((t) => t.trim());
+    releases = releases.filter((r) => types.includes(r.type));
+  }
+  if (opts.filter) {
+    const { matchGlob } = await import("../core/config.ts");
+    const patterns = opts.filter.split(",").map((p) => p.trim());
+    releases = releases.filter((r) =>
+      patterns.some((p) => matchGlob(r.name, p))
+    );
+  }
+
   if (opts.json) {
-    console.log(JSON.stringify(plan, null, 2));
+    const jsonOutput = {
+      changesets: plan.changesets.map((cs) => ({
+        id: cs.id,
+        summary: cs.summary,
+        releases: cs.releases.map((r) => ({ name: r.name, type: r.type })),
+      })),
+      releases: releases.map((r) => ({
+        name: r.name,
+        type: r.type,
+        oldVersion: r.oldVersion,
+        newVersion: r.newVersion,
+        dir: packages.get(r.name)?.relativeDir,
+        changesets: r.changesets,
+        isDependencyBump: r.isDependencyBump,
+        isCascadeBump: r.isCascadeBump,
+      })),
+      packageNames: releases.map((r) => r.name),
+    };
+    console.log(JSON.stringify(jsonOutput, null, 2));
     return;
   }
 
-  // Display summary
+  if (opts.packagesOnly) {
+    for (const r of releases) {
+      console.log(r.name);
+    }
+    return;
+  }
+
+  // Pretty output
   log.bold(`${changesets.length} changeset(s) pending\n`);
 
-  if (plan.releases.length === 0) {
-    log.warn("Changesets found but no packages would be released.");
+  if (releases.length === 0) {
+    log.warn("No packages match the current filters.");
     return;
   }
 
   // Group by bump type
-  const majors = plan.releases.filter((r) => r.type === "major");
-  const minors = plan.releases.filter((r) => r.type === "minor");
-  const patches = plan.releases.filter((r) => r.type === "patch");
+  const groups: [string, string, PlannedRelease[]][] = [
+    ["Major", "red", releases.filter((r) => r.type === "major")],
+    ["Minor", "yellow", releases.filter((r) => r.type === "minor")],
+    ["Patch", "green", releases.filter((r) => r.type === "patch")],
+  ];
 
-  if (majors.length > 0) {
-    log.bold(colorize("Major", "red"));
-    for (const r of majors) printRelease(r);
+  for (const [label, color, group] of groups) {
+    if (group.length === 0) continue;
+    log.bold(colorize(label, color as "red" | "yellow" | "green"));
+    for (const r of group) {
+      printRelease(r, packages);
+    }
     console.log();
   }
-  if (minors.length > 0) {
-    log.bold(colorize("Minor", "yellow"));
-    for (const r of minors) printRelease(r);
-    console.log();
-  }
-  if (patches.length > 0) {
-    log.bold(colorize("Patch", "green"));
-    for (const r of patches) printRelease(r);
-    console.log();
+
+  if (opts.verbose) {
+    log.bold("Changesets:");
+    for (const cs of plan.changesets) {
+      console.log(`  ${colorize(cs.id, "cyan")}`);
+      for (const r of cs.releases) {
+        console.log(`    ${r.name}: ${r.type}`);
+      }
+      if (cs.summary) {
+        console.log(`    ${colorize(cs.summary.split("\n")[0]!, "dim")}`);
+      }
+    }
   }
 }
 
-function printRelease(r: { name: string; oldVersion: string; newVersion: string; isDependencyBump: boolean; isCascadeBump: boolean }) {
+function printRelease(
+  r: PlannedRelease,
+  packages: Map<string, WorkspacePackage>,
+) {
+  const pkg = packages.get(r.name);
+  const dir = pkg ? colorize(` (${pkg.relativeDir})`, "dim") : "";
   const suffix = r.isDependencyBump
-    ? colorize(" (dependency bump)", "dim")
+    ? colorize(" ← dependency bump", "dim")
     : r.isCascadeBump
-      ? colorize(" (cascade)", "dim")
+      ? colorize(" ← cascade", "dim")
       : "";
-  console.log(`  ${r.name}: ${r.oldVersion} → ${colorize(r.newVersion, "cyan")}${suffix}`);
+  console.log(`  ${r.name}: ${r.oldVersion} → ${colorize(r.newVersion, "cyan")}${suffix}${dir}`);
 }
