@@ -79,7 +79,13 @@ export interface BumpyConfig {
   privatePackages: { version: boolean; tag: boolean };
   packages: Record<string, PackageConfig>;
   publish: PublishConfig;
-  aggregateRelease: boolean | { title?: string };
+  /**
+   * GitHub release creation (requires `gh` CLI).
+   * false = individual release per package (default)
+   * true = single aggregated release for all packages
+   * { enabled: true, title: "..." } = aggregate with custom title (supports {{date}})
+   */
+  aggregateRelease: boolean | { enabled: boolean; title?: string };
 }
 
 export interface PackageConfig {

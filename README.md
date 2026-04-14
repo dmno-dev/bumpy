@@ -87,8 +87,9 @@ bun src/cli.ts --help
 - [x] CLI: init, add, status (with --json/--packages/--filter), version, publish
 - [x] Pack-then-publish pipeline with custom command support
 - [x] Fine-grained package include/exclude with glob support
-- [x] 45 tests passing
-- [ ] Prerelease mode
+- [x] Migration from changesets (`bumpy migrate`)
+- [x] GitHub releases (individual + aggregate)
+- [x] 47 tests passing
+- [ ] Prerelease mode (deferred — use pkg.pr.new for preview packages)
 - [ ] GitHub Action / PR bot
-- [ ] Migration from changesets
-- [ ] Aggregate GitHub releases
+- [ ] Bun standalone binary build
