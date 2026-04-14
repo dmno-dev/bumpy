@@ -1,6 +1,6 @@
 {
   "name": "@varlock/bumpy",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "Modern monorepo versioning and changelog tool",
   "bin": {
     "bumpy": "./dist/cli.mjs"
