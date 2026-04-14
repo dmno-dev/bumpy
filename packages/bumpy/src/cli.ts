@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { findRoot } from './core/config.ts';
-import { log } from './utils/logger.ts';
+import { log, colorize } from './utils/logger.ts';
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -163,7 +163,7 @@ async function main() {
 
 function printHelp() {
   console.log(`
-  ${log.bold('🐸 bumpy')} - Modern monorepo versioning
+  ${colorize('🐸 bumpy', 'bold')} - Modern monorepo versioning
 
   Usage: bumpy <command> [options]
 

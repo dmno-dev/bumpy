@@ -19,8 +19,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
       - run: bun install
-      # Using local source since this is bumpy's own repo — normally use the published package:
-      # - run: bunx @varlock/bumpy ci check
-      - run: bun packages/bumpy/src/cli.ts ci check
+      # Build first since we use the local workspace package
+      - run: bun run --filter @varlock/bumpy build
+      - run: bunx bumpy ci check
         env:
           GH_TOKEN: ${{ github.token }}

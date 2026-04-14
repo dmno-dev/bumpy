@@ -1,4 +1,4 @@
-import type { ChangelogFormatter } from '../packages/bumpy/src/core/changelog.ts';
+import type { ChangelogFormatter } from '@varlock/bumpy';
 
 const formatter: ChangelogFormatter = (ctx) => {
   const { release, changesets, date } = ctx;

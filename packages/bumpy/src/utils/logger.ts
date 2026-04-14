@@ -1,33 +1,26 @@
-const RESET = '\x1b[0m';
-const BOLD = '\x1b[1m';
-const DIM = '\x1b[2m';
-const RED = '\x1b[31m';
-const GREEN = '\x1b[32m';
-const YELLOW = '\x1b[33m';
-const BLUE = '\x1b[34m';
-const CYAN = '\x1b[36m';
+import { blue, green, yellow, red, cyan, dim, bold } from 'ansis';
 
 export const log = {
   info(msg: string) {
-    console.log(`${BLUE}info${RESET} ${msg}`);
+    console.log(`${blue`info`} ${msg}`);
   },
   success(msg: string) {
-    console.log(`${GREEN}done${RESET} ${msg}`);
+    console.log(`${green`done`} ${msg}`);
   },
   warn(msg: string) {
-    console.log(`${YELLOW}warn${RESET} ${msg}`);
+    console.log(`${yellow`warn`} ${msg}`);
   },
   error(msg: string) {
-    console.error(`${RED}error${RESET} ${msg}`);
+    console.error(`${red`error`} ${msg}`);
   },
   step(msg: string) {
-    console.log(`${CYAN}=>${RESET} ${msg}`);
+    console.log(`${cyan`=>`} ${msg}`);
   },
   dim(msg: string) {
-    console.log(`${DIM}${msg}${RESET}`);
+    console.log(dim`${msg}`);
   },
   bold(msg: string) {
-    console.log(`${BOLD}${msg}${RESET}`);
+    console.log(bold`${msg}`);
   },
   table(rows: string[][]) {
     if (rows.length === 0) return;
@@ -39,14 +32,6 @@ export const log = {
 };
 
 export function colorize(text: string, color: 'red' | 'green' | 'yellow' | 'blue' | 'cyan' | 'dim' | 'bold'): string {
-  const codes: Record<string, string> = {
-    red: RED,
-    green: GREEN,
-    yellow: YELLOW,
-    blue: BLUE,
-    cyan: CYAN,
-    dim: DIM,
-    bold: BOLD,
-  };
-  return `${codes[color]}${text}${RESET}`;
+  const colors = { red, green, yellow, blue, cyan, dim, bold };
+  return colors[color](text);
 }
