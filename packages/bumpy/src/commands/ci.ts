@@ -175,7 +175,10 @@ async function createVersionPr(
 
   if (existingPr) {
     log.step(`Updating existing PR #${existingPr}...`);
-    await runAsync(`gh pr edit ${existingPr} --body-file -`, { cwd: rootDir, input: prBody });
+    await runAsync(`gh pr edit ${existingPr} --title "${config.versionPr.title}" --body-file -`, {
+      cwd: rootDir,
+      input: prBody,
+    });
     log.success(`Updated PR #${existingPr}`);
   } else {
     log.step('Creating version PR...');
