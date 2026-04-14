@@ -19,6 +19,7 @@
     "postinstall": "lefthook install"
   },
   "devDependencies": {
+    "@varlock/bumpy": "workspace:*",
     "lefthook": "^2.1.5",
     "oxfmt": "^0.45.0",
     "oxlint": "^1.60.0"

@@ -5,25 +5,25 @@
     "": {
       "name": "bumpy-monorepo",
       "devDependencies": {
+        "@varlock/bumpy": "workspace:*",
         "lefthook": "^2.1.5",
         "oxfmt": "^0.45.0",
         "oxlint": "^1.60.0",
       },
     },
     "packages/bumpy": {
-      "name": "@dmno-dev/bumpy",
+      "name": "@varlock/bumpy",
       "version": "0.0.0",
       "bin": {
         "bumpy": "./dist/cli.mjs",
-      },
-      "dependencies": {
-        "js-yaml": "^4.1.0",
-        "semver": "^7.7.2",
       },
       "devDependencies": {
         "@types/bun": "latest",
         "@types/js-yaml": "^4.0.9",
         "@types/semver": "^7.7.0",
+        "ansis": "^4.2.0",
+        "js-yaml": "^4.1.0",
+        "semver": "^7.7.2",
         "tsdown": "catalog:",
       },
     },
@@ -46,8 +46,6 @@
     "@babel/parser": ["@babel/parser@8.0.0-rc.3", "", { "dependencies": { "@babel/types": "^8.0.0-rc.3" }, "bin": "./bin/babel-parser.js" }, "sha512-B20dvP3MfNc/XS5KKCHy/oyWl5IA6Cn9YjXRdDlCjNmUFrjvLXMNUfQq/QUy9fnG2gYkKKcrto2YaF9B32ToOQ=="],
 
     "@babel/types": ["@babel/types@8.0.0-rc.3", "", { "dependencies": { "@babel/helper-string-parser": "^8.0.0-rc.3", "@babel/helper-validator-identifier": "^8.0.0-rc.3" } }, "sha512-mOm5ZrYmphGfqVWoH5YYMTITb3cDXsFgmvFlvkvWDMsR9X8RFnt7a0Wb6yNIdoFsiMO9WjYLq+U/FMtqIYAF8Q=="],
-
-    "@dmno-dev/bumpy": ["@dmno-dev/bumpy@workspace:packages/bumpy"],
 
     "@emnapi/core": ["@emnapi/core@1.9.2", "", { "dependencies": { "@emnapi/wasi-threads": "1.2.1", "tslib": "^2.4.0" } }, "sha512-UC+ZhH3XtczQYfOlu3lNEkdW/p4dsJ1r/bP7H8+rhao3TTTMO1ATq/4DdIi23XuGoFY+Cz0JmCbdVl0hz9jZcA=="],
 
@@ -190,6 +188,8 @@
     "@types/node": ["@types/node@25.6.0", "", { "dependencies": { "undici-types": "~7.19.0" } }, "sha512-+qIYRKdNYJwY3vRCZMdJbPLJAtGjQBudzZzdzwQYkEPQd+PJGixUL5QfvCLDaULoLv+RhT3LDkwEfKaAkgSmNQ=="],
 
     "@types/semver": ["@types/semver@7.7.1", "", {}, "sha512-FmgJfu+MOcQ370SD0ev7EI8TlCAfKYU+B4m5T3yXc1CiRN94g/SZPtsCkk506aUDtlMnFZvasDwHHUcZUEaYuA=="],
+
+    "@varlock/bumpy": ["@varlock/bumpy@workspace:packages/bumpy"],
 
     "@varlock/bumpy-website": ["@varlock/bumpy-website@workspace:packages/website"],
 

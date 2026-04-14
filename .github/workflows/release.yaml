@@ -16,8 +16,8 @@ jobs:
           fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
       - run: bun install
-      # Using local source since this is bumpy's own repo — normally use the published package:
-      # - run: bunx @varlock/bumpy ci release
-      - run: bun packages/bumpy/src/cli.ts ci release
+      # Build first since we use the local workspace package
+      - run: bun run --filter @varlock/bumpy build
+      - run: bunx bumpy ci release
         env:
           GH_TOKEN: ${{ github.token }}
