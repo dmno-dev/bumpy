@@ -3,10 +3,10 @@
   "version": "0.0.0",
   "description": "Modern monorepo versioning and changelog tool",
   "bin": {
-    "@varlock/bumpy": "./dist/cli.mjs",
-    "bumpy": "./dist/cli.mjs"
+    "bumpy": "./cli.js"
   },
   "files": [
+    "cli.js",
     "dist",
     ".claude-plugin",
     "skills"

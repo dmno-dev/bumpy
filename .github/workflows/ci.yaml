@@ -21,6 +21,7 @@ jobs:
       - run: bun install
       # Build first since we use the local workspace package instead of the published one
       - run: bun run --filter @varlock/bumpy build
+      - run: bun install
       - run: bunx @varlock/bumpy ci check
         env:
           GH_TOKEN: ${{ github.token }}
