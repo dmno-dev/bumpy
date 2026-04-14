@@ -3,10 +3,9 @@
   "version": "0.0.0",
   "description": "Modern monorepo versioning and changelog tool",
   "bin": {
-    "bumpy": "./cli.js"
+    "bumpy": "./dist/cli.mjs"
   },
   "files": [
-    "cli.js",
     "dist",
     ".claude-plugin",
     "skills"
