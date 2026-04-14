@@ -313,6 +313,20 @@ JSON output shape:
 }
 ```
 
+### `bumpy check`
+
+Verify that all changed packages on the current branch have corresponding changesets. Compares files changed vs the base branch, maps them to managed packages, and exits non-zero if any are missing changesets.
+
+Designed for pre-push hooks — no GitHub API needed.
+
+```yaml
+# lefthook.yml
+pre-push:
+  jobs:
+    - name: bumpy-check
+      run: bunx @varlock/bumpy check
+```
+
 ### `bumpy version`
 
 Apply all pending changesets: bump versions in `package.json`, update `CHANGELOG.md`, delete consumed changeset files. Optionally creates a git commit if `commit: true` in config.
