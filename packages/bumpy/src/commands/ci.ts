@@ -102,7 +102,7 @@ export async function ciReleaseCommand(rootDir: string, opts: ReleaseOptions): P
   if (opts.mode === 'auto-publish') {
     await autoPublish(rootDir, config, opts.tag);
   } else {
-    await createVersionPr(rootDir, plan, opts.branch);
+    await createVersionPr(rootDir, plan, config, opts.branch);
   }
 }
 
@@ -129,8 +129,13 @@ async function autoPublish(rootDir: string, config: BumpyConfig, tag?: string): 
 
 // ---- version-pr mode ----
 
-async function createVersionPr(rootDir: string, plan: ReleasePlan, branchName?: string): Promise<void> {
-  const branch = branchName || 'bumpy/version-packages';
+async function createVersionPr(
+  rootDir: string,
+  plan: ReleasePlan,
+  config: BumpyConfig,
+  branchName?: string,
+): Promise<void> {
+  const branch = branchName || config.versionPr.branch;
   const baseBranch = tryRun('git rev-parse --abbrev-ref HEAD', { cwd: rootDir }) || 'main';
 
   // Check if a version PR already exists
@@ -166,7 +171,7 @@ async function createVersionPr(rootDir: string, plan: ReleasePlan, branchName?: 
   run(`git push -u origin ${branch} --force`, { cwd: rootDir });
 
   // Create or update PR
-  const prBody = formatVersionPrBody(plan);
+  const prBody = formatVersionPrBody(plan, config.versionPr.preamble);
 
   if (existingPr) {
     log.step(`Updating existing PR #${existingPr}...`);
@@ -174,7 +179,7 @@ async function createVersionPr(rootDir: string, plan: ReleasePlan, branchName?: 
     log.success(`Updated PR #${existingPr}`);
   } else {
     log.step('Creating version PR...');
-    const prTitle = '🐸 Version Packages';
+    const prTitle = config.versionPr.title;
     const result = await runAsync(
       `gh pr create --title "${prTitle}" --body-file - --base "${baseBranch}" --head "${branch}"`,
       { cwd: rootDir, input: prBody },
@@ -228,10 +233,10 @@ function formatNoChangesetsComment(): string {
   ].join('\n');
 }
 
-function formatVersionPrBody(plan: ReleasePlan): string {
+function formatVersionPrBody(plan: ReleasePlan, preamble: string): string {
   const lines: string[] = [];
-  lines.push('This PR was opened by [bumpy](https://github.com/dmno-dev/bumpy). ');
-  lines.push('Merging it will publish the following packages:\n');
+  lines.push(preamble);
+  lines.push('');
 
   for (const r of plan.releases) {
     const suffix = r.isDependencyBump ? ' (dep)' : r.isCascadeBump ? ' (cascade)' : '';

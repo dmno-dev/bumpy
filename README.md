@@ -50,6 +50,10 @@ By default, bumpy uses your package manager to pack a tarball (resolving `worksp
 # Install
 bun add -d @varlock/bumpy  # or npm/pnpm/yarn
 
+# Add a shortcut script to your root package.json (recommended)
+# { "scripts": { "bumpy": "bumpy" } }
+# Then use: bun run bumpy <command>
+
 # Initialize
 bumpy init
 
