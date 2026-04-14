@@ -161,8 +161,8 @@ async function createVersionPr(rootDir: string, plan: ReleasePlan, branchName?: 
     return;
   }
 
-  const commitMsg = `Version packages\n\n${plan.releases.map((r) => `${r.name}@${r.newVersion}`).join('\n')}`;
-  run(`git commit -m "${commitMsg.replace(/"/g, '\\"')}"`, { cwd: rootDir });
+  const commitMsg = ['Version packages', '', ...plan.releases.map((r) => `${r.name}@${r.newVersion}`)].join('\n');
+  run('git commit -F -', { cwd: rootDir, input: commitMsg });
   run(`git push -u origin ${branch} --force`, { cwd: rootDir });
 
   // Create or update PR
@@ -170,14 +170,14 @@ async function createVersionPr(rootDir: string, plan: ReleasePlan, branchName?: 
 
   if (existingPr) {
     log.step(`Updating existing PR #${existingPr}...`);
-    await runAsync(`gh pr edit ${existingPr} --body "${escapeShell(prBody)}"`, { cwd: rootDir });
+    await runAsync(`gh pr edit ${existingPr} --body-file -`, { cwd: rootDir, input: prBody });
     log.success(`Updated PR #${existingPr}`);
   } else {
     log.step('Creating version PR...');
     const prTitle = '🐸 Version Packages';
     const result = await runAsync(
-      `gh pr create --title "${prTitle}" --body "${escapeShell(prBody)}" --base "${baseBranch}" --head "${branch}"`,
-      { cwd: rootDir },
+      `gh pr create --title "${prTitle}" --body-file - --base "${baseBranch}" --head "${branch}"`,
+      { cwd: rootDir, input: prBody },
     );
     log.success(`Created PR: ${result}`);
   }
@@ -254,13 +254,13 @@ async function postOrUpdatePrComment(prNumber: string, body: string, rootDir: st
     );
 
     if (existingComment) {
-      await runAsync(
-        `gh api repos/{owner}/{repo}/issues/comments/${existingComment} -X PATCH -f body="${escapeShell(markedBody)}"`,
-        { cwd: rootDir },
-      );
+      await runAsync(`gh api repos/{owner}/{repo}/issues/comments/${existingComment} -X PATCH -f body=@-`, {
+        cwd: rootDir,
+        input: markedBody,
+      });
       log.dim('  Updated PR comment');
     } else {
-      await runAsync(`gh pr comment ${prNumber} --body "${escapeShell(markedBody)}"`, { cwd: rootDir });
+      await runAsync(`gh pr comment ${prNumber} --body-file -`, { cwd: rootDir, input: markedBody });
       log.dim('  Posted PR comment');
     }
   } catch (err) {
@@ -277,8 +277,4 @@ function detectPrNumber(): string | null {
   }
   // Also check for explicit env var
   return process.env.BUMPY_PR_NUMBER || process.env.PR_NUMBER || null;
-}
-
-function escapeShell(str: string): string {
-  return str.replace(/"/g, '\\"').replace(/\n/g, '\\n');
 }
