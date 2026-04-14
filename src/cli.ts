@@ -68,6 +68,15 @@ async function main() {
         break;
       }
 
+      case "migrate": {
+        const rootDir = await findRoot();
+        const { migrateCommand } = await import("./commands/migrate.ts");
+        await migrateCommand(rootDir, {
+          force: flags.force === true,
+        });
+        break;
+      }
+
       case "publish": {
         const rootDir = await findRoot();
         const { publishCommand } = await import("./commands/publish.ts");
@@ -109,6 +118,7 @@ function printHelp() {
     status                  Show pending releases
     version                 Apply changesets and bump versions
     publish                 Publish versioned packages
+    migrate                 Migrate from .changeset/ to .bumpy/
 
   Add options:
     --packages <list>       Package bumps (e.g., "pkg-a:minor,pkg-b:patch")
