@@ -2,6 +2,7 @@
 
 import { findRoot } from './core/config.ts';
 import { log, colorize } from './utils/logger.ts';
+import { getVersion } from './version-info.ts';
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -143,6 +144,11 @@ async function main() {
         break;
       }
 
+      case '--version':
+      case '-v':
+        console.log(`bumpy ${getVersion()}`);
+        break;
+
       case 'help':
       case '--help':
       case '-h':
@@ -163,7 +169,7 @@ async function main() {
 
 function printHelp() {
   console.log(`
-  ${colorize('🐸 bumpy', 'bold')} - Modern monorepo versioning
+  ${colorize(`🐸 bumpy v${getVersion()}`, 'bold')} - Modern monorepo versioning
 
   Usage: bumpy <command> [options]
 
