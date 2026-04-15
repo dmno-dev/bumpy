@@ -604,7 +604,10 @@ jobs:
         with:
           fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
-      - run: npm install -g npm@latest # npm >= 11.5.1 required for trusted publishing
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          registry-url: 'https://registry.npmjs.org'
       - run: bun install
       - run: bunx @varlock/bumpy ci release
         env:
@@ -612,7 +615,7 @@ jobs:
 ```
 
 Trusted publishing setup: configure each package on npmjs.com → Package Settings → Trusted Publishers → GitHub Actions.
-Specify your org/user, repo, and the workflow filename. No NPM_TOKEN secret needed.
+Specify your org/user, repo, and the workflow filename. No NPM_TOKEN secret needed. Requires npm >= 11.5.1 (included in Node.js LTS).
 
 Alternative: token-based auth (uses `NPM_TOKEN` secret instead of OIDC):
 
