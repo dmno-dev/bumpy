@@ -146,7 +146,8 @@ export async function ciReleaseCommand(rootDir: string, opts: ReleaseOptions): P
   if (opts.mode === 'auto-publish') {
     await autoPublish(rootDir, config, opts.tag);
   } else {
-    await createVersionPr(rootDir, plan, config, opts.branch);
+    const packageDirs = new Map([...packages.values()].map((p) => [p.name, p.relativeDir]));
+    await createVersionPr(rootDir, plan, config, packageDirs, opts.branch);
   }
 }
 
@@ -254,6 +255,7 @@ async function createVersionPr(
   rootDir: string,
   plan: ReleasePlan,
   config: BumpyConfig,
+  packageDirs: Map<string, string>,
   branchName?: string,
 ): Promise<void> {
   const branch = validateBranchName(branchName || config.versionPr.branch);
@@ -297,7 +299,7 @@ async function createVersionPr(
   pushWithToken(rootDir, branch);
 
   // Create or update PR
-  const prBody = formatVersionPrBody(plan, config.versionPr.preamble);
+  const prBody = formatVersionPrBody(plan, config.versionPr.preamble, packageDirs);
 
   if (existingPr) {
     const validPr = validatePrNumber(existingPr);
@@ -438,7 +440,27 @@ function bumpSectionHeader(type: string): string {
   return `### ${frog} ${type.charAt(0).toUpperCase() + type.slice(1)} releases`;
 }
 
-function formatVersionPrBody(plan: ReleasePlan, preamble: string): string {
+/** Build inline diff links for a package's changed files in the PR */
+function buildDiffLinks(pkgDir: string): string {
+  const pkgJsonPath = `${pkgDir}/package.json`;
+  const changelogPath = `${pkgDir}/CHANGELOG.md`;
+  // GitHub anchors diff sections with #diff-<sha256 of file path>
+  const links = [
+    `[package.json](#diff-${sha256Hex(pkgJsonPath)})`,
+    `[CHANGELOG.md](#diff-${sha256Hex(changelogPath)})`,
+  ];
+  return ` <sub>${links.join(' · ')}</sub>`;
+}
+
+function sha256Hex(input: string): string {
+  const encoder = new TextEncoder();
+  // Bun supports crypto.subtle synchronously via Bun.CryptoHasher
+  const hasher = new Bun.CryptoHasher('sha256');
+  hasher.update(encoder.encode(input));
+  return hasher.digest('hex');
+}
+
+function formatVersionPrBody(plan: ReleasePlan, preamble: string, packageDirs: Map<string, string>): string {
   const lines: string[] = [];
   lines.push(preamble);
   lines.push('');
@@ -456,7 +478,9 @@ function formatVersionPrBody(plan: ReleasePlan, preamble: string): string {
     lines.push('');
     for (const r of releases) {
       const suffix = r.isDependencyBump ? ' _(dep)_' : r.isCascadeBump ? ' _(cascade)_' : '';
-      lines.push(`#### \`${r.name}\` ${r.oldVersion} → **${r.newVersion}**${suffix}`);
+      const pkgDir = packageDirs.get(r.name);
+      const diffLinks = pkgDir ? buildDiffLinks(pkgDir) : '';
+      lines.push(`#### \`${r.name}\` ${r.oldVersion} → **${r.newVersion}**${suffix}${diffLinks}`);
       lines.push('');
 
       const relevantChangesets = plan.changesets.filter((cs) => r.changesets.includes(cs.id));
