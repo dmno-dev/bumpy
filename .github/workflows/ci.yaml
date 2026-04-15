@@ -10,7 +10,8 @@ jobs:
       - run: bun install
       - run: cd packages/bumpy && bunx varlock load # need ENV types for tsdown config file
       - run: bun run check
-      - run: git config --global user.name "CI" && git config --global user.email "ci@test"
+      # publish tests create temp git repos with commits, which requires a git identity
+      - run: git config --global user.name "CI" && git config --global user.email "ci@example.com"
       - run: bun run test
 
   bumpy-check:
