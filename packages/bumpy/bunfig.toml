@@ -1,5 +1,6 @@
 # these global vars will be bundled at build time by tsdown
 # this just injects them for running `bun test` or running the ts code directly via bun
+
 [define]
 "__BUMPY_VERSION__" = "'dev'"
 "__BUMPY_WEBSITE_URL__" = "'https://github.com/dmno-dev/bumpy'"
