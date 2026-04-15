@@ -2,9 +2,11 @@
 '@varlock/bumpy': patch
 ---
 
-Restyle CI check PR comment to use frog images matching the version PR description
+Rework CI check PR comment
 
-- Use `frog-talking.png` preamble in the release plan comment
-- Use `bumpSectionHeader()` with frog images instead of emoji labels
-- Switch from table format to bullet list for consistency with version PR
-- Use `frog-neutral.png` in the no-changesets comment
+- Restyle with frog images matching the version PR description
+- Filter to only changesets added/modified in the PR, not all pending changesets
+- Add links to view diff and edit each changeset file on GitHub
+- Add "click to add changeset" link for GitHub's file creation UI
+- Detect package manager for correct CLI instructions
+- Fix comment update using correct REST API numeric IDs and stdin flag
