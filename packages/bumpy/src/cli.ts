@@ -114,8 +114,11 @@ async function main() {
             tag: ciFlags.tag as string | undefined,
             branch: ciFlags.branch as string | undefined,
           });
+        } else if (subcommand === 'setup') {
+          const { ciSetupCommand } = await import('./commands/ci-setup.ts');
+          await ciSetupCommand(rootDir);
         } else {
-          log.error(`Unknown ci subcommand: ${subcommand}. Use "ci check" or "ci release".`);
+          log.error(`Unknown ci subcommand: ${subcommand}. Use "ci check", "ci release", or "ci setup".`);
           process.exit(1);
         }
         break;
@@ -189,6 +192,7 @@ function printHelp() {
     publish                 Publish versioned packages
     ci check                PR check — report pending releases, comment on PR
     ci release              Release — create version PR or auto-publish
+    ci setup                Set up a token for triggering CI on version PRs
     migrate                 Migrate from .changeset/ to .bumpy/
     ai setup                Install AI skill for creating changesets
 

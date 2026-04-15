@@ -1,7 +1,9 @@
 ---
-'@varlock/bumpy': patch
+'@varlock/bumpy': minor
 ---
 
-Fix version PR not triggering CI workflow runs
+Support custom token for triggering CI on version PRs
 
-After pushing the version branch, recreate the tip commit via the GitHub REST API so that pull_request workflows fire automatically. Commits pushed with GITHUB_TOKEN don't trigger workflows due to GitHub's anti-recursion guard, but API-created commits bypass this — no PATs, GitHub Apps, or user CI config changes needed.
+- Add `BUMPY_GH_TOKEN` env var support — when set, bumpy pushes the version branch using the custom token, bypassing GitHub's anti-recursion guard so PR workflows fire automatically
+- Add `bumpy ci setup` interactive command to help create a fine-grained PAT or GitHub App and store it as a repo secret
+- When no custom token is set, log a warning with setup instructions
