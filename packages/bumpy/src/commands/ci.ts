@@ -223,25 +223,34 @@ async function createVersionPr(
 
 // ---- PR comment helpers ----
 
+const FROG_IMG_BASE = 'https://raw.githubusercontent.com/dmno-dev/bumpy/main/images';
+
 function formatReleasePlanComment(plan: ReleasePlan, changesetCount: number): string {
   const lines: string[] = [];
-  lines.push('## 🐸 Bumpy Release Plan\n');
-  lines.push(`**${changesetCount}** changeset(s) → **${plan.releases.length}** package(s) to release\n`);
 
-  const groups: [string, PlannedRelease[]][] = [
-    ['🔴 Major', plan.releases.filter((r) => r.type === 'major')],
-    ['🟡 Minor', plan.releases.filter((r) => r.type === 'minor')],
-    ['🟢 Patch', plan.releases.filter((r) => r.type === 'patch')],
-  ];
+  const preamble = [
+    `<a href="${__BUMPY_WEBSITE_URL__}"><img src="${FROG_IMG_BASE}/frog-talking.png" alt="bumpy-frog" width="60" align="left" style="image-rendering: pixelated;" title="Hi! I'm bumpy!" /></a>`,
+    '',
+    `**${changesetCount}** changeset(s) → **${plan.releases.length}** package(s) to release`,
+    '<br clear="left" />',
+  ].join('\n');
+  lines.push(preamble);
+  lines.push('');
 
-  for (const [label, group] of groups) {
-    if (group.length === 0) continue;
-    lines.push(`### ${label}\n`);
-    lines.push('| Package | Change |');
-    lines.push('|---------|--------|');
-    for (const r of group) {
+  const groups: Record<string, PlannedRelease[]> = { major: [], minor: [], patch: [] };
+  for (const r of plan.releases) {
+    groups[r.type]?.push(r);
+  }
+
+  for (const type of ['major', 'minor', 'patch'] as const) {
+    const releases = groups[type];
+    if (!releases || releases.length === 0) continue;
+
+    lines.push(bumpSectionHeader(type));
+    lines.push('');
+    for (const r of releases) {
       const suffix = r.isDependencyBump ? ' _(dep)_' : r.isCascadeBump ? ' _(cascade)_' : '';
-      lines.push(`| \`${r.name}\` | ${r.oldVersion} → **${r.newVersion}**${suffix} |`);
+      lines.push(`- \`${r.name}\` ${r.oldVersion} → **${r.newVersion}**${suffix}`);
     }
     lines.push('');
   }
@@ -253,8 +262,10 @@ function formatReleasePlanComment(plan: ReleasePlan, changesetCount: number): st
 
 function formatNoChangesetsComment(): string {
   return [
-    '## 🐸 Bumpy Release Plan\n',
-    'No changesets found in this PR. If this PR should trigger a release, run:\n',
+    `<a href="${__BUMPY_WEBSITE_URL__}"><img src="${FROG_IMG_BASE}/frog-neutral.png" alt="bumpy-frog" width="60" align="left" style="image-rendering: pixelated;" title="Hi! I'm bumpy!" /></a>`,
+    '',
+    'No changesets found in this PR. If this PR should trigger a release, run:',
+    '<br clear="left" />\n',
     '```bash',
     'bumpy add',
     '```\n',
@@ -262,8 +273,6 @@ function formatNoChangesetsComment(): string {
     `_This comment is maintained by [bumpy](${__BUMPY_WEBSITE_URL__})._`,
   ].join('\n');
 }
-
-const FROG_IMG_BASE = 'https://raw.githubusercontent.com/dmno-dev/bumpy/main/images';
 
 function bumpSectionHeader(type: string): string {
   // I think pixelated css gets stripped but may as well leave it
