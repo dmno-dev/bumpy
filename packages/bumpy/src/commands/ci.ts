@@ -115,12 +115,6 @@ interface ReleaseOptions {
  * Designed for merge-to-main workflows.
  */
 export async function ciReleaseCommand(rootDir: string, opts: ReleaseOptions): Promise<void> {
-  // If a custom token is provided, also expose it as GH_TOKEN so that
-  // `gh` CLI calls (PR creation, comments, etc.) use the same credential.
-  if (process.env.BUMPY_GH_TOKEN) {
-    process.env.GH_TOKEN = process.env.BUMPY_GH_TOKEN;
-  }
-
   const config = await loadConfig(rootDir);
   ensureGitIdentity(rootDir, config);
   const { packages } = await discoverWorkspace(rootDir, config);
