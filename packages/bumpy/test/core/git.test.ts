@@ -1,8 +1,6 @@
 import { test, expect, describe, beforeEach, afterEach } from 'bun:test';
 import { resolve } from 'node:path';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { runArgs } from '../../src/utils/shell.ts';
+import { createTempGitRepo, cleanupTempDir, gitInDir } from '../helpers.ts';
 import {
   createTag,
   tagExists,
@@ -14,21 +12,15 @@ import {
 } from '../../src/core/git.ts';
 import { writeText } from '../../src/utils/fs.ts';
 
-function initRepo(dir: string) {
-  runArgs(['git', 'init'], { cwd: dir });
-  runArgs(['git', 'commit', '--allow-empty', '-m', 'init'], { cwd: dir });
-}
-
 describe('git helpers', () => {
   let tmpDir: string;
 
   beforeEach(async () => {
-    tmpDir = await mkdtemp(resolve(tmpdir(), 'bumpy-git-test-'));
-    initRepo(tmpDir);
+    tmpDir = await createTempGitRepo();
   });
 
   afterEach(async () => {
-    await rm(tmpDir, { recursive: true });
+    await cleanupTempDir(tmpDir);
   });
 
   // ---- createTag / tagExists ----
@@ -70,7 +62,6 @@ describe('git helpers', () => {
     });
 
     test('glob matches date-based release tags for suffix logic', () => {
-      // This is the pattern used by createAggregateRelease
       createTag('release-2026-04-14', { cwd: tmpDir });
       expect(listTags('release-2026-04-14*', { cwd: tmpDir })).toEqual(['release-2026-04-14']);
 
@@ -103,7 +94,6 @@ describe('git helpers', () => {
 
   describe('getCurrentBranch', () => {
     test('returns current branch name', () => {
-      // git init defaults to main or master depending on config
       const branch = getCurrentBranch({ cwd: tmpDir });
       expect(typeof branch).toBe('string');
       expect(branch!.length).toBeGreaterThan(0);
@@ -119,7 +109,6 @@ describe('git helpers', () => {
 
       commitFiles(['a.txt', 'b.txt'], 'add files', { cwd: tmpDir });
 
-      // Verify clean working tree
       expect(hasUncommittedChanges({ cwd: tmpDir })).toBe(false);
     });
 
@@ -129,7 +118,6 @@ describe('git helpers', () => {
 
       commitFiles(['staged.txt'], 'partial commit', { cwd: tmpDir });
 
-      // unstaged.txt should still be dirty
       expect(hasUncommittedChanges({ cwd: tmpDir })).toBe(true);
     });
   });
@@ -138,19 +126,18 @@ describe('git helpers', () => {
 
   describe('pushWithTags', () => {
     test('pushes commits and tags to remote', async () => {
-      // Set up a bare remote and clone
-      const remoteDir = await mkdtemp(resolve(tmpdir(), 'bumpy-remote-'));
-      runArgs(['git', 'init', '--bare'], { cwd: remoteDir });
-      runArgs(['git', 'remote', 'add', 'origin', remoteDir], { cwd: tmpDir });
-      // Push once with -u to set up tracking before testing pushWithTags
-      runArgs(['git', 'push', '-u', 'origin', 'HEAD'], { cwd: tmpDir });
+      const { mkdtemp, rm } = await import('node:fs/promises');
+      const remoteDir = await mkdtemp(resolve((await import('node:os')).tmpdir(), 'bumpy-remote-'));
+      gitInDir(['init', '--bare'], remoteDir);
+      gitInDir(['remote', 'add', 'origin', remoteDir], tmpDir);
+      gitInDir(['push', '-u', 'origin', 'HEAD'], tmpDir);
 
       createTag('v1.0.0', { cwd: tmpDir });
       pushWithTags({ cwd: tmpDir });
 
       // Clone from remote and check the tag arrived
-      const cloneDir = await mkdtemp(resolve(tmpdir(), 'bumpy-clone-'));
-      runArgs(['git', 'clone', remoteDir, '.'], { cwd: cloneDir });
+      const cloneDir = await mkdtemp(resolve((await import('node:os')).tmpdir(), 'bumpy-clone-'));
+      gitInDir(['clone', remoteDir, '.'], cloneDir);
       expect(tagExists('v1.0.0', { cwd: cloneDir })).toBe(true);
 
       await rm(remoteDir, { recursive: true });
