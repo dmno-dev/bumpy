@@ -1,5 +1,5 @@
 ---
-'@varlock/bumpy': minor
+'@varlock/bumpy': patch
 ---
 
 Revamp interactive prompts using `@clack/prompts` for a much nicer CLI UX.
