@@ -3,7 +3,7 @@ import { log, colorize } from '../utils/logger.ts';
 import { loadConfig } from '../core/config.ts';
 import { discoverWorkspace } from '../core/workspace.ts';
 import { readChangesets } from '../core/changeset.ts';
-import { tryRun } from '../utils/shell.ts';
+import { tryRunArgs } from '../utils/shell.ts';
 import type { WorkspacePackage } from '../types.ts';
 
 /**
@@ -61,9 +61,9 @@ export async function checkCommand(rootDir: string): Promise<void> {
 /** Get files changed on this branch compared to the base branch */
 function getChangedFiles(rootDir: string, baseBranch: string): string[] {
   // Try merge-base first (works on branches)
-  const mergeBase = tryRun(`git merge-base HEAD origin/${baseBranch}`, { cwd: rootDir });
+  const mergeBase = tryRunArgs(['git', 'merge-base', 'HEAD', `origin/${baseBranch}`], { cwd: rootDir });
   const ref = mergeBase || `origin/${baseBranch}`;
-  const diff = tryRun(`git diff --name-only ${ref}`, { cwd: rootDir });
+  const diff = tryRunArgs(['git', 'diff', '--name-only', ref], { cwd: rootDir });
   if (!diff) return [];
   return diff.split('\n').filter(Boolean);
 }

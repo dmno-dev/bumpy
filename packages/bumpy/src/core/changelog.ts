@@ -93,7 +93,17 @@ export async function loadFormatter(changelog: BumpyConfig['changelog'], rootDir
   // Custom module
   if (typeof name === 'string') {
     try {
-      const modulePath = name.startsWith('.') ? resolve(rootDir, name) : name;
+      let modulePath: string;
+      if (name.startsWith('.')) {
+        // Relative path — resolve and verify it stays within the project root
+        modulePath = resolve(rootDir, name);
+        if (!modulePath.startsWith(rootDir + '/')) {
+          throw new Error(`Changelog formatter path "${name}" resolves outside the project root`);
+        }
+      } else {
+        // Bare module specifier (e.g. npm package name)
+        modulePath = name;
+      }
       const mod = await import(modulePath);
       // Support: export default fn, export const changelogFormatter = fn, or module is fn
       const exported = mod.default || mod.changelogFormatter;

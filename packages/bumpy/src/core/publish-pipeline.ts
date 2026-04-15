@@ -2,8 +2,7 @@ import { resolve } from 'node:path';
 import { existsSync, readFileSync, writeFileSync, appendFileSync } from 'node:fs';
 import { unlink } from 'node:fs/promises';
 import { readJson, writeJson } from '../utils/fs.ts';
-import { runAsync } from '../utils/shell.ts';
-import { tryRun } from '../utils/shell.ts';
+import { runAsync, runArgsAsync, tryRunArgs, sq } from '../utils/shell.ts';
 import { log, colorize } from '../utils/logger.ts';
 import { createTag, tagExists } from './git.ts';
 import { DependencyGraph } from './dep-graph.ts';
@@ -72,7 +71,7 @@ function setupNpmAuth(rootDir: string, publishManager: string): void {
   // Scenario 1: OIDC trusted publishing
   const oidcProvider = detectOidcProvider();
   if (oidcProvider) {
-    const npmVersion = tryRun('npm --version');
+    const npmVersion = tryRunArgs(['npm', '--version']);
     if (npmVersion) {
       const [major, minor, patch] = npmVersion.split('.').map(Number);
       const meetsMinVersion = major! > 11 || (major === 11 && (minor! > 5 || (minor === 5 && patch! >= 1)));
@@ -187,7 +186,10 @@ export async function publishPackages(
           : [pkgConfig.publishCommand];
 
         for (const cmd of commands) {
-          const expanded = cmd.replace(/\{\{version\}\}/g, release.newVersion).replace(/\{\{name\}\}/g, release.name);
+          // Shell-quote substituted values to prevent injection via package names/versions
+          const expanded = cmd
+            .replace(/\{\{version\}\}/g, sq(release.newVersion))
+            .replace(/\{\{name\}\}/g, sq(release.name));
           log.dim(`  Running: ${expanded}`);
           if (!opts.dryRun) {
             await runAsync(expanded, { cwd: pkg.dir });
@@ -233,25 +235,25 @@ async function packThenPublish(
   packManager: PackageManager,
   opts: PublishOptions,
 ): Promise<void> {
-  const packCmd = getPackCommand(packManager);
-  log.dim(`  Packing with: ${packCmd}`);
+  const packArgs = getPackArgs(packManager);
+  log.dim(`  Packing with: ${packArgs.join(' ')}`);
 
   if (opts.dryRun) {
-    const publishCmd = buildPublishCommand(pkg, pkgConfig, config, opts, '<tarball>');
-    log.dim(`  Would publish with: ${publishCmd}`);
+    const publishArgs = buildPublishArgs(pkg, pkgConfig, config, opts, '<tarball>');
+    log.dim(`  Would publish with: ${publishArgs.join(' ')}`);
     return;
   }
 
   // Pack and capture the tarball filename
-  const packOutput = await runAsync(packCmd, { cwd: pkg.dir });
+  const packOutput = await runArgsAsync(packArgs, { cwd: pkg.dir });
   // Pack commands output the tarball filename on the last line
   const tarball = parseTarballPath(packOutput, pkg.dir);
 
   try {
     // Publish the tarball
-    const publishCmd = buildPublishCommand(pkg, pkgConfig, config, opts, tarball);
-    log.dim(`  Publishing: ${publishCmd}`);
-    await runAsync(publishCmd, { cwd: pkg.dir });
+    const publishArgs = buildPublishArgs(pkg, pkgConfig, config, opts, tarball);
+    log.dim(`  Publishing: ${publishArgs.join(' ')}`);
+    await runArgsAsync(publishArgs, { cwd: pkg.dir });
   } finally {
     // Clean up tarball
     try {
@@ -269,63 +271,63 @@ async function npmPublishDirect(
   config: BumpyConfig,
   opts: PublishOptions,
 ): Promise<void> {
-  const cmd = buildPublishCommand(pkg, pkgConfig, config, opts);
-  log.dim(`  Running: ${cmd}`);
+  const args = buildPublishArgs(pkg, pkgConfig, config, opts);
+  log.dim(`  Running: ${args.join(' ')}`);
   if (!opts.dryRun) {
-    await runAsync(cmd, { cwd: pkg.dir });
+    await runArgsAsync(args, { cwd: pkg.dir });
   }
 }
 
-function getPackCommand(pm: PackageManager): string {
+function getPackArgs(pm: PackageManager): string[] {
   switch (pm) {
     case 'pnpm':
-      return 'pnpm pack';
+      return ['pnpm', 'pack'];
     case 'bun':
-      return 'bun pm pack';
+      return ['bun', 'pm', 'pack'];
     case 'yarn':
-      return 'yarn pack';
+      return ['yarn', 'pack'];
     case 'npm':
     default:
-      return 'npm pack';
+      return ['npm', 'pack'];
   }
 }
 
-function buildPublishCommand(
+function buildPublishArgs(
   pkg: WorkspacePackage,
   pkgConfig: WorkspacePackage['bumpy'] & {},
   config: BumpyConfig,
   opts: PublishOptions,
   tarball?: string,
-): string {
+): string[] {
   const publishManager = config.publish.publishManager;
-  const parts: string[] = [];
+  const args: string[] = [];
 
   // Base command
   if (publishManager === 'yarn') {
-    parts.push('yarn npm publish');
+    args.push('yarn', 'npm', 'publish');
   } else {
-    parts.push(`${publishManager} publish`);
+    args.push(publishManager, 'publish');
   }
 
   // Tarball path (if pack-then-publish)
-  if (tarball) parts.push(tarball);
+  if (tarball) args.push(tarball);
 
   // Access
   const access = pkgConfig?.access || config.access;
-  parts.push(`--access ${access}`);
+  args.push('--access', access);
 
   // Registry
-  if (pkgConfig?.registry) parts.push(`--registry ${pkgConfig.registry}`);
+  if (pkgConfig?.registry) args.push('--registry', pkgConfig.registry);
 
   // Dist tag
-  if (opts.tag) parts.push(`--tag ${opts.tag}`);
+  if (opts.tag) args.push('--tag', opts.tag);
 
   // Extra user-configured args (e.g., --provenance)
   if (config.publish.publishArgs.length > 0) {
-    parts.push(...config.publish.publishArgs);
+    args.push(...config.publish.publishArgs);
   }
 
-  return parts.join(' ');
+  return args;
 }
 
 /**

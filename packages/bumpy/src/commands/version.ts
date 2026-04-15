@@ -5,7 +5,7 @@ import { DependencyGraph } from '../core/dep-graph.ts';
 import { readChangesets } from '../core/changeset.ts';
 import { assembleReleasePlan } from '../core/release-plan.ts';
 import { applyReleasePlan } from '../core/apply-release-plan.ts';
-import { run, tryRun } from '../utils/shell.ts';
+import { runArgs, tryRunArgs } from '../utils/shell.ts';
 import { detectWorkspaces } from '../utils/package-manager.ts';
 
 export async function versionCommand(rootDir: string): Promise<void> {
@@ -46,18 +46,18 @@ export async function versionCommand(rootDir: string): Promise<void> {
   if (config.commit) {
     try {
       // Stage version changes, changelogs, deleted changesets, and lockfile
-      run('git add -A .bumpy/', { cwd: rootDir });
+      runArgs(['git', 'add', '-A', '.bumpy/'], { cwd: rootDir });
       for (const r of plan.releases) {
         const pkg = packages.get(r.name)!;
-        run(`git add "${pkg.relativeDir}/package.json"`, { cwd: rootDir });
-        run(`git add "${pkg.relativeDir}/CHANGELOG.md"`, { cwd: rootDir });
+        runArgs(['git', 'add', '--', `${pkg.relativeDir}/package.json`], { cwd: rootDir });
+        runArgs(['git', 'add', '--', `${pkg.relativeDir}/CHANGELOG.md`], { cwd: rootDir });
       }
       // Stage lockfile if it changed
       for (const lockfile of ['bun.lock', 'bun.lockb', 'pnpm-lock.yaml', 'yarn.lock', 'package-lock.json']) {
-        tryRun(`git add "${lockfile}"`, { cwd: rootDir });
+        tryRunArgs(['git', 'add', '--', lockfile], { cwd: rootDir });
       }
       const msg = ['Version packages', '', ...plan.releases.map((r) => `${r.name}@${r.newVersion}`)].join('\n');
-      run('git commit -F -', { cwd: rootDir, input: msg });
+      runArgs(['git', 'commit', '-F', '-'], { cwd: rootDir, input: msg });
       log.success('Created git commit');
     } catch (e) {
       log.warn(`Git commit failed: ${e}`);
@@ -68,26 +68,26 @@ export async function versionCommand(rootDir: string): Promise<void> {
 /** Run the package manager's install to update the lockfile */
 async function updateLockfile(rootDir: string): Promise<void> {
   const { packageManager } = await detectWorkspaces(rootDir);
-  const installCmd = getInstallCommand(packageManager);
+  const installArgs = getInstallArgs(packageManager);
 
-  log.step(`Updating lockfile (${installCmd})...`);
+  log.step(`Updating lockfile (${installArgs.join(' ')})...`);
   try {
-    run(installCmd, { cwd: rootDir });
+    runArgs(installArgs, { cwd: rootDir });
     log.dim('  Lockfile updated');
   } catch (err) {
     log.warn(`  Lockfile update failed: ${err instanceof Error ? err.message : err}`);
   }
 }
 
-function getInstallCommand(pm: string): string {
+function getInstallArgs(pm: string): string[] {
   switch (pm) {
     case 'pnpm':
-      return 'pnpm install --lockfile-only';
+      return ['pnpm', 'install', '--lockfile-only'];
     case 'bun':
-      return 'bun install';
+      return ['bun', 'install'];
     case 'yarn':
-      return 'yarn install --mode update-lockfile';
+      return ['yarn', 'install', '--mode', 'update-lockfile'];
     default:
-      return 'npm install --package-lock-only';
+      return ['npm', 'install', '--package-lock-only'];
   }
 }
