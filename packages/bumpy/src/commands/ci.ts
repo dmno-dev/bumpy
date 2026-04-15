@@ -56,6 +56,13 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
   const depGraph = new DependencyGraph(packages);
   const allChangesets = await readChangesets(rootDir);
 
+  // Skip on the version PR branch — it has no changesets by design
+  const prBranchName = detectPrBranch(rootDir);
+  if (prBranchName === config.versionPr.branch) {
+    log.dim('  Skipping — this is the version PR branch.');
+    return;
+  }
+
   const inCI = !!process.env.CI;
   const shouldComment = opts.comment ?? inCI;
   const prNumber = detectPrNumber();
