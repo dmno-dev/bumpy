@@ -328,17 +328,25 @@ function buildPublishCommand(
   return parts.join(' ');
 }
 
-/** Parse the tarball path from pack command output */
+/**
+ * Parse the tarball path from pack command output.
+ * Each PM has different output formats:
+ *   npm/pnpm: tarball filename on the last line
+ *   bun:      tarball filename mid-output, summary lines after
+ *   yarn:     'success Wrote tarball to "/path/to/foo.tgz".'
+ */
 function parseTarballPath(output: string, cwd: string): string {
-  // Most PMs output the tarball filename on the last non-empty line
+  // Extract any .tgz path — handles both bare filenames and quoted paths (yarn)
+  const tgzMatch = output.match(/(?:^|["'\s])([^\s"']*\.tgz)/m);
+  if (tgzMatch) {
+    const tarball = tgzMatch[1]!;
+    return tarball.startsWith('/') ? tarball : resolve(cwd, tarball);
+  }
+
+  // Fallback: last non-empty line
   const lines = output.trim().split('\n').filter(Boolean);
   const lastLine = lines[lines.length - 1]?.trim() || '';
-
-  // If it's an absolute path, use it directly
-  if (lastLine.startsWith('/')) return lastLine;
-
-  // Otherwise treat it as relative to cwd
-  return resolve(cwd, lastLine);
+  return lastLine.startsWith('/') ? lastLine : resolve(cwd, lastLine);
 }
 
 function createGitTag(release: PlannedRelease, rootDir: string, opts: PublishOptions): void {
