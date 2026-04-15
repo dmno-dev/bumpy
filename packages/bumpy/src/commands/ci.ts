@@ -184,15 +184,26 @@ function pushWithToken(rootDir: string, branch: string): void {
 
   if (token && repo) {
     const authedUrl = `${server.replace('://', `://x-access-token:${token}@`)}/${repo}.git`;
-    // Temporarily swap the remote URL so the push uses the custom token
     const originalUrl = tryRunArgs(['git', 'remote', 'get-url', 'origin'], { cwd: rootDir });
+
+    // `actions/checkout` sets an http.extraheader with the default GITHUB_TOKEN.
+    // That header takes precedence over URL-embedded credentials, so we need to
+    // clear it temporarily for our custom token to be used.
+    const extraHeaderKey = `http.${server}/.extraheader`;
+    const savedHeader = tryRunArgs(['git', 'config', '--local', extraHeaderKey], { cwd: rootDir });
     try {
+      if (savedHeader) {
+        runArgs(['git', 'config', '--local', '--unset-all', extraHeaderKey], { cwd: rootDir });
+      }
       runArgs(['git', 'remote', 'set-url', 'origin', authedUrl], { cwd: rootDir });
       runArgs(['git', 'push', '-u', 'origin', branch, '--force'], { cwd: rootDir });
     } finally {
-      // Restore original URL (avoid leaking the token in git config)
+      // Restore original URL and extraheader (avoid leaking the token in git config)
       if (originalUrl) {
         runArgs(['git', 'remote', 'set-url', 'origin', originalUrl], { cwd: rootDir });
+      }
+      if (savedHeader) {
+        runArgs(['git', 'config', '--local', extraHeaderKey, savedHeader], { cwd: rootDir });
       }
     }
     log.dim('  Pushed with custom token — PR workflows will be triggered');
