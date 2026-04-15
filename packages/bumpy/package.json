@@ -2,6 +2,11 @@
   "name": "@varlock/bumpy",
   "version": "0.0.1",
   "description": "Modern monorepo versioning and changelog tool",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dmno-dev/bumpy",
+    "directory": "packages/bumpy"
+  },
   "bin": {
     "bumpy": "./dist/cli.mjs"
   },
