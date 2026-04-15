@@ -15,7 +15,8 @@
     "lint:fix": "oxlint --fix",
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check",
-    "check": "oxlint && oxfmt --check && bunx tsc -p packages/bumpy --noEmit",
+    "check": "oxlint && oxfmt --check && bun run --filter @varlock/bumpy check",
+    "test": "bun run --filter @varlock/bumpy test",
     "postinstall": "lefthook install"
   },
   "devDependencies": {
