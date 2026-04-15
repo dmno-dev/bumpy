@@ -240,14 +240,35 @@ function formatNoChangesetsComment(): string {
   ].join('\n');
 }
 
+const FROG_IMG_BASE = 'https://raw.githubusercontent.com/dmno-dev/bumpy/main/images';
+
+function bumpSectionHeader(type: string): string {
+  // I think pixelated css gets stripped but may as well leave it
+  const frog = `<img src="${FROG_IMG_BASE}/frog-${type}.png" alt="${type}" width="52" style="image-rendering: pixelated;" align="right" />`;
+  return `### ${frog} ${type.charAt(0).toUpperCase() + type.slice(1)} releases`;
+}
+
 function formatVersionPrBody(plan: ReleasePlan, preamble: string): string {
   const lines: string[] = [];
   lines.push(preamble);
   lines.push('');
 
+  const groups: Record<string, PlannedRelease[]> = { major: [], minor: [], patch: [] };
   for (const r of plan.releases) {
-    const suffix = r.isDependencyBump ? ' (dep)' : r.isCascadeBump ? ' (cascade)' : '';
-    lines.push(`- \`${r.name}\` ${r.oldVersion} → **${r.newVersion}**${suffix}`);
+    groups[r.type]?.push(r);
+  }
+
+  for (const type of ['major', 'minor', 'patch'] as const) {
+    const releases = groups[type];
+    if (!releases || releases.length === 0) continue;
+
+    lines.push(bumpSectionHeader(type));
+    lines.push('');
+    for (const r of releases) {
+      const suffix = r.isDependencyBump ? ' (dep)' : r.isCascadeBump ? ' (cascade)' : '';
+      lines.push(`- \`${r.name}\` ${r.oldVersion} → **${r.newVersion}**${suffix}`);
+    }
+    lines.push('');
   }
 
   return lines.join('\n');
