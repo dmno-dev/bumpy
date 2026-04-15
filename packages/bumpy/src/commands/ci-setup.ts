@@ -183,15 +183,21 @@ async function storeSecret(rootDir: string, repo: string, token: string, pm: Pac
     return;
   }
 
+  // Check if the secret already exists
+  const existingSecrets = tryRunArgs(['gh', 'secret', 'list', '--repo', repo], { cwd: rootDir });
+  const isReplacing = existingSecrets?.includes('BUMPY_GH_TOKEN') ?? false;
+
   const spin = p.spinner();
-  spin.start('Storing BUMPY_GH_TOKEN as a repository secret...');
+  spin.start(
+    isReplacing ? 'Replacing BUMPY_GH_TOKEN repository secret...' : 'Storing BUMPY_GH_TOKEN as a repository secret...',
+  );
   try {
-    // gh secret set reads from stdin
+    // gh secret set reads from stdin and overwrites if the secret already exists
     tryRunArgs(['gh', 'secret', 'set', 'BUMPY_GH_TOKEN', '--repo', repo], {
       cwd: rootDir,
       input: token,
     } as any);
-    spin.stop('Secret stored!');
+    spin.stop(isReplacing ? 'Secret replaced!' : 'Secret stored!');
   } catch {
     spin.stop('Failed to store secret');
     p.log.warn('Could not store the secret automatically.');
