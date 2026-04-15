@@ -164,6 +164,49 @@ async function autoPublish(rootDir: string, config: BumpyConfig, tag?: string): 
   await publishCommand(rootDir, { tag });
 }
 
+// ---- GitHub API push helper ----
+
+/**
+ * After a normal `git push`, recreate the tip commit via the GitHub REST API
+ * and force-update the branch ref to point at the API-created commit.
+ *
+ * Why: commits pushed with GITHUB_TOKEN don't trigger workflow runs (GitHub's
+ * anti-recursion guard), but commits created through the REST API *do*.
+ * The API commit has the same tree and parent so the PR diff is identical.
+ */
+async function rerouteCommitViaApi(
+  rootDir: string,
+  branch: string,
+  commitMsg: string,
+  config: BumpyConfig,
+): Promise<void> {
+  const treeSha = runArgs(['git', 'rev-parse', 'HEAD^{tree}'], { cwd: rootDir });
+  const parentSha = runArgs(['git', 'rev-parse', 'HEAD~1'], { cwd: rootDir });
+
+  const commitBody = JSON.stringify({
+    message: commitMsg,
+    tree: treeSha,
+    parents: [parentSha],
+    author: {
+      name: config.gitUser.name,
+      email: config.gitUser.email,
+    },
+  });
+
+  const apiCommitSha = await runArgsAsync(
+    ['gh', 'api', 'repos/{owner}/{repo}/git/commits', '--input', '-', '--jq', '.sha'],
+    { cwd: rootDir, input: commitBody },
+  );
+
+  const refBody = JSON.stringify({ sha: apiCommitSha, force: true });
+  await runArgsAsync(['gh', 'api', `repos/{owner}/{repo}/git/refs/heads/${branch}`, '-X', 'PATCH', '--input', '-'], {
+    cwd: rootDir,
+    input: refBody,
+  });
+
+  log.dim('  Re-pushed commit via GitHub API to trigger workflow runs');
+}
+
 // ---- version-pr mode ----
 
 async function createVersionPr(
@@ -209,7 +252,12 @@ async function createVersionPr(
 
   const commitMsg = ['Version packages', '', ...plan.releases.map((r) => `${r.name}@${r.newVersion}`)].join('\n');
   runArgs(['git', 'commit', '-F', '-'], { cwd: rootDir, input: commitMsg });
+
+  // Push via git first to upload objects, then recreate the commit via the
+  // GitHub API and force-update the ref.  Commits created through the REST API
+  // *do* trigger workflow runs, whereas commits pushed with GITHUB_TOKEN do not.
   runArgs(['git', 'push', '-u', 'origin', branch, '--force'], { cwd: rootDir });
+  await rerouteCommitViaApi(rootDir, branch, commitMsg, config);
 
   // Create or update PR
   const prBody = formatVersionPrBody(plan, config.versionPr.preamble);
