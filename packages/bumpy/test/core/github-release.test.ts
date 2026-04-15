@@ -1,32 +1,18 @@
-import { test, expect, describe } from 'bun:test';
-import { resolve } from 'node:path';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { runArgs } from '../../src/utils/shell.ts';
+import { test, expect, describe, beforeEach, afterEach } from 'bun:test';
+import { makeRelease, createTempGitRepo, cleanupTempDir } from '../helpers.ts';
+import {
+  installShellMock,
+  uninstallShellMock,
+  resetMockState,
+  getCallsMatching,
+  addMockRule,
+} from '../helpers-shell-mock.ts';
 import { listTags, tagExists } from '../../src/core/git.ts';
 import {
   resolveAggregateTagAndTitle,
   createAggregateRelease,
   createIndividualReleases,
 } from '../../src/core/github-release.ts';
-import type { PlannedRelease } from '../../src/types.ts';
-
-function initRepo(dir: string) {
-  runArgs(['git', 'init'], { cwd: dir });
-  runArgs(['git', 'commit', '--allow-empty', '-m', 'init'], { cwd: dir });
-}
-
-function makeRelease(name: string, version: string, type: 'major' | 'minor' | 'patch' = 'patch'): PlannedRelease {
-  return {
-    name,
-    type,
-    oldVersion: '0.0.0',
-    newVersion: version,
-    changesets: [],
-    isDependencyBump: false,
-    isCascadeBump: false,
-  };
-}
 
 // ---- Pure unit tests for tag/title resolution ----
 
@@ -61,96 +47,161 @@ describe('resolveAggregateTagAndTitle', () => {
   });
 });
 
-// ---- Integration tests using real git repos ----
+// ---- Integration tests using real git repos + mocked gh CLI ----
 
 describe('createAggregateRelease', () => {
   let tmpDir: string;
 
-  test('creates a date-based git tag (gh failure is caught)', async () => {
-    tmpDir = await mkdtemp(resolve(tmpdir(), 'bumpy-ghrel-'));
-    initRepo(tmpDir);
+  beforeEach(async () => {
+    tmpDir = await createTempGitRepo();
+    installShellMock();
+    addMockRule({ match: /^gh release create/, response: '' });
+  });
 
-    const releases = [makeRelease('pkg-a', '1.0.0', 'minor')];
+  afterEach(async () => {
+    uninstallShellMock();
+    await cleanupTempDir(tmpDir);
+  });
 
-    // This will create the git tag, then fail at `gh release create` (no auth),
-    // but the error is caught — we verify the tag was created correctly
+  test('creates a date-based git tag', async () => {
+    const releases = [makeRelease('pkg-a', '1.0.0', { type: 'minor' })];
+
     await createAggregateRelease(releases, [], tmpDir);
 
     const today = new Date().toISOString().split('T')[0];
     expect(tagExists(`release-${today}`, { cwd: tmpDir })).toBe(true);
+  });
 
-    await rm(tmpDir, { recursive: true });
+  test('calls gh release create with correct arguments', async () => {
+    const releases = [makeRelease('pkg-a', '1.0.0', { type: 'minor' })];
+
+    await createAggregateRelease(releases, [], tmpDir);
+
+    const ghCalls = getCallsMatching('gh release create');
+    expect(ghCalls).toHaveLength(1);
+    expect(ghCalls[0]!.command).toContain('release-');
+    expect(ghCalls[0]!.command).toContain('--title');
+    expect(ghCalls[0]!.command).toContain('--notes');
   });
 
   test('second call on same day creates tag with -2 suffix', async () => {
-    tmpDir = await mkdtemp(resolve(tmpdir(), 'bumpy-ghrel-'));
-    initRepo(tmpDir);
-
     const releases = [makeRelease('pkg-a', '1.0.0')];
     const today = new Date().toISOString().split('T')[0];
 
-    // First release
     await createAggregateRelease(releases, [], tmpDir);
     expect(tagExists(`release-${today}`, { cwd: tmpDir })).toBe(true);
 
-    // Second release
     await createAggregateRelease(releases, [], tmpDir);
     expect(tagExists(`release-${today}-2`, { cwd: tmpDir })).toBe(true);
 
-    // Third release
     await createAggregateRelease(releases, [], tmpDir);
     expect(tagExists(`release-${today}-3`, { cwd: tmpDir })).toBe(true);
 
-    // All three tags exist
     const tags = listTags(`release-${today}*`, { cwd: tmpDir });
     expect(tags).toHaveLength(3);
-
-    await rm(tmpDir, { recursive: true });
   });
 
   test('skips with empty releases array', async () => {
-    tmpDir = await mkdtemp(resolve(tmpdir(), 'bumpy-ghrel-'));
-    initRepo(tmpDir);
-
-    // Should return early, no tags created
     await createAggregateRelease([], [], tmpDir);
 
     const tags = listTags('release-*', { cwd: tmpDir });
     expect(tags).toHaveLength(0);
+    const ghCalls = getCallsMatching('gh release create');
+    expect(ghCalls).toHaveLength(0);
+  });
 
-    await rm(tmpDir, { recursive: true });
+  test('handles gh failure gracefully', async () => {
+    // Override the default gh release create rule with an error
+    installShellMock();
+    addMockRule({ match: /^gh release create/, error: 'auth required' });
+
+    const releases = [makeRelease('pkg-a', '1.0.0', { type: 'minor' })];
+
+    // Should not throw
+    await createAggregateRelease(releases, [], tmpDir);
+
+    // Tag should still be created (git tag happens before gh release create)
+    const today = new Date().toISOString().split('T')[0];
+    expect(tagExists(`release-${today}`, { cwd: tmpDir })).toBe(true);
+  });
+
+  test('skips entirely when gh is not available', async () => {
+    installShellMock({ interceptGh: false });
+    addMockRule({ match: 'gh --version', error: 'not found' });
+
+    const releases = [makeRelease('pkg-a', '1.0.0')];
+    await createAggregateRelease(releases, [], tmpDir);
+
+    const tags = listTags('release-*', { cwd: tmpDir });
+    expect(tags).toHaveLength(0);
   });
 });
 
 describe('createIndividualReleases', () => {
   let tmpDir: string;
 
-  test('dry run does not create tags or call gh', async () => {
-    tmpDir = await mkdtemp(resolve(tmpdir(), 'bumpy-ghrel-'));
-    initRepo(tmpDir);
+  beforeEach(async () => {
+    tmpDir = await createTempGitRepo();
+    installShellMock();
+    addMockRule({ match: /^gh release create/, response: '' });
+  });
 
+  afterEach(async () => {
+    uninstallShellMock();
+    await cleanupTempDir(tmpDir);
+  });
+
+  test('dry run does not create tags or call gh', async () => {
     const releases = [makeRelease('pkg-a', '1.0.0'), makeRelease('pkg-b', '2.0.0')];
 
     await createIndividualReleases(releases, [], tmpDir, { dryRun: true });
 
-    // No tags should be created in dry-run mode
     expect(tagExists('pkg-a@1.0.0', { cwd: tmpDir })).toBe(false);
     expect(tagExists('pkg-b@2.0.0', { cwd: tmpDir })).toBe(false);
 
-    await rm(tmpDir, { recursive: true });
+    const ghCalls = getCallsMatching('gh release create');
+    expect(ghCalls).toHaveLength(0);
   });
 
-  test('creates per-package releases (gh failure is caught)', async () => {
-    tmpDir = await mkdtemp(resolve(tmpdir(), 'bumpy-ghrel-'));
-    initRepo(tmpDir);
+  test('creates per-package releases via gh', async () => {
+    const releases = [
+      makeRelease('pkg-a', '1.0.0', { type: 'minor' }),
+      makeRelease('pkg-b', '2.0.0', { type: 'major' }),
+    ];
 
-    const releases = [makeRelease('pkg-a', '1.0.0', 'minor'), makeRelease('pkg-b', '2.0.0', 'major')];
-
-    // gh will fail but errors are caught per-release — all releases attempted
     await createIndividualReleases(releases, [], tmpDir);
 
-    // Individual releases don't create git tags (that's done by publish-pipeline)
-    // but this verifies the function doesn't throw on gh failure
-    await rm(tmpDir, { recursive: true });
+    const ghCalls = getCallsMatching('gh release create');
+    expect(ghCalls).toHaveLength(2);
+    expect(ghCalls[0]!.command).toContain('pkg-a@1.0.0');
+    expect(ghCalls[1]!.command).toContain('pkg-b@2.0.0');
+  });
+
+  test('includes changeset summaries in release body', async () => {
+    const changesets = [
+      { id: 'cs1', releases: [{ name: 'pkg-a', type: 'patch' as const }], summary: 'Fixed the login bug' },
+    ];
+    const releases = [makeRelease('pkg-a', '1.0.1', { changesets: ['cs1'] })];
+
+    await createIndividualReleases(releases, changesets, tmpDir);
+
+    const ghCalls = getCallsMatching('gh release create');
+    expect(ghCalls).toHaveLength(1);
+    const notesIdx = ghCalls[0]!.args!.indexOf('--notes');
+    expect(notesIdx).toBeGreaterThan(-1);
+    expect(ghCalls[0]!.args![notesIdx + 1]).toContain('Fixed the login bug');
+  });
+
+  test('continues after individual release failure', async () => {
+    installShellMock();
+    addMockRule({ match: 'pkg-a@1.0.0', error: 'tag already exists' });
+    addMockRule({ match: /^gh release create/, response: '' });
+
+    const releases = [makeRelease('pkg-a', '1.0.0'), makeRelease('pkg-b', '2.0.0')];
+
+    await createIndividualReleases(releases, [], tmpDir);
+
+    const ghCalls = getCallsMatching('gh release create');
+    expect(ghCalls).toHaveLength(2);
   });
 });
