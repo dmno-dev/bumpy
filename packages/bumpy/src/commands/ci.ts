@@ -115,6 +115,12 @@ interface ReleaseOptions {
  * Designed for merge-to-main workflows.
  */
 export async function ciReleaseCommand(rootDir: string, opts: ReleaseOptions): Promise<void> {
+  // If a custom token is provided, also expose it as GH_TOKEN so that
+  // `gh` CLI calls (PR creation, comments, etc.) use the same credential.
+  if (process.env.BUMPY_GH_TOKEN) {
+    process.env.GH_TOKEN = process.env.BUMPY_GH_TOKEN;
+  }
+
   const config = await loadConfig(rootDir);
   ensureGitIdentity(rootDir, config);
   const { packages } = await discoverWorkspace(rootDir, config);
@@ -164,47 +170,47 @@ async function autoPublish(rootDir: string, config: BumpyConfig, tag?: string): 
   await publishCommand(rootDir, { tag });
 }
 
-// ---- GitHub API push helper ----
+// ---- Token-aware push ----
 
 /**
- * After a normal `git push`, recreate the tip commit via the GitHub REST API
- * and force-update the branch ref to point at the API-created commit.
+ * Push a branch to origin, optionally using a custom GitHub token.
  *
- * Why: commits pushed with GITHUB_TOKEN don't trigger workflow runs (GitHub's
- * anti-recursion guard), but commits created through the REST API *do*.
- * The API commit has the same tree and parent so the PR diff is identical.
+ * When `BUMPY_GH_TOKEN` is set, the remote URL is temporarily rewritten to
+ * include the token.  Pushes made with a PAT or GitHub App token bypass
+ * GitHub's anti-recursion guard, allowing `pull_request` workflows to fire
+ * on the version PR — no extra CI configuration required.
+ *
+ * When only the default `GITHUB_TOKEN` is available the push still succeeds,
+ * but PR workflows won't be triggered automatically.
  */
-async function rerouteCommitViaApi(
-  rootDir: string,
-  branch: string,
-  commitMsg: string,
-  config: BumpyConfig,
-): Promise<void> {
-  const treeSha = runArgs(['git', 'rev-parse', 'HEAD^{tree}'], { cwd: rootDir });
-  const parentSha = runArgs(['git', 'rev-parse', 'HEAD~1'], { cwd: rootDir });
+function pushWithToken(rootDir: string, branch: string): void {
+  const token = process.env.BUMPY_GH_TOKEN;
+  const repo = process.env.GITHUB_REPOSITORY; // e.g. "owner/repo"
+  const server = process.env.GITHUB_SERVER_URL || 'https://github.com';
 
-  const commitBody = JSON.stringify({
-    message: commitMsg,
-    tree: treeSha,
-    parents: [parentSha],
-    author: {
-      name: config.gitUser.name,
-      email: config.gitUser.email,
-    },
-  });
-
-  const apiCommitSha = await runArgsAsync(
-    ['gh', 'api', 'repos/{owner}/{repo}/git/commits', '--input', '-', '--jq', '.sha'],
-    { cwd: rootDir, input: commitBody },
-  );
-
-  const refBody = JSON.stringify({ sha: apiCommitSha, force: true });
-  await runArgsAsync(['gh', 'api', `repos/{owner}/{repo}/git/refs/heads/${branch}`, '-X', 'PATCH', '--input', '-'], {
-    cwd: rootDir,
-    input: refBody,
-  });
-
-  log.dim('  Re-pushed commit via GitHub API to trigger workflow runs');
+  if (token && repo) {
+    const authedUrl = `${server.replace('://', `://x-access-token:${token}@`)}/${repo}.git`;
+    // Temporarily swap the remote URL so the push uses the custom token
+    const originalUrl = tryRunArgs(['git', 'remote', 'get-url', 'origin'], { cwd: rootDir });
+    try {
+      runArgs(['git', 'remote', 'set-url', 'origin', authedUrl], { cwd: rootDir });
+      runArgs(['git', 'push', '-u', 'origin', branch, '--force'], { cwd: rootDir });
+    } finally {
+      // Restore original URL (avoid leaking the token in git config)
+      if (originalUrl) {
+        runArgs(['git', 'remote', 'set-url', 'origin', originalUrl], { cwd: rootDir });
+      }
+    }
+    log.dim('  Pushed with custom token — PR workflows will be triggered');
+  } else {
+    runArgs(['git', 'push', '-u', 'origin', branch, '--force'], { cwd: rootDir });
+    if (!token) {
+      log.warn(
+        'BUMPY_GH_TOKEN is not set — PR checks will not trigger automatically.\n' +
+          '  Run `bumpy ci setup` for help, or see https://bumpy.dev/docs/ci#pr-checks',
+      );
+    }
+  }
 }
 
 // ---- version-pr mode ----
@@ -253,11 +259,7 @@ async function createVersionPr(
   const commitMsg = ['Version packages', '', ...plan.releases.map((r) => `${r.name}@${r.newVersion}`)].join('\n');
   runArgs(['git', 'commit', '-F', '-'], { cwd: rootDir, input: commitMsg });
 
-  // Push via git first to upload objects, then recreate the commit via the
-  // GitHub API and force-update the ref.  Commits created through the REST API
-  // *do* trigger workflow runs, whereas commits pushed with GITHUB_TOKEN do not.
-  runArgs(['git', 'push', '-u', 'origin', branch, '--force'], { cwd: rootDir });
-  await rerouteCommitViaApi(rootDir, branch, commitMsg, config);
+  pushWithToken(rootDir, branch);
 
   // Create or update PR
   const prBody = formatVersionPrBody(plan, config.versionPr.preamble);
