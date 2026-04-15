@@ -1,12 +1,6 @@
 import { test, expect, describe, beforeEach, afterEach } from 'bun:test';
 import { makeRelease, createTempGitRepo, cleanupTempDir } from '../helpers.ts';
-import {
-  installShellMock,
-  uninstallShellMock,
-  resetMockState,
-  getCallsMatching,
-  addMockRule,
-} from '../helpers-shell-mock.ts';
+import { installShellMock, uninstallShellMock, getCallsMatching, addMockRule } from '../helpers-shell-mock.ts';
 import { listTags, tagExists } from '../../src/core/git.ts';
 import {
   resolveAggregateTagAndTitle,

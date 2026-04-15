@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import type { WorkspacePackage, PlannedRelease, BumpType, BumpyConfig, Changeset, ReleasePlan } from '../src/types.ts';
-import { DEFAULT_CONFIG, DEFAULT_PUBLISH_CONFIG } from '../src/types.ts';
+import { DEFAULT_CONFIG } from '../src/types.ts';
 
 // ---- Factory functions ----
 
