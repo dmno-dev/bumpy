@@ -209,7 +209,8 @@ function pushWithToken(rootDir: string, branch: string): void {
     log.dim('  Pushed with custom token — PR workflows will be triggered');
   } else {
     runArgs(['git', 'push', '-u', 'origin', branch, '--force'], { cwd: rootDir });
-    if (!token) {
+    if (!token && repo) {
+      // Only warn on GitHub Actions — other CI providers don't have this limitation
       log.warn(
         'BUMPY_GH_TOKEN is not set — PR checks will not trigger automatically.\n' +
           '  Run `bumpy ci setup` for help, or see https://bumpy.dev/docs/ci#pr-checks',
