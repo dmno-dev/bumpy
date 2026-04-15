@@ -39,7 +39,7 @@ function detectOidcProvider(): 'github-actions' | 'gitlab' | 'circleci' | null {
 }
 
 const OIDC_NPM_UPGRADE_HINTS: Record<string, string> = {
-  'github-actions': 'Add `actions/setup-node@v4` with `node-version: lts/*` to your workflow',
+  'github-actions': 'Add `actions/setup-node@v6` with `node-version: lts/*` to your workflow',
   gitlab: 'Use a Node.js image with npm >= 11.5.1 or run `npm install -g npm@latest`',
   circleci: 'Use a Node.js image with npm >= 11.5.1 or run `sudo npm install -g npm@latest`',
 };
