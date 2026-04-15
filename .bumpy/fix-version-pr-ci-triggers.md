@@ -1,5 +1,5 @@
 ---
-'@varlock/bumpy': minor
+'@varlock/bumpy': patch
 ---
 
 Support custom token for triggering CI on version PRs
