@@ -158,10 +158,9 @@ async function findUnpublishedPackages(
 }
 
 async function checkIfPublished(name: string, version: string, pkgConfig?: PackageConfig): Promise<boolean> {
-  const { runAsync } = await import('../utils/shell.ts');
-  const { tryRun } = await import('../utils/shell.ts');
+  const { runAsync, runArgsAsync, tryRunArgs } = await import('../utils/shell.ts');
 
-  // 1. Custom check command
+  // 1. Custom check command (user-defined, runs in shell by design)
   if (pkgConfig?.checkPublished) {
     try {
       const result = await runAsync(pkgConfig.checkPublished);
@@ -174,13 +173,14 @@ async function checkIfPublished(name: string, version: string, pkgConfig?: Packa
   // 2. Non-npm packages — check git tags
   if (pkgConfig?.skipNpmPublish || pkgConfig?.publishCommand) {
     const tag = `${name}@${version}`;
-    return tryRun(`git tag -l "${tag}"`) === tag;
+    return tryRunArgs(['git', 'tag', '-l', tag]) === tag;
   }
 
   // 3. Default — check npm registry
   try {
-    const regFlag = pkgConfig?.registry ? `--registry ${pkgConfig.registry}` : '';
-    const result = await runAsync(`npm info "${name}@${version}" version ${regFlag}`.trim());
+    const args = ['npm', 'info', `${name}@${version}`, 'version'];
+    if (pkgConfig?.registry) args.push('--registry', pkgConfig.registry);
+    const result = await runArgsAsync(args);
     return result === version;
   } catch {
     return false;
