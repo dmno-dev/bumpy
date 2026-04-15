@@ -87,7 +87,7 @@ export async function loadFormatter(changelog: BumpyConfig['changelog'], rootDir
   // Built-in with options (e.g., ["github", { repo: "..." }])
   if (name === 'github') {
     const { createGithubFormatter } = await import('./changelog-github.ts');
-    return createGithubFormatter(options as Record<string, unknown>);
+    return createGithubFormatter(options as import('./changelog-github.ts').GithubChangelogOptions);
   }
 
   // Custom module

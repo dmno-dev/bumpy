@@ -7,6 +7,7 @@ export { assembleReleasePlan } from './core/release-plan.ts';
 export { applyReleasePlan } from './core/apply-release-plan.ts';
 export { generateChangelogEntry, loadFormatter, defaultFormatter, prependToChangelog } from './core/changelog.ts';
 export type { ChangelogFormatter, ChangelogContext } from './core/changelog.ts';
+export type { GithubChangelogOptions } from './core/changelog-github.ts';
 export { bumpVersion, satisfies, stripProtocol } from './core/semver.ts';
 export { publishPackages } from './core/publish-pipeline.ts';
 export * from './types.ts';
