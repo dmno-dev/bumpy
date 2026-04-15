@@ -39,7 +39,7 @@ export async function ciSetupCommand(rootDir: string): Promise<void> {
         {
           label: 'GitHub App installation token',
           value: 'app' as const,
-          hint: 'advanced — better for orgs with many repos',
+          hint: 'advanced — not tied to a personal account',
         },
       ],
     }),
