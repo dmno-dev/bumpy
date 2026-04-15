@@ -34,12 +34,12 @@ export async function ciSetupCommand(rootDir: string): Promise<void> {
         {
           label: 'Fine-grained Personal Access Token (PAT)',
           value: 'pat' as const,
-          hint: 'simplest setup',
+          hint: 'recommended — quick and simple',
         },
         {
           label: 'GitHub App installation token',
           value: 'app' as const,
-          hint: 'recommended for orgs / shared repos',
+          hint: 'advanced — better for orgs with many repos',
         },
       ],
     }),
