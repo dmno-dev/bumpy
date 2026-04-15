@@ -488,8 +488,9 @@ function formatVersionPrBody(plan: ReleasePlan, preamble: string, packageDirs: M
       if (relevantChangesets.length > 0) {
         for (const cs of relevantChangesets) {
           if (cs.summary) {
+            const csLink = ` ([changeset](#diff-${sha256Hex(`.bumpy/${cs.id}.md`)}))`;
             const summaryLines = cs.summary.split('\n');
-            lines.push(`- ${summaryLines[0]}`);
+            lines.push(`- ${summaryLines[0]}${csLink}`);
             for (let i = 1; i < summaryLines.length; i++) {
               if (summaryLines[i]!.trim()) {
                 lines.push(`  ${summaryLines[i]}`);
