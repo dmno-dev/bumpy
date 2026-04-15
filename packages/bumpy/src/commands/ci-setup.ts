@@ -2,6 +2,8 @@ import pc from 'picocolors';
 import { log } from '../utils/logger.ts';
 import { p, unwrap } from '../utils/clack.ts';
 import { tryRunArgs } from '../utils/shell.ts';
+import { detectPackageManager } from '../utils/package-manager.ts';
+import type { PackageManager } from '../types.ts';
 
 const PAT_PERMISSIONS = [
   'contents: read & write',
@@ -12,12 +14,13 @@ const PAT_PERMISSIONS = [
 export async function ciSetupCommand(rootDir: string): Promise<void> {
   p.intro(pc.bgCyan(pc.black(' bumpy ci setup ')));
 
-  // Detect repo context
+  // Detect repo and package manager context
   const repo = detectRepo(rootDir);
   if (!repo) {
     log.error('Could not detect GitHub repository. Run this from a repo with a GitHub remote.');
     process.exit(1);
   }
+  const pm = await detectPackageManager(rootDir);
 
   p.log.info(`Detected repository: ${pc.cyan(repo)}`);
   p.log.info('');
@@ -46,15 +49,15 @@ export async function ciSetupCommand(rootDir: string): Promise<void> {
   );
 
   if (method === 'pat') {
-    await setupPat(rootDir, repo);
+    await setupPat(rootDir, repo, pm);
   } else {
-    await setupApp(rootDir, repo);
+    await setupApp(rootDir, repo, pm);
   }
 }
 
 // ---- PAT flow ----
 
-async function setupPat(rootDir: string, repo: string): Promise<void> {
+async function setupPat(rootDir: string, repo: string, pm: PackageManager): Promise<void> {
   const patUrl = 'https://github.com/settings/personal-access-tokens/new';
 
   p.log.info('');
@@ -98,12 +101,12 @@ async function setupPat(rootDir: string, repo: string): Promise<void> {
     }),
   );
 
-  await storeSecret(rootDir, repo, token);
+  await storeSecret(rootDir, repo, token, pm);
 }
 
 // ---- GitHub App flow ----
 
-async function setupApp(rootDir: string, repo: string): Promise<void> {
+async function setupApp(rootDir: string, repo: string, pm: PackageManager): Promise<void> {
   const owner = repo.split('/')[0]!;
   const appUrl = `https://github.com/organizations/${owner}/settings/apps/new`;
   const personalAppUrl = `https://github.com/settings/apps/new`;
@@ -152,10 +155,10 @@ async function setupApp(rootDir: string, repo: string): Promise<void> {
   );
 
   if (hasSecrets) {
-    printAppWorkflowSnippet();
+    printAppWorkflowSnippet(pm);
   } else {
     p.log.info('You can add them later. Once ready, update your release workflow:');
-    printAppWorkflowSnippet();
+    printAppWorkflowSnippet(pm);
   }
 
   p.outro(pc.green('GitHub App setup complete!'));
@@ -163,7 +166,7 @@ async function setupApp(rootDir: string, repo: string): Promise<void> {
 
 // ---- Shared helpers ----
 
-async function storeSecret(rootDir: string, repo: string, token: string): Promise<void> {
+async function storeSecret(rootDir: string, repo: string, token: string, pm: PackageManager): Promise<void> {
   const hasGh = tryRunArgs(['gh', '--version']);
   if (!hasGh) {
     p.log.warn("`gh` CLI not found — you'll need to add the secret manually.");
@@ -172,7 +175,7 @@ async function storeSecret(rootDir: string, repo: string, token: string): Promis
         `Name: ${pc.bold('BUMPY_GH_TOKEN')}\nValue: (the token you just created)`,
       'Add repository secret manually',
     );
-    printPatWorkflowSnippet();
+    printPatWorkflowSnippet(pm);
     p.outro(pc.green('Setup complete!'));
     return;
   }
@@ -196,17 +199,18 @@ async function storeSecret(rootDir: string, repo: string, token: string): Promis
     );
   }
 
-  printPatWorkflowSnippet();
+  printPatWorkflowSnippet(pm);
   p.outro(pc.green('Setup complete!'));
 }
 
-function printPatWorkflowSnippet(): void {
+function printPatWorkflowSnippet(pm: PackageManager): void {
+  const runCmd = pmxCommand(pm);
   p.note(
     [
       'In your release workflow, pass the token to bumpy:',
       '',
       pc.dim('# .github/workflows/release.yaml'),
-      pc.dim('- run: bunx @varlock/bumpy ci release'),
+      pc.dim(`- run: ${runCmd} ci release`),
       pc.dim('  env:'),
       pc.green('    BUMPY_GH_TOKEN: ${{ secrets.BUMPY_GH_TOKEN }}'),
     ].join('\n'),
@@ -214,7 +218,8 @@ function printPatWorkflowSnippet(): void {
   );
 }
 
-function printAppWorkflowSnippet(): void {
+function printAppWorkflowSnippet(pm: PackageManager): void {
+  const runCmd = pmxCommand(pm);
   p.note(
     [
       'In your release workflow, generate a token and pass it to bumpy:',
@@ -226,12 +231,20 @@ function printAppWorkflowSnippet(): void {
       pc.green('    app-id: ${{ secrets.BUMPY_APP_ID }}'),
       pc.green('    private-key: ${{ secrets.BUMPY_APP_PRIVATE_KEY }}'),
       '',
-      pc.dim('- run: bunx @varlock/bumpy ci release'),
+      pc.dim(`- run: ${runCmd} ci release`),
       pc.dim('  env:'),
       pc.green('    BUMPY_GH_TOKEN: ${{ steps.app-token.outputs.token }}'),
     ].join('\n'),
     'Update your workflow',
   );
+}
+
+/** Package-manager-appropriate command for running bumpy in CI workflows */
+function pmxCommand(pm: PackageManager): string {
+  if (pm === 'bun') return 'bunx @varlock/bumpy';
+  if (pm === 'pnpm') return 'pnpm exec bumpy';
+  if (pm === 'yarn') return 'yarn bumpy';
+  return 'npx @varlock/bumpy';
 }
 
 function detectRepo(rootDir: string): string | null {
