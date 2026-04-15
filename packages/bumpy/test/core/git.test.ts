@@ -142,6 +142,8 @@ describe('git helpers', () => {
       const remoteDir = await mkdtemp(resolve(tmpdir(), 'bumpy-remote-'));
       runArgs(['git', 'init', '--bare'], { cwd: remoteDir });
       runArgs(['git', 'remote', 'add', 'origin', remoteDir], { cwd: tmpDir });
+      // Push once with -u to set up tracking before testing pushWithTags
+      runArgs(['git', 'push', '-u', 'origin', 'HEAD'], { cwd: tmpDir });
 
       createTag('v1.0.0', { cwd: tmpDir });
       pushWithTags({ cwd: tmpDir });
