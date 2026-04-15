@@ -24,6 +24,7 @@
   },
   "scripts": {
     "build": "tsdown",
+    "check": "bun run tsc --noEmit",
     "test": "bun test"
   },
   "devDependencies": {
