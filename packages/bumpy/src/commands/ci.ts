@@ -419,7 +419,7 @@ async function postOrUpdatePrComment(prNumber: string, body: string, rootDir: st
 
     if (commentId) {
       await runArgsAsync(
-        ['gh', 'api', `repos/{owner}/{repo}/issues/comments/${commentId}`, '-X', 'PATCH', '-f', 'body=@-'],
+        ['gh', 'api', `repos/{owner}/{repo}/issues/comments/${commentId}`, '-X', 'PATCH', '-F', 'body=@-'],
         { cwd: rootDir, input: markedBody },
       );
       log.dim('  Updated PR comment');
