@@ -28,11 +28,12 @@
     "test": "bun test"
   },
   "devDependencies": {
+    "@clack/prompts": "^1.2.0",
     "@types/bun": "latest",
     "@types/js-yaml": "^4.0.9",
     "@types/semver": "^7.7.0",
-    "ansis": "^4.2.0",
     "js-yaml": "^4.1.0",
+    "picocolors": "^1.1.1",
     "semver": "^7.7.2",
     "tsdown": "catalog:"
   }

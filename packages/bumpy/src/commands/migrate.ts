@@ -1,10 +1,11 @@
 import { resolve } from 'node:path';
 import { readdir } from 'node:fs/promises';
+import pc from 'picocolors';
 import { log } from '../utils/logger.ts';
 import { readJson, readText, exists } from '../utils/fs.ts';
 import { getBumpyDir } from '../core/config.ts';
 import { writeChangeset } from '../core/changeset.ts';
-import { confirm } from '../utils/prompt.ts';
+import { p, unwrap } from '../utils/clack.ts';
 import { initCommand } from './init.ts';
 import type { ChangesetRelease, BumpTypeWithIsolated } from '../types.ts';
 
@@ -69,15 +70,23 @@ export async function migrateCommand(rootDir: string, opts: MigrateOptions): Pro
 
   // Step 3: Offer to clean up
   if (!opts.force) {
-    console.log();
-    const shouldCleanup = await confirm('Remove .changeset/ directory?', false);
+    p.intro(pc.bgCyan(pc.black(' bumpy migrate ')));
+    const shouldCleanup = unwrap(
+      await p.confirm({
+        message: 'Remove .changeset/ directory?',
+        initialValue: false,
+      }),
+    );
     if (shouldCleanup) {
+      const spin = p.spinner();
+      spin.start('Removing .changeset/');
       const { rm } = await import('node:fs/promises');
       await rm(changesetDir, { recursive: true });
-      log.success('Removed .changeset/ directory');
+      spin.stop('Removed .changeset/ directory');
     } else {
-      log.dim('Keeping .changeset/ — you can remove it manually when ready.');
+      p.log.info('Keeping .changeset/ — you can remove it manually when ready.');
     }
+    p.outro(pc.green('Cleanup complete'));
   }
 
   console.log();
