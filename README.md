@@ -116,14 +116,17 @@ jobs:
         with:
           fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
-      - run: npm install -g npm@latest # npm >= 11.5.1 required for trusted publishing
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          registry-url: 'https://registry.npmjs.org'
       - run: bun install
       - run: bunx @varlock/bumpy ci release
         env:
           GH_TOKEN: ${{ github.token }}
 ```
 
-> **Trusted publishing setup:** Configure each package on [npmjs.com](https://docs.npmjs.com/trusted-publishers/) → Package Settings → Trusted Publishers → GitHub Actions. Specify your org/user, repo, and the workflow filename (`bumpy-release.yml`). No `NPM_TOKEN` secret needed.
+> **Trusted publishing setup:** Configure each package on [npmjs.com](https://docs.npmjs.com/trusted-publishers/) → Package Settings → Trusted Publishers → GitHub Actions. Specify your org/user, repo, and the workflow filename (`bumpy-release.yml`). No `NPM_TOKEN` secret needed. Requires npm >= 11.5.1 — bumpy will warn if your version is too old.
 
 <details>
 <summary>Alternative: token-based auth (NPM_TOKEN secret)</summary>

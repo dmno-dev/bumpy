@@ -22,16 +22,33 @@ export interface PublishResult {
   failed: { name: string; error: string }[];
 }
 
-/** Check if GitHub Actions OIDC is available (id-token: write permission granted) */
-function isOidcAvailable(): boolean {
-  return !!process.env.ACTIONS_ID_TOKEN_REQUEST_URL;
+/**
+ * Detect which CI OIDC provider is available for npm trusted publishing.
+ * Returns the provider name or null if none detected.
+ *
+ * Supported providers:
+ * - GitHub Actions: `ACTIONS_ID_TOKEN_REQUEST_URL` (set when `id-token: write` permission is granted)
+ * - GitLab CI: `GITLAB_CI` + `NPM_ID_TOKEN`
+ * - CircleCI: `CIRCLECI` + `NPM_ID_TOKEN`
+ */
+function detectOidcProvider(): 'github-actions' | 'gitlab' | 'circleci' | null {
+  if (process.env.ACTIONS_ID_TOKEN_REQUEST_URL) return 'github-actions';
+  if (process.env.GITLAB_CI && process.env.NPM_ID_TOKEN) return 'gitlab';
+  if (process.env.CIRCLECI && process.env.NPM_ID_TOKEN) return 'circleci';
+  return null;
 }
+
+const OIDC_NPM_UPGRADE_HINTS: Record<string, string> = {
+  'github-actions': 'Add `actions/setup-node@v4` with `node-version: lts/*` to your workflow',
+  gitlab: 'Use a Node.js image with npm >= 11.5.1 or run `npm install -g npm@latest`',
+  circleci: 'Use a Node.js image with npm >= 11.5.1 or run `sudo npm install -g npm@latest`',
+};
 
 /**
  * Set up npm authentication for publishing.
  *
  * Handles three scenarios:
- * 1. **Trusted publishing (OIDC)** — GitHub Actions with `id-token: write`.
+ * 1. **Trusted publishing (OIDC)** — GitHub Actions, GitLab CI, or CircleCI with OIDC configured.
  *    npm >= 11.5.1 authenticates automatically via OIDC token exchange.
  *    No secret needed, but we check the npm version and warn if too old.
  * 2. **Token-based auth** — `NPM_TOKEN` or `NODE_AUTH_TOKEN` env var.
@@ -53,16 +70,17 @@ function setupNpmAuth(rootDir: string, publishManager: string): void {
   }
 
   // Scenario 1: OIDC trusted publishing
-  if (isOidcAvailable()) {
+  const oidcProvider = detectOidcProvider();
+  if (oidcProvider) {
     const npmVersion = tryRun('npm --version');
     if (npmVersion) {
       const [major, minor, patch] = npmVersion.split('.').map(Number);
       const meetsMinVersion = major! > 11 || (major === 11 && (minor! > 5 || (minor === 5 && patch! >= 1)));
       if (!meetsMinVersion) {
         log.warn(`  npm ${npmVersion} detected — trusted publishing (OIDC) requires npm >= 11.5.1`);
-        log.warn('  Add "npm install -g npm@latest" to your workflow before publishing');
+        log.warn(`  ${OIDC_NPM_UPGRADE_HINTS[oidcProvider]}`);
       } else {
-        log.dim(`  OIDC detected — npm ${npmVersion} will authenticate via trusted publishing`);
+        log.dim(`  OIDC detected (${oidcProvider}) — npm ${npmVersion} will authenticate via trusted publishing`);
       }
     }
     return;
