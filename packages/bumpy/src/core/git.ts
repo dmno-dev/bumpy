@@ -7,7 +7,11 @@ export function createTag(tag: string, opts?: { cwd?: string }): void {
 
 /** Push commits and tags to remote */
 export function pushWithTags(opts?: { cwd?: string }): void {
-  runArgs(['git', 'push', '--follow-tags'], opts);
+  // Use `--tags` instead of `--follow-tags` because:
+  // - `--follow-tags` only pushes *annotated* tags reachable from pushed commits
+  // - We create lightweight tags and may have no new commits to push
+  runArgs(['git', 'push'], opts);
+  runArgs(['git', 'push', '--tags'], opts);
 }
 
 /** Check if there are uncommitted changes */

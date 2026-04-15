@@ -2,6 +2,11 @@ import { tryRunArgs, runArgsAsync } from '../utils/shell.ts';
 import { log } from '../utils/logger.ts';
 import type { PlannedRelease, Changeset } from '../types.ts';
 
+/** Get the current HEAD commit SHA */
+function getHeadSha(rootDir: string): string | null {
+  return tryRunArgs(['git', 'rev-parse', 'HEAD'], { cwd: rootDir });
+}
+
 export interface GitHubReleaseOptions {
   dryRun?: boolean;
   title?: string;
@@ -19,6 +24,8 @@ export async function createIndividualReleases(
     return;
   }
 
+  const headSha = getHeadSha(rootDir);
+
   for (const release of releases) {
     const tag = `${release.name}@${release.newVersion}`;
     const body = buildReleaseBody(release, changesets);
@@ -30,7 +37,10 @@ export async function createIndividualReleases(
     }
 
     try {
-      await runArgsAsync(['gh', 'release', 'create', tag, '--title', title, '--notes', body], {
+      // Use --target so gh can create the tag on the remote if it wasn't pushed yet
+      const args = ['gh', 'release', 'create', tag, '--title', title, '--notes', body];
+      if (headSha) args.push('--target', headSha);
+      await runArgsAsync(args, {
         cwd: rootDir,
       });
       log.dim(`  Created GitHub release: ${title}`);
@@ -72,7 +82,11 @@ export async function createAggregateRelease(
     // Create the tag if it doesn't exist
     tryRunArgs(['git', 'tag', tag], { cwd: rootDir });
 
-    await runArgsAsync(['gh', 'release', 'create', tag, '--title', title, '--notes', body], {
+    // Use --target so gh can create the tag on the remote if it wasn't pushed yet
+    const headSha = getHeadSha(rootDir);
+    const args = ['gh', 'release', 'create', tag, '--title', title, '--notes', body];
+    if (headSha) args.push('--target', headSha);
+    await runArgsAsync(args, {
       cwd: rootDir,
     });
     log.success(`Created aggregate GitHub release: ${title}`);
