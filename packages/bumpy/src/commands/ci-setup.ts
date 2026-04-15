@@ -17,7 +17,11 @@ export async function ciSetupCommand(rootDir: string): Promise<void> {
   // Detect repo and package manager context
   const repo = detectRepo(rootDir);
   if (!repo) {
-    log.error('Could not detect GitHub repository. Run this from a repo with a GitHub remote.');
+    log.error(
+      'Could not detect a GitHub repository.\n' +
+        '  This command currently only supports GitHub-hosted repos.\n' +
+        '  Make sure you have a GitHub remote (git remote -v).',
+    );
     process.exit(1);
   }
   const pm = await detectPackageManager(rootDir);
