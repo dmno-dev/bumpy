@@ -79,6 +79,9 @@ async function setupPat(rootDir: string, repo: string, pm: PackageManager): Prom
       ...PAT_PERMISSIONS.map((perm) => `   • ${pc.bold(perm)}`),
       '',
       '7. Click "Generate token" and copy the value',
+      '',
+      pc.dim('Tip: enable branch protection rules on your main branch to prevent'),
+      pc.dim('direct pushes — the PAT will only be used to push the version branch.'),
     ].join('\n'),
     'Create a fine-grained PAT',
   );
