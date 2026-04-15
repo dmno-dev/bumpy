@@ -409,7 +409,7 @@ async function postOrUpdatePrComment(prNumber: string, body: string, rootDir: st
 
   try {
     // Find existing bumpy comment using gh with jq
-    const jqFilter = `.comments[] | select(.body | startswith("${COMMENT_MARKER}")) | .id`;
+    const jqFilter = `.comments[] | select(.body | startswith("${COMMENT_MARKER}")) | .url | capture("issuecomment-(?<id>[0-9]+)$") | .id`;
     const existingComment = tryRunArgs(['gh', 'pr', 'view', validPr, '--json', 'comments', '--jq', jqFilter], {
       cwd: rootDir,
     });
