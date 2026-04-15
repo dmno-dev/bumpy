@@ -1,7 +1,9 @@
 import { resolve } from 'node:path';
+import { existsSync, readFileSync, writeFileSync, appendFileSync } from 'node:fs';
 import { unlink } from 'node:fs/promises';
 import { readJson, writeJson } from '../utils/fs.ts';
 import { runAsync } from '../utils/shell.ts';
+import { tryRun } from '../utils/shell.ts';
 import { log, colorize } from '../utils/logger.ts';
 import { createTag, tagExists } from './git.ts';
 import { DependencyGraph } from './dep-graph.ts';
@@ -20,6 +22,79 @@ export interface PublishResult {
   failed: { name: string; error: string }[];
 }
 
+/** Check if GitHub Actions OIDC is available (id-token: write permission granted) */
+function isOidcAvailable(): boolean {
+  return !!process.env.ACTIONS_ID_TOKEN_REQUEST_URL;
+}
+
+/**
+ * Set up npm authentication for publishing.
+ *
+ * Handles three scenarios:
+ * 1. **Trusted publishing (OIDC)** — GitHub Actions with `id-token: write`.
+ *    npm >= 11.5.1 authenticates automatically via OIDC token exchange.
+ *    No secret needed, but we check the npm version and warn if too old.
+ * 2. **Token-based auth** — `NPM_TOKEN` or `NODE_AUTH_TOKEN` env var.
+ *    Writes a project-level `.npmrc` so npm can authenticate.
+ * 3. **Pre-configured** — user already has `.npmrc` with auth (e.g. via `actions/setup-node`).
+ */
+function setupNpmAuth(rootDir: string, publishManager: string): void {
+  // Only relevant when publishing via npm CLI
+  if (publishManager !== 'npm') return;
+
+  const npmrcPath = resolve(rootDir, '.npmrc');
+  const existingNpmrc = existsSync(npmrcPath) ? readFileSync(npmrcPath, 'utf-8') : '';
+  const hasAuthConfigured = existingNpmrc.includes(':_authToken=');
+
+  // If auth is already configured (e.g. via actions/setup-node), nothing to do
+  if (hasAuthConfigured) {
+    log.dim('  Using existing .npmrc auth configuration');
+    return;
+  }
+
+  // Scenario 1: OIDC trusted publishing
+  if (isOidcAvailable()) {
+    const npmVersion = tryRun('npm --version');
+    if (npmVersion) {
+      const [major, minor, patch] = npmVersion.split('.').map(Number);
+      const meetsMinVersion = major! > 11 || (major === 11 && (minor! > 5 || (minor === 5 && patch! >= 1)));
+      if (!meetsMinVersion) {
+        log.warn(`  npm ${npmVersion} detected — trusted publishing (OIDC) requires npm >= 11.5.1`);
+        log.warn('  Add "npm install -g npm@latest" to your workflow before publishing');
+      } else {
+        log.dim(`  OIDC detected — npm ${npmVersion} will authenticate via trusted publishing`);
+      }
+    }
+    return;
+  }
+
+  // Scenario 2: Token-based auth via environment variable
+  // Support NPM_TOKEN (common convention) by mapping to NODE_AUTH_TOKEN (what npm reads from .npmrc)
+  const token = process.env.NODE_AUTH_TOKEN || process.env.NPM_TOKEN;
+  if (token) {
+    if (process.env.NPM_TOKEN && !process.env.NODE_AUTH_TOKEN) {
+      process.env.NODE_AUTH_TOKEN = token;
+    }
+    const authLine = '//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}';
+    if (existingNpmrc) {
+      appendFileSync(npmrcPath, `\n${authLine}\n`);
+    } else {
+      writeFileSync(npmrcPath, `${authLine}\n`);
+    }
+    log.dim('  Configured .npmrc with auth token');
+    return;
+  }
+
+  // No auth detected — warn
+  if (process.env.CI) {
+    log.warn('  No npm authentication detected. Publishing will likely fail.');
+    log.warn('  Options:');
+    log.warn('    • Trusted publishing (OIDC): add `id-token: write` permission + npm >= 11.5.1');
+    log.warn('    • Token auth: set NPM_TOKEN or NODE_AUTH_TOKEN environment variable');
+    log.warn('    • Manual: add `actions/setup-node` with `registry-url` to your workflow');
+  }
+}
+
 /**
  * Publish all packages in the release plan.
  * Order: topological (dependencies published before dependents).
@@ -36,6 +111,9 @@ export async function publishPackages(
 ): Promise<PublishResult> {
   const result: PublishResult = { published: [], skipped: [], failed: [] };
   const publishConfig = config.publish;
+
+  // Set up npm authentication before publishing
+  setupNpmAuth(rootDir, publishConfig.publishManager);
 
   // Resolve "auto" pack manager to detected PM
   const packManager = publishConfig.packManager === 'auto' ? detectedPm : publishConfig.packManager;
