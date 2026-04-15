@@ -4,16 +4,34 @@ import { discoverWorkspace } from '../core/workspace.ts';
 import { DependencyGraph } from '../core/dep-graph.ts';
 import { readChangesets } from '../core/changeset.ts';
 import { assembleReleasePlan } from '../core/release-plan.ts';
-import { run, tryRun, runAsync } from '../utils/shell.ts';
+import { runArgs, runArgsAsync, tryRunArgs } from '../utils/shell.ts';
 import type { BumpyConfig, ReleasePlan, PlannedRelease } from '../types.ts';
+
+// ---- Validation helpers ----
+
+/** Validate a git branch name to prevent injection */
+function validateBranchName(name: string): string {
+  if (!/^[a-zA-Z0-9_./-]+$/.test(name)) {
+    throw new Error(`Invalid branch name: ${name}`);
+  }
+  return name;
+}
+
+/** Validate a PR number is numeric */
+function validatePrNumber(pr: string): string {
+  if (!/^\d+$/.test(pr)) {
+    throw new Error(`Invalid PR number: ${pr}`);
+  }
+  return pr;
+}
 
 /** Configure git identity for CI commits if not already set */
 function ensureGitIdentity(rootDir: string, config: BumpyConfig): void {
-  const name = tryRun('git config user.name', { cwd: rootDir });
+  const name = tryRunArgs(['git', 'config', 'user.name'], { cwd: rootDir });
   if (!name) {
     const { name: gitName, email: gitEmail } = config.gitUser;
-    run(`git config user.name "${gitName}"`, { cwd: rootDir });
-    run(`git config user.email "${gitEmail}"`, { cwd: rootDir });
+    runArgs(['git', 'config', 'user.name', gitName], { cwd: rootDir });
+    runArgs(['git', 'config', 'user.email', gitEmail], { cwd: rootDir });
     log.dim(`  Using git identity: ${gitName} <${gitEmail}>`);
   }
 }
@@ -119,11 +137,11 @@ async function autoPublish(rootDir: string, config: BumpyConfig, tag?: string): 
 
   // Commit the version changes
   log.step('Committing version changes...');
-  run('git add -A', { cwd: rootDir });
-  const status = tryRun('git status --porcelain', { cwd: rootDir });
+  runArgs(['git', 'add', '-A'], { cwd: rootDir });
+  const status = tryRunArgs(['git', 'status', '--porcelain'], { cwd: rootDir });
   if (status) {
-    run('git commit -m "Version packages"', { cwd: rootDir });
-    run('git push', { cwd: rootDir });
+    runArgs(['git', 'commit', '-m', 'Version packages'], { cwd: rootDir });
+    runArgs(['git', 'push'], { cwd: rootDir });
   }
 
   log.step('Running bumpy publish...');
@@ -139,21 +157,25 @@ async function createVersionPr(
   config: BumpyConfig,
   branchName?: string,
 ): Promise<void> {
-  const branch = branchName || config.versionPr.branch;
-  const baseBranch = tryRun('git rev-parse --abbrev-ref HEAD', { cwd: rootDir }) || 'main';
+  const branch = validateBranchName(branchName || config.versionPr.branch);
+  const baseBranch = validateBranchName(
+    tryRunArgs(['git', 'rev-parse', '--abbrev-ref', 'HEAD'], { cwd: rootDir }) || 'main',
+  );
 
   // Check if a version PR already exists
-  const existingPr = tryRun(`gh pr list --head "${branch}" --json number --jq ".[0].number"`, { cwd: rootDir });
+  const existingPr = tryRunArgs(['gh', 'pr', 'list', '--head', branch, '--json', 'number', '--jq', '.[0].number'], {
+    cwd: rootDir,
+  });
 
   // Create or update the branch
   log.step(`Creating branch ${branch}...`);
-  const branchExists = tryRun(`git rev-parse --verify ${branch}`, { cwd: rootDir }) !== null;
+  const branchExists = tryRunArgs(['git', 'rev-parse', '--verify', branch], { cwd: rootDir }) !== null;
 
   if (branchExists) {
-    run(`git checkout ${branch}`, { cwd: rootDir });
-    run(`git reset --hard ${baseBranch}`, { cwd: rootDir });
+    runArgs(['git', 'checkout', branch], { cwd: rootDir });
+    runArgs(['git', 'reset', '--hard', baseBranch], { cwd: rootDir });
   } else {
-    run(`git checkout -b ${branch}`, { cwd: rootDir });
+    runArgs(['git', 'checkout', '-b', branch], { cwd: rootDir });
   }
 
   // Run bumpy version
@@ -162,40 +184,41 @@ async function createVersionPr(
   await versionCommand(rootDir);
 
   // Commit and push
-  run('git add -A', { cwd: rootDir });
-  const status = tryRun('git status --porcelain', { cwd: rootDir });
+  runArgs(['git', 'add', '-A'], { cwd: rootDir });
+  const status = tryRunArgs(['git', 'status', '--porcelain'], { cwd: rootDir });
   if (!status) {
     log.info('No version changes to commit.');
-    run(`git checkout ${baseBranch}`, { cwd: rootDir });
+    runArgs(['git', 'checkout', baseBranch], { cwd: rootDir });
     return;
   }
 
   const commitMsg = ['Version packages', '', ...plan.releases.map((r) => `${r.name}@${r.newVersion}`)].join('\n');
-  run('git commit -F -', { cwd: rootDir, input: commitMsg });
-  run(`git push -u origin ${branch} --force`, { cwd: rootDir });
+  runArgs(['git', 'commit', '-F', '-'], { cwd: rootDir, input: commitMsg });
+  runArgs(['git', 'push', '-u', 'origin', branch, '--force'], { cwd: rootDir });
 
   // Create or update PR
   const prBody = formatVersionPrBody(plan, config.versionPr.preamble);
 
   if (existingPr) {
-    log.step(`Updating existing PR #${existingPr}...`);
-    await runAsync(`gh pr edit ${existingPr} --title "${config.versionPr.title}" --body-file -`, {
+    const validPr = validatePrNumber(existingPr);
+    log.step(`Updating existing PR #${validPr}...`);
+    await runArgsAsync(['gh', 'pr', 'edit', validPr, '--title', config.versionPr.title, '--body-file', '-'], {
       cwd: rootDir,
       input: prBody,
     });
-    log.success(`Updated PR #${existingPr}`);
+    log.success(`Updated PR #${validPr}`);
   } else {
     log.step('Creating version PR...');
     const prTitle = config.versionPr.title;
-    const result = await runAsync(
-      `gh pr create --title "${prTitle}" --body-file - --base "${baseBranch}" --head "${branch}"`,
+    const result = await runArgsAsync(
+      ['gh', 'pr', 'create', '--title', prTitle, '--body-file', '-', '--base', baseBranch, '--head', branch],
       { cwd: rootDir, input: prBody },
     );
     log.success(`Created PR: ${result}`);
   }
 
   // Switch back to the base branch
-  run(`git checkout ${baseBranch}`, { cwd: rootDir });
+  runArgs(['git', 'checkout', baseBranch], { cwd: rootDir });
 }
 
 // ---- PR comment helpers ----
@@ -277,23 +300,27 @@ function formatVersionPrBody(plan: ReleasePlan, preamble: string): string {
 const COMMENT_MARKER = '<!-- bumpy-release-plan -->';
 
 async function postOrUpdatePrComment(prNumber: string, body: string, rootDir: string): Promise<void> {
+  const validPr = validatePrNumber(prNumber);
   const markedBody = `${COMMENT_MARKER}\n${body}`;
 
   try {
-    // Find existing bumpy comment
-    const existingComment = tryRun(
-      `gh pr view ${prNumber} --json comments --jq '.comments[] | select(.body | startswith("${COMMENT_MARKER}")) | .id' | head -1`,
-      { cwd: rootDir },
-    );
+    // Find existing bumpy comment using gh with jq
+    const jqFilter = `.comments[] | select(.body | startswith("${COMMENT_MARKER}")) | .id`;
+    const existingComment = tryRunArgs(['gh', 'pr', 'view', validPr, '--json', 'comments', '--jq', jqFilter], {
+      cwd: rootDir,
+    });
 
-    if (existingComment) {
-      await runAsync(`gh api repos/{owner}/{repo}/issues/comments/${existingComment} -X PATCH -f body=@-`, {
-        cwd: rootDir,
-        input: markedBody,
-      });
+    // Take the first result if multiple
+    const commentId = existingComment?.split('\n')[0]?.trim();
+
+    if (commentId) {
+      await runArgsAsync(
+        ['gh', 'api', `repos/{owner}/{repo}/issues/comments/${commentId}`, '-X', 'PATCH', '-f', 'body=@-'],
+        { cwd: rootDir, input: markedBody },
+      );
       log.dim('  Updated PR comment');
     } else {
-      await runAsync(`gh pr comment ${prNumber} --body-file -`, { cwd: rootDir, input: markedBody });
+      await runArgsAsync(['gh', 'pr', 'comment', validPr, '--body-file', '-'], { cwd: rootDir, input: markedBody });
       log.dim('  Posted PR comment');
     }
   } catch (err) {
@@ -308,6 +335,11 @@ function detectPrNumber(): string | null {
     const match = process.env.GITHUB_REF?.match(/refs\/pull\/(\d+)\//);
     if (match) return match[1]!;
   }
-  // Also check for explicit env var
-  return process.env.BUMPY_PR_NUMBER || process.env.PR_NUMBER || null;
+  // Also check for explicit env var — validate it's numeric
+  const envPr = process.env.BUMPY_PR_NUMBER || process.env.PR_NUMBER || null;
+  if (envPr && !/^\d+$/.test(envPr)) {
+    log.warn(`Ignoring invalid PR number from environment: ${envPr}`);
+    return null;
+  }
+  return envPr;
 }

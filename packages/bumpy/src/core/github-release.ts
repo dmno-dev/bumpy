@@ -1,4 +1,4 @@
-import { tryRun, runAsync } from '../utils/shell.ts';
+import { tryRunArgs, runArgsAsync } from '../utils/shell.ts';
 import { log } from '../utils/logger.ts';
 import type { PlannedRelease, Changeset } from '../types.ts';
 
@@ -30,7 +30,7 @@ export async function createIndividualReleases(
     }
 
     try {
-      await runAsync(`gh release create "${tag}" --title "${escapeShell(title)}" --notes "${escapeShell(body)}"`, {
+      await runArgsAsync(['gh', 'release', 'create', tag, '--title', title, '--notes', body], {
         cwd: rootDir,
       });
       log.dim(`  Created GitHub release: ${title}`);
@@ -70,9 +70,9 @@ export async function createAggregateRelease(
 
   try {
     // Create the tag if it doesn't exist
-    tryRun(`git tag "${tag}"`, { cwd: rootDir });
+    tryRunArgs(['git', 'tag', tag], { cwd: rootDir });
 
-    await runAsync(`gh release create "${tag}" --title "${escapeShell(title)}" --notes "${escapeShell(body)}"`, {
+    await runArgsAsync(['gh', 'release', 'create', tag, '--title', title, '--notes', body], {
       cwd: rootDir,
     });
     log.success(`Created aggregate GitHub release: ${title}`);
@@ -136,9 +136,5 @@ function buildAggregateBody(releases: PlannedRelease[], changesets: Changeset[])
 }
 
 function isGhAvailable(): boolean {
-  return tryRun('gh --version') !== null;
-}
-
-function escapeShell(str: string): string {
-  return str.replace(/"/g, '\\"').replace(/\n/g, '\\n');
+  return tryRunArgs(['gh', '--version']) !== null;
 }

@@ -19,3 +19,5 @@ env.d.ts
 *.tsbuildinfo
 
 ignore
+
+.claude/worktrees
