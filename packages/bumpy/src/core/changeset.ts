@@ -2,9 +2,10 @@ import { resolve } from 'node:path';
 import yaml from 'js-yaml';
 import { readText, writeText, listFiles, removeFile } from '../utils/fs.ts';
 import { getBumpyDir } from './config.ts';
+import { tryRunArgs } from '../utils/shell.ts';
 import type { Changeset, ChangesetRelease, ChangesetReleaseCascade, BumpType, BumpTypeWithIsolated } from '../types.ts';
 
-/** Read all changeset files from .bumpy/ directory */
+/** Read all changeset files from .bumpy/ directory, sorted by git creation order */
 export async function readChangesets(rootDir: string): Promise<Changeset[]> {
   const dir = getBumpyDir(rootDir);
   const files = await listFiles(dir, '.md');
@@ -14,7 +15,51 @@ export async function readChangesets(rootDir: string): Promise<Changeset[]> {
     const cs = await parseChangesetFile(resolve(dir, file));
     if (cs) changesets.push(cs);
   }
+
+  // Sort by the commit date when each changeset was first added to git.
+  // Falls back to filename order for uncommitted changesets.
+  const creationOrder = getChangesetCreationOrder(rootDir);
+  if (creationOrder.size > 0) {
+    changesets.sort((a, b) => {
+      const aOrder = creationOrder.get(a.id) ?? Infinity;
+      const bOrder = creationOrder.get(b.id) ?? Infinity;
+      return aOrder - bOrder || a.id.localeCompare(b.id);
+    });
+  }
+
   return changesets;
+}
+
+/**
+ * Use `git log` to get the commit timestamp when each changeset file was first added.
+ * Returns a map of changeset ID → unix timestamp (seconds).
+ */
+function getChangesetCreationOrder(rootDir: string): Map<string, number> {
+  const order = new Map<string, number>();
+
+  // git log with --diff-filter=A shows only commits that added files
+  // --format="%at" gives unix timestamp, --name-only lists files
+  const result = tryRunArgs(['git', 'log', '--diff-filter=A', '--format=%at', '--name-only', '--', '.bumpy/*.md'], {
+    cwd: rootDir,
+  });
+  if (!result) return order;
+
+  // Output format: timestamp line, then filename lines, then blank line, repeat
+  let currentTimestamp = 0;
+  for (const line of result.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    if (/^\d+$/.test(trimmed)) {
+      currentTimestamp = parseInt(trimmed, 10);
+    } else if (trimmed.startsWith('.bumpy/') && trimmed.endsWith('.md')) {
+      const id = trimmed.replace(/^\.bumpy\//, '').replace(/\.md$/, '');
+      // Only record the first (oldest) commit — git log is newest-first,
+      // so later entries overwrite with earlier timestamps
+      order.set(id, currentTimestamp);
+    }
+  }
+
+  return order;
 }
 
 /** Parse a single changeset markdown file */
