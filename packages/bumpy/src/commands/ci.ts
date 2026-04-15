@@ -3,9 +3,12 @@ import { loadConfig } from '../core/config.ts';
 import { discoverWorkspace } from '../core/workspace.ts';
 import { DependencyGraph } from '../core/dep-graph.ts';
 import { readChangesets } from '../core/changeset.ts';
+import { getChangedFiles } from '../core/git.ts';
 import { assembleReleasePlan } from '../core/release-plan.ts';
 import { runArgs, runArgsAsync, tryRunArgs } from '../utils/shell.ts';
-import type { BumpyConfig, ReleasePlan, PlannedRelease } from '../types.ts';
+import { randomName } from '../utils/names.ts';
+import { detectPackageManager } from '../utils/package-manager.ts';
+import type { BumpyConfig, Changeset, PackageManager, ReleasePlan, PlannedRelease } from '../types.ts';
 
 // ---- Validation helpers ----
 
@@ -51,18 +54,29 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
   const config = await loadConfig(rootDir);
   const { packages } = await discoverWorkspace(rootDir, config);
   const depGraph = new DependencyGraph(packages);
-  const changesets = await readChangesets(rootDir);
+  const allChangesets = await readChangesets(rootDir);
 
   const inCI = !!process.env.CI;
   const shouldComment = opts.comment ?? inCI;
   const prNumber = detectPrNumber();
+  const pm = await detectPackageManager(rootDir);
 
-  if (changesets.length === 0) {
+  // Filter to only changesets added/modified in this PR
+  const changedFiles = getChangedFiles(rootDir, config.baseBranch);
+  const prChangesetIds = new Set(
+    changedFiles
+      .filter((f) => /^\.bumpy\/.*\.md$/.test(f) && !f.endsWith('README.md'))
+      .map((f) => f.replace(/^\.bumpy\//, '').replace(/\.md$/, '')),
+  );
+  const prChangesets = allChangesets.filter((cs) => prChangesetIds.has(cs.id));
+
+  if (prChangesets.length === 0) {
     const msg = 'No changesets found in this PR.';
     log.info(msg);
 
     if (shouldComment && prNumber) {
-      await postOrUpdatePrComment(prNumber, formatNoChangesetsComment(), rootDir);
+      const prBranch = detectPrBranch(rootDir);
+      await postOrUpdatePrComment(prNumber, formatNoChangesetsComment(prBranch, pm), rootDir);
     }
 
     if (opts.failOnMissing) {
@@ -71,10 +85,10 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
     return;
   }
 
-  const plan = assembleReleasePlan(changesets, packages, depGraph, config);
+  const plan = assembleReleasePlan(prChangesets, packages, depGraph, config);
 
   // Pretty output for logs
-  log.bold(`${changesets.length} changeset(s) → ${plan.releases.length} package(s) to release\n`);
+  log.bold(`${prChangesets.length} changeset(s) → ${plan.releases.length} package(s) to release\n`);
   for (const r of plan.releases) {
     const tag = r.isDependencyBump ? ' (dep)' : r.isCascadeBump ? ' (cascade)' : '';
     console.log(`  ${r.name}: ${r.oldVersion} → ${colorize(r.newVersion, 'cyan')}${tag}`);
@@ -82,7 +96,8 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
 
   // Comment on PR
   if (shouldComment && prNumber) {
-    const comment = formatReleasePlanComment(plan, changesets.length);
+    const prBranch = detectPrBranch(rootDir);
+    const comment = formatReleasePlanComment(plan, prChangesets, prNumber, prBranch, pm);
     await postOrUpdatePrComment(prNumber, comment, rootDir);
   }
 }
@@ -223,27 +238,84 @@ async function createVersionPr(
 
 // ---- PR comment helpers ----
 
-function formatReleasePlanComment(plan: ReleasePlan, changesetCount: number): string {
+const FROG_IMG_BASE = 'https://raw.githubusercontent.com/dmno-dev/bumpy/main/images';
+
+function buildAddChangesetLink(prBranch: string | null): string | null {
+  if (!prBranch) return null;
+  const repo = process.env.GITHUB_REPOSITORY;
+  if (!repo) return null;
+
+  const template = ['---', '"package-name": patch', '---', '', 'Description of the change', ''].join('\n');
+  const filename = `.bumpy/${randomName()}.md`;
+  return `https://github.com/${repo}/new/${prBranch}?filename=${encodeURIComponent(filename)}&value=${encodeURIComponent(template)}`;
+}
+
+function pmRunCommand(pm: PackageManager): string {
+  if (pm === 'bun') return 'bunx bumpy';
+  if (pm === 'pnpm') return 'pnpm exec bumpy';
+  if (pm === 'yarn') return 'yarn bumpy';
+  return 'npx bumpy';
+}
+
+function formatReleasePlanComment(
+  plan: ReleasePlan,
+  changesets: Changeset[],
+  prNumber: string,
+  prBranch: string | null,
+  pm: PackageManager,
+): string {
+  const repo = process.env.GITHUB_REPOSITORY;
   const lines: string[] = [];
-  lines.push('## 🐸 Bumpy Release Plan\n');
-  lines.push(`**${changesetCount}** changeset(s) → **${plan.releases.length}** package(s) to release\n`);
 
-  const groups: [string, PlannedRelease[]][] = [
-    ['🔴 Major', plan.releases.filter((r) => r.type === 'major')],
-    ['🟡 Minor', plan.releases.filter((r) => r.type === 'minor')],
-    ['🟢 Patch', plan.releases.filter((r) => r.type === 'patch')],
-  ];
+  const preamble = [
+    `<a href="${__BUMPY_WEBSITE_URL__}"><img src="${FROG_IMG_BASE}/frog-talking.png" alt="bumpy-frog" width="60" align="left" style="image-rendering: pixelated;" title="Hi! I'm bumpy!" /></a>`,
+    '',
+    '**The changes in this PR will be included in the next version bump.**',
+    '<br clear="left" />',
+  ].join('\n');
+  lines.push(preamble);
+  lines.push('');
 
-  for (const [label, group] of groups) {
-    if (group.length === 0) continue;
-    lines.push(`### ${label}\n`);
-    lines.push('| Package | Change |');
-    lines.push('|---------|--------|');
-    for (const r of group) {
+  // Package list grouped by bump type
+  const groups: Record<string, PlannedRelease[]> = { major: [], minor: [], patch: [] };
+  for (const r of plan.releases) {
+    groups[r.type]?.push(r);
+  }
+
+  for (const type of ['major', 'minor', 'patch'] as const) {
+    const releases = groups[type];
+    if (!releases || releases.length === 0) continue;
+
+    lines.push(bumpSectionHeader(type));
+    lines.push('');
+    for (const r of releases) {
       const suffix = r.isDependencyBump ? ' _(dep)_' : r.isCascadeBump ? ' _(cascade)_' : '';
-      lines.push(`| \`${r.name}\` | ${r.oldVersion} → **${r.newVersion}**${suffix} |`);
+      lines.push(`- \`${r.name}\` ${r.oldVersion} → **${r.newVersion}**${suffix}`);
     }
     lines.push('');
+  }
+
+  // Changeset file list with links
+  lines.push(`#### Changesets in this PR`);
+  lines.push('');
+  for (const cs of changesets) {
+    const filename = `${cs.id}.md`;
+    const parts: string[] = [`\`${filename}\``];
+    if (repo) {
+      parts.push(`([view diff](https://github.com/${repo}/pull/${prNumber}/files#diff-.bumpy/${filename}))`);
+      if (prBranch) {
+        parts.push(`([edit](https://github.com/${repo}/edit/${prBranch}/.bumpy/${filename}))`);
+      }
+    }
+    lines.push(`- ${parts.join(' ')}`);
+  }
+  lines.push('');
+
+  const addLink = buildAddChangesetLink(prBranch);
+  if (addLink) {
+    lines.push(`[Click here if you want to add another changeset to this PR](${addLink})\n`);
+  } else {
+    lines.push(`To add another changeset, run \`${pmRunCommand(pm)} add\`\n`);
   }
 
   lines.push('---');
@@ -251,19 +323,29 @@ function formatReleasePlanComment(plan: ReleasePlan, changesetCount: number): st
   return lines.join('\n');
 }
 
-function formatNoChangesetsComment(): string {
-  return [
-    '## 🐸 Bumpy Release Plan\n',
-    'No changesets found in this PR. If this PR should trigger a release, run:\n',
+function formatNoChangesetsComment(prBranch: string | null, pm: PackageManager): string {
+  const runCmd = pmRunCommand(pm);
+  const lines = [
+    `<a href="${__BUMPY_WEBSITE_URL__}"><img src="${FROG_IMG_BASE}/frog-neutral.png" alt="bumpy-frog" width="60" align="left" style="image-rendering: pixelated;" title="Hi! I'm bumpy!" /></a>`,
+    '',
+    "Merging this PR will not cause a version bump for any packages. If these changes should not result in a new version, you're good to go. **If these changes should result in a version bump, you need to add a changeset.**",
+    '<br clear="left" />\n',
+    'You can add a changeset by running:\n',
     '```bash',
-    'bumpy add',
-    '```\n',
-    '---',
-    `_This comment is maintained by [bumpy](${__BUMPY_WEBSITE_URL__})._`,
-  ].join('\n');
-}
+    `${runCmd} add`,
+    '```',
+  ];
 
-const FROG_IMG_BASE = 'https://raw.githubusercontent.com/dmno-dev/bumpy/main/images';
+  const addLink = buildAddChangesetLink(prBranch);
+  if (addLink) {
+    lines.push('');
+    lines.push(`Or [click here to add a changeset](${addLink}) directly on GitHub.`);
+  }
+
+  lines.push('\n---');
+  lines.push(`_This comment is maintained by [bumpy](${__BUMPY_WEBSITE_URL__})._`);
+  return lines.join('\n');
+}
 
 function bumpSectionHeader(type: string): string {
   // I think pixelated css gets stripped but may as well leave it
@@ -288,10 +370,32 @@ function formatVersionPrBody(plan: ReleasePlan, preamble: string): string {
     lines.push(bumpSectionHeader(type));
     lines.push('');
     for (const r of releases) {
-      const suffix = r.isDependencyBump ? ' (dep)' : r.isCascadeBump ? ' (cascade)' : '';
-      lines.push(`- \`${r.name}\` ${r.oldVersion} → **${r.newVersion}**${suffix}`);
+      const suffix = r.isDependencyBump ? ' _(dep)_' : r.isCascadeBump ? ' _(cascade)_' : '';
+      lines.push(`#### \`${r.name}\` ${r.oldVersion} → **${r.newVersion}**${suffix}`);
+      lines.push('');
+
+      const relevantChangesets = plan.changesets.filter((cs) => r.changesets.includes(cs.id));
+
+      if (relevantChangesets.length > 0) {
+        for (const cs of relevantChangesets) {
+          if (cs.summary) {
+            const summaryLines = cs.summary.split('\n');
+            lines.push(`- ${summaryLines[0]}`);
+            for (let i = 1; i < summaryLines.length; i++) {
+              if (summaryLines[i]!.trim()) {
+                lines.push(`  ${summaryLines[i]}`);
+              }
+            }
+          }
+        }
+      } else if (r.isDependencyBump) {
+        lines.push('- Updated dependencies');
+      } else if (r.isCascadeBump) {
+        lines.push('- Version bump via cascade rule');
+      }
+
+      lines.push('');
     }
-    lines.push('');
   }
 
   return lines.join('\n');
@@ -305,7 +409,7 @@ async function postOrUpdatePrComment(prNumber: string, body: string, rootDir: st
 
   try {
     // Find existing bumpy comment using gh with jq
-    const jqFilter = `.comments[] | select(.body | startswith("${COMMENT_MARKER}")) | .id`;
+    const jqFilter = `.comments[] | select(.body | startswith("${COMMENT_MARKER}")) | .url | capture("issuecomment-(?<id>[0-9]+)$") | .id`;
     const existingComment = tryRunArgs(['gh', 'pr', 'view', validPr, '--json', 'comments', '--jq', jqFilter], {
       cwd: rootDir,
     });
@@ -315,7 +419,7 @@ async function postOrUpdatePrComment(prNumber: string, body: string, rootDir: st
 
     if (commentId) {
       await runArgsAsync(
-        ['gh', 'api', `repos/{owner}/{repo}/issues/comments/${commentId}`, '-X', 'PATCH', '-f', 'body=@-'],
+        ['gh', 'api', `repos/{owner}/{repo}/issues/comments/${commentId}`, '-X', 'PATCH', '-F', 'body=@-'],
         { cwd: rootDir, input: markedBody },
       );
       log.dim('  Updated PR comment');
@@ -326,6 +430,14 @@ async function postOrUpdatePrComment(prNumber: string, body: string, rootDir: st
   } catch (err) {
     log.warn(`  Failed to comment on PR: ${err instanceof Error ? err.message : err}`);
   }
+}
+
+function detectPrBranch(rootDir: string): string | null {
+  // GitHub Actions sets GITHUB_HEAD_REF for pull_request events
+  if (process.env.GITHUB_HEAD_REF) return process.env.GITHUB_HEAD_REF;
+  // Fallback: ask gh for the PR head branch
+  const branch = tryRunArgs(['gh', 'pr', 'view', '--json', 'headRefName', '--jq', '.headRefName'], { cwd: rootDir });
+  return branch?.trim() || null;
 }
 
 function detectPrNumber(): string | null {
