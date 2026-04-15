@@ -1,26 +1,26 @@
-import { blue, green, yellow, red, cyan, dim, bold } from 'ansis';
+import pc from 'picocolors';
 
 export const log = {
   info(msg: string) {
-    console.log(`${blue`info`} ${msg}`);
+    console.log(`${pc.blue('info')} ${msg}`);
   },
   success(msg: string) {
-    console.log(`${green`done`} ${msg}`);
+    console.log(`${pc.green('done')} ${msg}`);
   },
   warn(msg: string) {
-    console.log(`${yellow`warn`} ${msg}`);
+    console.log(`${pc.yellow('warn')} ${msg}`);
   },
   error(msg: string) {
-    console.error(`${red`error`} ${msg}`);
+    console.error(`${pc.red('error')} ${msg}`);
   },
   step(msg: string) {
-    console.log(`${cyan`=>`} ${msg}`);
+    console.log(`${pc.cyan('=>')} ${msg}`);
   },
   dim(msg: string) {
-    console.log(dim`${msg}`);
+    console.log(pc.dim(msg));
   },
   bold(msg: string) {
-    console.log(bold`${msg}`);
+    console.log(pc.bold(msg));
   },
   table(rows: string[][]) {
     if (rows.length === 0) return;
@@ -32,6 +32,5 @@ export const log = {
 };
 
 export function colorize(text: string, color: 'red' | 'green' | 'yellow' | 'blue' | 'cyan' | 'dim' | 'bold'): string {
-  const colors = { red, green, yellow, blue, cyan, dim, bold };
-  return colors[color](text);
+  return pc[color](text);
 }
