@@ -586,7 +586,7 @@ jobs:
 ```
 
 ```yaml
-# .github/workflows/bumpy-release.yml
+# .github/workflows/bumpy-release.yml — trusted publishing (OIDC, no secret needed)
 name: Bumpy Release
 on:
   push:
@@ -598,22 +598,47 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-      id-token: write # for npm provenance
+      id-token: write # required for npm trusted publishing (OIDC)
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+      - run: npm install -g npm@latest # npm >= 11.5.1 required for trusted publishing
+      - run: bun install
+      - run: bunx @varlock/bumpy ci release
+        env:
+          GH_TOKEN: ${{ github.token }}
+```
+
+Trusted publishing setup: configure each package on npmjs.com → Package Settings → Trusted Publishers → GitHub Actions.
+Specify your org/user, repo, and the workflow filename. No NPM_TOKEN secret needed.
+
+Alternative: token-based auth (uses `NPM_TOKEN` secret instead of OIDC):
+
+```yaml
+# .github/workflows/bumpy-release.yml — token-based auth
+name: Bumpy Release
+on:
+  push:
+    branches: [main]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
       - run: bun install
-      # Option A: Create a "Version Packages" PR
       - run: bunx @varlock/bumpy ci release
         env:
           GH_TOKEN: ${{ github.token }}
-      # Option B: Auto-publish directly
-      # - run: bunx @varlock/bumpy ci release --auto-publish
-      #   env:
-      #     GH_TOKEN: ${{ github.token }}
-      #     NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 ```
 
 ### Non-interactive changeset creation (AI/CI)
