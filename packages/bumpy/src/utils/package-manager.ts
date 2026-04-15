@@ -20,7 +20,7 @@ export async function detectWorkspaces(rootDir: string): Promise<WorkspaceInfo> 
   return { packageManager: pm, globs, catalogs };
 }
 
-async function detectPackageManager(rootDir: string): Promise<PackageManager> {
+export async function detectPackageManager(rootDir: string): Promise<PackageManager> {
   // Check lockfiles in priority order
   if ((await exists(resolve(rootDir, 'bun.lock'))) || (await exists(resolve(rootDir, 'bun.lockb')))) {
     return 'bun';
