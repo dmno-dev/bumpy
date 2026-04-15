@@ -41,6 +41,12 @@ export function tagExists(tag: string, opts?: { cwd?: string }): boolean {
 
 /** Get files changed on this branch compared to a base branch */
 export function getChangedFiles(rootDir: string, baseBranch: string): string[] {
+  // Ensure we have the base branch ref (may need fetching in shallow CI clones)
+  if (!tryRunArgs(['git', 'rev-parse', '--verify', `origin/${baseBranch}`], { cwd: rootDir })) {
+    tryRunArgs(['git', 'fetch', 'origin', baseBranch, '--depth=1'], { cwd: rootDir });
+  }
+
+  // Try merge-base for the most accurate comparison
   const mergeBase = tryRunArgs(['git', 'merge-base', 'HEAD', `origin/${baseBranch}`], { cwd: rootDir });
   const ref = mergeBase || `origin/${baseBranch}`;
   const diff = tryRunArgs(['git', 'diff', '--name-only', ref], { cwd: rootDir });
