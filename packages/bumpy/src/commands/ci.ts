@@ -186,24 +186,47 @@ function pushWithToken(rootDir: string, branch: string): void {
     const authedUrl = `${server.replace('://', `://x-access-token:${token}@`)}/${repo}.git`;
     const originalUrl = tryRunArgs(['git', 'remote', 'get-url', 'origin'], { cwd: rootDir });
 
-    // `actions/checkout` sets an http.extraheader with the default GITHUB_TOKEN.
-    // That header takes precedence over URL-embedded credentials, so we need to
-    // clear it temporarily for our custom token to be used.
+    // `actions/checkout@v6` persists the default GITHUB_TOKEN in two ways:
+    //   1. Direct http.<server>/.extraheader config
+    //   2. includeIf.gitdir entries pointing to a credentials config file
+    //      that also sets http.<server>/.extraheader
+    // Both must be cleared for our custom token to be used.
     const extraHeaderKey = `http.${server}/.extraheader`;
     const savedHeader = tryRunArgs(['git', 'config', '--local', extraHeaderKey], { cwd: rootDir });
+
+    // Collect includeIf entries that point to credential config files
+    const includeIfRaw = tryRunArgs(['git', 'config', '--local', '--get-regexp', '^includeIf\\.gitdir:'], {
+      cwd: rootDir,
+    });
+    const savedIncludeIfs: Array<{ key: string; value: string }> = [];
+    if (includeIfRaw) {
+      for (const line of includeIfRaw.split('\n').filter(Boolean)) {
+        const spaceIdx = line.indexOf(' ');
+        if (spaceIdx > 0) {
+          savedIncludeIfs.push({ key: line.slice(0, spaceIdx), value: line.slice(spaceIdx + 1) });
+        }
+      }
+    }
+
     try {
       if (savedHeader) {
         runArgs(['git', 'config', '--local', '--unset-all', extraHeaderKey], { cwd: rootDir });
       }
+      for (const entry of savedIncludeIfs) {
+        tryRunArgs(['git', 'config', '--local', '--unset', entry.key], { cwd: rootDir });
+      }
       runArgs(['git', 'remote', 'set-url', 'origin', authedUrl], { cwd: rootDir });
       runArgs(['git', 'push', '-u', 'origin', branch, '--force'], { cwd: rootDir });
     } finally {
-      // Restore original URL and extraheader (avoid leaking the token in git config)
+      // Restore original URL, extraheader, and includeIf entries
       if (originalUrl) {
         runArgs(['git', 'remote', 'set-url', 'origin', originalUrl], { cwd: rootDir });
       }
       if (savedHeader) {
         runArgs(['git', 'config', '--local', extraHeaderKey, savedHeader], { cwd: rootDir });
+      }
+      for (const entry of savedIncludeIfs) {
+        tryRunArgs(['git', 'config', '--local', entry.key, entry.value], { cwd: rootDir });
       }
     }
     log.dim('  Pushed with custom token — PR workflows will be triggered');
