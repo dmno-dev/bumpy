@@ -1,8 +1,7 @@
 /** Generate a random adjective-noun name for changeset files */
 export function randomName(): string {
-  const adj = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)]!;
-  const noun = NOUNS[Math.floor(Math.random() * NOUNS.length)]!;
-  return `${adj}-${noun}`;
+  const pick = <T>(arr: T[]) => arr[Math.floor(Math.random() * arr.length)]!;
+  return `${pick(ADJECTIVES)}-${pick(ADJECTIVES)}-${pick(NOUNS)}`;
 }
 
 /** Sanitize a user-provided name into a valid filename slug */

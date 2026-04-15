@@ -1,5 +1,5 @@
 import { log, colorize } from '../utils/logger.ts';
-import { tryRun } from '../utils/shell.ts';
+import { tryRunArgs } from '../utils/shell.ts';
 import { loadConfig } from '../core/config.ts';
 import { discoverPackages } from '../core/workspace.ts';
 import { writeChangeset } from '../core/changeset.ts';
@@ -50,7 +50,7 @@ export async function generateCommand(rootDir: string, opts: GenerateOptions): P
   log.step(`Scanning commits from ${colorize(from, 'cyan')}...`);
 
   // Get commits since ref
-  const rawLog = tryRun(`git log ${from}..HEAD --format="%H%n%s%n%b%n---END---"`, { cwd: rootDir });
+  const rawLog = tryRunArgs(['git', 'log', `${from}..HEAD`, '--format=%H%n%s%n%b%n---END---'], { cwd: rootDir });
 
   if (!rawLog) {
     log.info('No commits found since ' + from);
@@ -239,9 +239,8 @@ function bumpPriority(type: BumpType): number {
 /** Find the most recent version tag in the repo */
 function findLastVersionTag(rootDir: string): string | null {
   // Look for tags matching common patterns: v1.2.3, pkg@1.2.3, etc.
-  const tag = tryRun(
-    'git describe --tags --abbrev=0 --match "v*" 2>/dev/null || git describe --tags --abbrev=0 --match "*@*" 2>/dev/null',
-    { cwd: rootDir },
-  );
+  const tag =
+    tryRunArgs(['git', 'describe', '--tags', '--abbrev=0', '--match', 'v*'], { cwd: rootDir }) ||
+    tryRunArgs(['git', 'describe', '--tags', '--abbrev=0', '--match', '*@*'], { cwd: rootDir });
   return tag || null;
 }

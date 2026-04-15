@@ -1,4 +1,4 @@
-import { tryRun } from '../utils/shell.ts';
+import { tryRunArgs } from '../utils/shell.ts';
 import type { ChangelogContext, ChangelogFormatter } from './changelog.ts';
 
 interface GithubOptions {
@@ -73,19 +73,37 @@ interface PrInfo {
 async function findPrForChangeset(changesetId: string, repo?: string): Promise<PrInfo | null> {
   try {
     // Find the commit that added this changeset file
-    const commitHash = tryRun(
-      `git log --diff-filter=A --format="%H" -- ".bumpy/${changesetId}.md" ".changeset/${changesetId}.md"`,
-    );
+    const commitHash = tryRunArgs([
+      'git',
+      'log',
+      '--diff-filter=A',
+      '--format=%H',
+      '--',
+      `.bumpy/${changesetId}.md`,
+      `.changeset/${changesetId}.md`,
+    ]);
     if (!commitHash) return null;
 
     const hash = commitHash.split('\n')[0]!.trim();
     if (!hash) return null;
 
     // Look up the PR for this commit
-    const repoFlag = repo ? `--repo ${repo}` : '';
-    const prJson = tryRun(
-      `gh pr list --search "${hash}" --state merged --json number,url,author --jq ".[0]" ${repoFlag}`,
-    );
+    const ghArgs = [
+      'gh',
+      'pr',
+      'list',
+      '--search',
+      hash,
+      '--state',
+      'merged',
+      '--json',
+      'number,url,author',
+      '--jq',
+      '.[0]',
+    ];
+    if (repo) ghArgs.push('--repo', repo);
+
+    const prJson = tryRunArgs(ghArgs);
     if (!prJson) return null;
 
     const pr = JSON.parse(prJson);
