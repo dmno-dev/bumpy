@@ -3,14 +3,8 @@ import { resolve } from 'node:path';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { writeJson, readJson, ensureDir, writeText } from '../../src/utils/fs.ts';
-import { makePkg, makeConfig, gitInDir } from '../helpers.ts';
-import {
-  installShellMock,
-  uninstallShellMock,
-  resetMockState,
-  addMockRule,
-  getCallsMatching,
-} from '../helpers-shell-mock.ts';
+import { makePkg, gitInDir } from '../helpers.ts';
+import { installShellMock, uninstallShellMock } from '../helpers-shell-mock.ts';
 import { DependencyGraph } from '../../src/core/dep-graph.ts';
 import { publishPackages } from '../../src/core/publish-pipeline.ts';
 import type { WorkspacePackage, ReleasePlan, BumpyConfig } from '../../src/types.ts';
