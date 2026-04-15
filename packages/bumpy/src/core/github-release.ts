@@ -1,6 +1,12 @@
 import { tryRunArgs, runArgsAsync } from '../utils/shell.ts';
 import { log } from '../utils/logger.ts';
+import { listTags } from './git.ts';
 import type { PlannedRelease, Changeset } from '../types.ts';
+
+/** Get the current HEAD commit SHA */
+function getHeadSha(rootDir: string): string | null {
+  return tryRunArgs(['git', 'rev-parse', 'HEAD'], { cwd: rootDir });
+}
 
 export interface GitHubReleaseOptions {
   dryRun?: boolean;
@@ -19,6 +25,8 @@ export async function createIndividualReleases(
     return;
   }
 
+  const headSha = getHeadSha(rootDir);
+
   for (const release of releases) {
     const tag = `${release.name}@${release.newVersion}`;
     const body = buildReleaseBody(release, changesets);
@@ -30,7 +38,10 @@ export async function createIndividualReleases(
     }
 
     try {
-      await runArgsAsync(['gh', 'release', 'create', tag, '--title', title, '--notes', body], {
+      // Use --target so gh can create the tag on the remote if it wasn't pushed yet
+      const args = ['gh', 'release', 'create', tag, '--title', title, '--notes', body];
+      if (headSha) args.push('--target', headSha);
+      await runArgsAsync(args, {
         cwd: rootDir,
       });
       log.dim(`  Created GitHub release: ${title}`);
@@ -55,11 +66,8 @@ export async function createAggregateRelease(
   if (releases.length === 0) return;
 
   const date = new Date().toISOString().split('T')[0];
-  const titleTemplate = opts.title || 'Release {{date}}';
-  const title = titleTemplate.replace('{{date}}', date!);
-
-  // Use the first release's tag as the release tag, or create a date-based tag
-  const tag = `release-${date}`;
+  const existing = listTags(`release-${date}*`, { cwd: rootDir });
+  const { tag, title } = resolveAggregateTagAndTitle(date!, existing, opts.title);
   const body = buildAggregateBody(releases, changesets);
 
   if (opts.dryRun) {
@@ -72,7 +80,11 @@ export async function createAggregateRelease(
     // Create the tag if it doesn't exist
     tryRunArgs(['git', 'tag', tag], { cwd: rootDir });
 
-    await runArgsAsync(['gh', 'release', 'create', tag, '--title', title, '--notes', body], {
+    // Use --target so gh can create the tag on the remote if it wasn't pushed yet
+    const headSha = getHeadSha(rootDir);
+    const args = ['gh', 'release', 'create', tag, '--title', title, '--notes', body];
+    if (headSha) args.push('--target', headSha);
+    await runArgsAsync(args, {
       cwd: rootDir,
     });
     log.success(`Created aggregate GitHub release: ${title}`);
@@ -133,6 +145,20 @@ function buildAggregateBody(releases: PlannedRelease[], changesets: Changeset[])
   }
 
   return lines.join('\n').trim() || 'No changelog entries.';
+}
+
+/** Compute the aggregate release tag and title, appending -n suffix if a tag for the same date already exists */
+export function resolveAggregateTagAndTitle(
+  date: string,
+  existingTags: string[],
+  titleTemplate?: string,
+): { tag: string; title: string } {
+  const baseTag = `release-${date}`;
+  const suffix = existingTags.length === 0 ? '' : `-${existingTags.length + 1}`;
+  const tag = `${baseTag}${suffix}`;
+  const template = titleTemplate || 'Release {{date}}';
+  const title = template.replace('{{date}}', `${date}${suffix}`);
+  return { tag, title };
 }
 
 function isGhAvailable(): boolean {
