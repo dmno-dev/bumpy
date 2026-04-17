@@ -10,6 +10,47 @@ export async function writeJson(filePath: string, data: unknown, indent = 2): Pr
   await writeFile(filePath, JSON.stringify(data, null, indent) + '\n', 'utf-8');
 }
 
+/**
+ * Update specific top-level string fields in a JSON file without reformatting.
+ * Reads the raw text, does targeted regex replacements, and writes it back.
+ */
+export async function updateJsonFields(filePath: string, updates: Record<string, string>): Promise<void> {
+  let content = await readFile(filePath, 'utf-8');
+  for (const [key, newValue] of Object.entries(updates)) {
+    const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const pattern = new RegExp(`("${escaped}"\\s*:\\s*)"[^"]*"`);
+    content = content.replace(pattern, `$1"${newValue}"`);
+  }
+  await writeFile(filePath, content, 'utf-8');
+}
+
+/**
+ * Update a nested string field inside a top-level object in a JSON file without reformatting.
+ * e.g., updateJsonNestedField(path, 'dependencies', 'core', '^2.0.0')
+ */
+export async function updateJsonNestedField(
+  filePath: string,
+  parentKey: string,
+  childKey: string,
+  newValue: string,
+): Promise<void> {
+  let content = await readFile(filePath, 'utf-8');
+  const parentEscaped = parentKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const childEscaped = childKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  // Find the parent object block and replace the child value within it
+  const parentPattern = new RegExp(
+    `("${parentEscaped}"\\s*:\\s*\\{)([^}]*)\\}`,
+    's', // dotAll so . matches newlines
+  );
+  content = content.replace(parentPattern, (match, prefix, body) => {
+    const childPattern = new RegExp(`("${childEscaped}"\\s*:\\s*)"[^"]*"`);
+    const newBody = body.replace(childPattern, `$1"${newValue}"`);
+    return `${prefix}${newBody}}`;
+  });
+  await writeFile(filePath, content, 'utf-8');
+}
+
 export async function readText(filePath: string): Promise<string> {
   return readFile(filePath, 'utf-8');
 }

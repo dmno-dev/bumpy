@@ -1,7 +1,7 @@
 import { resolve } from 'node:path';
 import { existsSync, readFileSync, writeFileSync, appendFileSync } from 'node:fs';
 import { unlink } from 'node:fs/promises';
-import { readJson, writeJson } from '../utils/fs.ts';
+import { readJson, updateJsonNestedField } from '../utils/fs.ts';
 import { runAsync, runArgsAsync, tryRunArgs, sq } from '../utils/shell.ts';
 import { log, colorize } from '../utils/logger.ts';
 import { createTag, tagExists } from './git.ts';
@@ -377,8 +377,6 @@ async function resolveProtocolsInPlace(
 ): Promise<void> {
   const pkgJsonPath = resolve(pkg.dir, 'package.json');
   const pkgJson = await readJson<Record<string, unknown>>(pkgJsonPath);
-  let modified = false;
-
   const releaseMap = new Map(releasePlan.releases.map((r) => [r.name, r]));
 
   for (const depField of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'] as const) {
@@ -409,13 +407,8 @@ async function resolveProtocolsInPlace(
       }
 
       if (resolved) {
-        deps[depName] = resolved;
-        modified = true;
+        await updateJsonNestedField(pkgJsonPath, depField, depName, resolved);
       }
     }
-  }
-
-  if (modified) {
-    await writeJson(pkgJsonPath, pkgJson);
   }
 }
