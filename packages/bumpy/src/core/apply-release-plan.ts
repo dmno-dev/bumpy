@@ -1,5 +1,5 @@
 import { resolve } from 'node:path';
-import { readJson, writeJson, readText, writeText, exists } from '../utils/fs.ts';
+import { readJson, readText, writeText, exists, updateJsonFields, updateJsonNestedField } from '../utils/fs.ts';
 import { deleteChangesets } from './changeset.ts';
 import { generateChangelogEntry, prependToChangelog, loadFormatter } from './changelog.ts';
 import type { ReleasePlan, WorkspacePackage, BumpyConfig } from '../types.ts';
@@ -14,27 +14,26 @@ export async function applyReleasePlan(
   const releaseMap = new Map(releasePlan.releases.map((r) => [r.name, r]));
   const formatter = await loadFormatter(config.changelog, rootDir);
 
-  // 1. Update package.json versions and internal dependency ranges
+  // 1. Update package.json versions and internal dependency ranges (preserving formatting)
   for (const release of releasePlan.releases) {
     const pkg = packages.get(release.name)!;
     const pkgJsonPath = resolve(pkg.dir, 'package.json');
     const pkgJson = await readJson<Record<string, unknown>>(pkgJsonPath);
 
-    // Bump the version
-    pkgJson.version = release.newVersion;
+    // Bump the version (in-place string replacement)
+    await updateJsonFields(pkgJsonPath, { version: release.newVersion });
 
-    // Update internal dependency ranges
+    // Update internal dependency ranges (in-place string replacement)
     for (const depField of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'] as const) {
       const deps = pkgJson[depField] as Record<string, string> | undefined;
       if (!deps) continue;
       for (const [depName, range] of Object.entries(deps)) {
         const depRelease = releaseMap.get(depName);
         if (!depRelease) continue;
-        deps[depName] = updateRange(range, depRelease.newVersion);
+        const newRange = updateRange(range, depRelease.newVersion);
+        await updateJsonNestedField(pkgJsonPath, depField, depName, newRange);
       }
     }
-
-    await writeJson(pkgJsonPath, pkgJson);
   }
 
   // 2. Update changelogs
