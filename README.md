@@ -10,14 +10,13 @@ Changesets is mature and widely adopted, but has stagnated. The community has hu
 
 Changesets hardcodes aggressive behavior: a **minor** bump on a package triggers a **major** bump on all packages that peer-depend on it. This is the #1 community complaint with 8+ open issues and no fix in sight.
 
-Bumpy makes this **fully configurable** at multiple levels, with sensible defaults:
+Bumpy splits propagation into three clear phases with sensible defaults:
 
-- **Global rules by dependency type** — e.g., peer dep bumps only propagate on major (not minor)
+- **Phase A** — always fixes broken ranges: peer dep bumps match the triggering level, regular deps get patch, dev deps are skipped
+- **Phase B** — enforces fixed/linked group constraints
+- **Phase C** — opt-in proactive propagation via configurable `dependencyBumpRules` and `cascadeTo` rules
+- **Per-changeset control** — `patch-isolated` skips propagation, `none` suppresses a bump, changeset cascades push bumps downstream
 - **Per-package overrides** — in `package.json["bumpy"]`
-- **Per-specific-dependency rules** — "when core bumps, bump me at X"
-- **Source-side cascade rules** — "when I bump, cascade to `plugins/*`" (with glob support)
-- **Per-changeset cascade overrides** — explicit downstream control in each bump file
-- **Isolated bumps** — `minor-isolated` / `patch-isolated` skip propagation entirely
 
 ### Custom publish commands
 

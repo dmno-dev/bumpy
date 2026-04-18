@@ -26,6 +26,14 @@ export async function versionCommand(rootDir: string): Promise<void> {
     return;
   }
 
+  // Show warnings from the release plan
+  if (plan.warnings.length > 0) {
+    for (const w of plan.warnings) {
+      log.warn(w);
+    }
+    console.log();
+  }
+
   // Show what will happen
   log.step('Applying version bumps:');
   for (const r of plan.releases) {

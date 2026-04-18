@@ -1,7 +1,7 @@
 // ---- Bump types ----
 
 export type BumpType = 'major' | 'minor' | 'patch';
-export type BumpTypeWithIsolated = BumpType | 'minor-isolated' | 'patch-isolated';
+export type BumpTypeWithIsolated = BumpType | 'patch-isolated' | 'none';
 
 export const BUMP_LEVELS: Record<BumpType, number> = {
   patch: 0,
@@ -13,7 +13,10 @@ export function bumpLevel(type: BumpType): number {
   return BUMP_LEVELS[type];
 }
 
-export function parseIsolatedBump(type: BumpTypeWithIsolated): { bump: BumpType; isolated: boolean } {
+export function parseIsolatedBump(type: BumpTypeWithIsolated): { bump: BumpType | 'none'; isolated: boolean } {
+  if (type === 'none') {
+    return { bump: 'none', isolated: false };
+  }
   if (type.endsWith('-isolated')) {
     return { bump: type.replace('-isolated', '') as BumpType, isolated: true };
   }
@@ -29,15 +32,15 @@ export function maxBump(a: BumpType | undefined, b: BumpType): BumpType {
 
 export interface DependencyBumpRule {
   /** What bump level in the dependency triggers propagation */
-  trigger: BumpType | 'none';
+  trigger: BumpType;
   /** What bump to apply to the dependent */
   bumpAs: BumpType | 'match';
 }
 
-export const DEFAULT_BUMP_RULES: Record<string, DependencyBumpRule> = {
+export const DEFAULT_BUMP_RULES: Record<string, DependencyBumpRule | false> = {
   dependencies: { trigger: 'patch', bumpAs: 'patch' },
-  peerDependencies: { trigger: 'major', bumpAs: 'major' },
-  devDependencies: { trigger: 'none', bumpAs: 'patch' },
+  peerDependencies: { trigger: 'major', bumpAs: 'match' },
+  devDependencies: false,
   optionalDependencies: { trigger: 'minor', bumpAs: 'patch' },
 };
 
@@ -74,8 +77,8 @@ export interface BumpyConfig {
   ignore: string[];
   /** Package names/globs to explicitly include (overrides private + ignore) */
   include: string[];
-  updateInternalDependencies: 'patch' | 'minor' | 'out-of-range' | 'none';
-  dependencyBumpRules: Partial<Record<DepType, DependencyBumpRule>>;
+  updateInternalDependencies: 'patch' | 'minor' | 'out-of-range';
+  dependencyBumpRules: Partial<Record<DepType, DependencyBumpRule | false>>;
   privatePackages: { version: boolean; tag: boolean };
   packages: Record<string, PackageConfig>;
   publish: PublishConfig;
@@ -109,8 +112,7 @@ export interface PackageConfig {
   skipNpmPublish?: boolean;
   /** Command to check if a version is already published. Should output the published version string. */
   checkPublished?: string;
-  dependencyBumpRules?: Partial<Record<DepType, DependencyBumpRule>>;
-  specificDependencyRules?: Record<string, DependencyBumpRule>;
+  dependencyBumpRules?: Partial<Record<DepType, DependencyBumpRule | false>>;
   cascadeTo?: Record<string, DependencyBumpRule>;
 }
 
@@ -216,4 +218,5 @@ export interface PlannedRelease {
 export interface ReleasePlan {
   changesets: Changeset[];
   releases: PlannedRelease[];
+  warnings: string[];
 }
