@@ -1,4 +1,4 @@
-/** Generate a random adjective-noun name for changeset files */
+/** Generate a random adjective-noun name for bump files */
 export function randomName(): string {
   const pick = <T>(arr: T[]) => arr[Math.floor(Math.random() * arr.length)]!;
   return `${pick(ADJECTIVES)}-${pick(ADJECTIVES)}-${pick(NOUNS)}`;

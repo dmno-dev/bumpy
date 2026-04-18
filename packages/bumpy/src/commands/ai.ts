@@ -1,10 +1,11 @@
 import { resolve, dirname } from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+import { execSync } from 'node:child_process';
 import { ensureDir, exists, writeText } from '../utils/fs.ts';
 import { log } from '../utils/logger.ts';
 
-const SUPPORTED_TARGETS = ['opencode', 'cursor', 'codex'] as const;
+const SUPPORTED_TARGETS = ['claude', 'opencode', 'cursor', 'codex'] as const;
 type AiTarget = (typeof SUPPORTED_TARGETS)[number];
 
 interface AiSetupOptions {
@@ -16,13 +17,17 @@ export async function aiSetupCommand(rootDir: string, opts: AiSetupOptions): Pro
 
   if (!target) {
     log.error(`Please specify a target: bumpy ai setup --target <${SUPPORTED_TARGETS.join('|')}>`);
-    log.dim('  Claude Code users: install the plugin instead — claude plugin install @varlock/bumpy');
     process.exit(1);
   }
 
   if (!SUPPORTED_TARGETS.includes(target)) {
     log.error(`Unknown target: "${target}". Supported: ${SUPPORTED_TARGETS.join(', ')}`);
     process.exit(1);
+  }
+
+  if (target === 'claude') {
+    setupClaude();
+    return;
   }
 
   // Read the prompt template bundled with bumpy
@@ -50,6 +55,19 @@ async function loadPromptTemplate(): Promise<string> {
   return content.replace(/^---\n[\s\S]*?\n---\n\n?/, '');
 }
 
+/** Install as a Claude Code plugin */
+function setupClaude(): void {
+  log.step('Installing Claude Code plugin...');
+  try {
+    execSync('claude plugin install @varlock/bumpy', { stdio: 'inherit' });
+    log.success('Installed Claude Code plugin');
+    log.dim('  Usage: /bumpy:add-change in Claude Code');
+  } catch {
+    log.error('Failed to install Claude Code plugin. Make sure `claude` is installed and available in your PATH.');
+    process.exit(1);
+  }
+}
+
 /** Install as an OpenCode custom command */
 async function setupOpenCode(rootDir: string, promptContent: string): Promise<void> {
   const commandsDir = resolve(rootDir, '.opencode', 'commands');
@@ -63,7 +81,7 @@ async function setupOpenCode(rootDir: string, promptContent: string): Promise<vo
 
   // OpenCode commands use frontmatter with description
   const openCodeContent = `---
-description: Create a bumpy changeset to track package version bumps
+description: Create a bumpy bump file to track package version bumps
 ---
 
 ${promptContent}`;
@@ -88,7 +106,7 @@ async function setupCursor(rootDir: string, promptContent: string): Promise<void
 
   // Cursor rules use .mdc format with frontmatter
   const cursorContent = `---
-description: Create a bumpy changeset to track package version bumps
+description: Create a bumpy bump file to track package version bumps
 globs:
 alwaysApply: false
 ---

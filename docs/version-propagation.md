@@ -1,10 +1,10 @@
 # How bumpy calculates version bumps
 
-When you run `bumpy version` (or `bumpy status` to preview), bumpy reads all pending changeset files and builds a **release plan** — a list of packages to bump and by how much. This document explains the full algorithm, including how bumps propagate to dependent packages and the available settings.
+When you run `bumpy version` (or `bumpy status` to preview), bumpy reads all pending bump files and builds a **release plan** — a list of packages to bump and by how much. This document explains the full algorithm, including how bumps propagate to dependent packages and the available settings.
 
 ## Overview
 
-After collecting explicit bumps from changeset files, bumpy runs a **propagation loop** that repeats until stable:
+After collecting explicit bumps from bump files, bumpy runs a **propagation loop** that repeats until stable:
 
 - **Phase A** — fix out-of-range dependencies (always runs)
 - **Phase B** — enforce fixed/linked group constraints (optional/advanced)
@@ -73,7 +73,7 @@ Example: propagation bumps `@myorg/types` as patch → `@myorg/core` also gets a
 
 ### Linked groups
 
-Packages in a `linked` group share the **same bump level** but keep independent version numbers. Only packages already in the release plan are affected — linked groups don't pull in packages that have no changesets. Entries can be specific names or glob patterns.
+Packages in a `linked` group share the **same bump level** but keep independent version numbers. Only packages already in the release plan are affected — linked groups don't pull in packages that have no bump files. Entries can be specific names or glob patterns.
 
 ```json
 { "linked": [["@myorg/plugin-*"]] }
@@ -159,11 +159,11 @@ Unlike dependency bump rules (configured on the _dependent_), `cascadeTo` is con
 
 `cascadeTo` is checked separately from dependency bump rules and can add bumps beyond what the rules produce. All keys support glob patterns (`*`, `**`).
 
-### Per-changeset overrides
+### Per-bump-file overrides
 
-These are set directly in changeset files for one-off control over a specific release.
+These are set directly in bump files for one-off control over a specific release.
 
-**`patch-isolated`** — bumps the package as a patch but skips all Phase C propagation from it (cascades and proactive bumps). If the bump would break a dependent's declared range, bumpy throws an error rather than silently propagating — you'll need to either widen the range, drop the `-isolated` flag, or explicitly bump the dependent in the changeset.
+**`patch-isolated`** — bumps the package as a patch but skips all Phase C propagation from it (cascades and proactive bumps). If the bump would break a dependent's declared range, bumpy throws an error rather than silently propagating — you'll need to either widen the range, drop the `-isolated` flag, or explicitly bump the dependent in the bump file.
 
 ```yaml
 ---
@@ -181,7 +181,7 @@ Internal refactor, no API changes.
 ---
 ```
 
-**Changeset-level cascades** — explicitly cascade bumps to other packages with glob support. The difference from listing packages directly in the changeset is that cascaded packages are marked as dependency bumps (not direct changes), which affects how they appear in changelogs and PR comments. These always apply (no trigger threshold check):
+**Bump-file-level cascades** — explicitly cascade bumps to other packages with glob support. The difference from listing packages directly in the bump file is that cascaded packages are marked as dependency bumps (not direct changes), which affects how they appear in changelogs and PR comments. These always apply (no trigger threshold check):
 
 ```yaml
 ---
@@ -192,7 +192,7 @@ Internal refactor, no API changes.
 ---
 ```
 
-Compare with listing packages directly — these are treated as independent changes and each gets the changeset's summary in their changelog:
+Compare with listing packages directly — these are treated as independent changes and each gets the bump file's summary in their changelog:
 
 ```yaml
 ---
@@ -202,4 +202,4 @@ Compare with listing packages directly — these are treated as independent chan
 ---
 ```
 
-> **Note:** `patch-isolated`, `none`, and changeset cascades are not available in the interactive `bumpy add` UI — they are power-user features for changeset files and the `--packages` CLI flag.
+> **Note:** `patch-isolated`, `none`, and bump-file-level cascades are not available in the interactive `bumpy add` UI — they are power-user features for bump files and the `--packages` CLI flag.

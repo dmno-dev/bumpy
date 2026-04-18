@@ -2,13 +2,13 @@ import { log, colorize } from '../utils/logger.ts';
 import { loadConfig } from '../core/config.ts';
 import { discoverWorkspace } from '../core/workspace.ts';
 import { DependencyGraph } from '../core/dep-graph.ts';
-import { readChangesets } from '../core/changeset.ts';
+import { readBumpFiles } from '../core/bump-file.ts';
 import { getChangedFiles } from '../core/git.ts';
 import { assembleReleasePlan } from '../core/release-plan.ts';
 import { runArgs, runArgsAsync, tryRunArgs } from '../utils/shell.ts';
 import { randomName } from '../utils/names.ts';
 import { detectPackageManager } from '../utils/package-manager.ts';
-import type { BumpyConfig, Changeset, PackageManager, ReleasePlan, PlannedRelease } from '../types.ts';
+import type { BumpyConfig, BumpFile, PackageManager, ReleasePlan, PlannedRelease } from '../types.ts';
 
 // ---- Validation helpers ----
 
@@ -43,20 +43,20 @@ function ensureGitIdentity(rootDir: string, config: BumpyConfig): void {
 
 interface CheckOptions {
   comment?: boolean; // post a PR comment via gh (default: true in CI)
-  failOnMissing?: boolean; // exit 1 if no changesets (default: false)
+  failOnMissing?: boolean; // exit 1 if no bump files (default: false)
 }
 
 /**
- * CI check: report on pending changesets.
+ * CI check: report on pending bump files.
  * Designed for PR workflows — shows what would be released and optionally comments on the PR.
  */
 export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promise<void> {
   const config = await loadConfig(rootDir);
   const { packages } = await discoverWorkspace(rootDir, config);
   const depGraph = new DependencyGraph(packages);
-  const allChangesets = await readChangesets(rootDir);
+  const allBumpFiles = await readBumpFiles(rootDir);
 
-  // Skip on the version PR branch — it has no changesets by design
+  // Skip on the version PR branch — it has no bump files by design
   const prBranchName = detectPrBranch(rootDir);
   if (prBranchName === config.versionPr.branch) {
     log.dim('  Skipping — this is the version PR branch.');
@@ -68,22 +68,22 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
   const prNumber = detectPrNumber();
   const pm = await detectPackageManager(rootDir);
 
-  // Filter to only changesets added/modified in this PR
+  // Filter to only bump files added/modified in this PR
   const changedFiles = getChangedFiles(rootDir, config.baseBranch);
-  const prChangesetIds = new Set(
+  const prBumpFileIds = new Set(
     changedFiles
       .filter((f) => /^\.bumpy\/.*\.md$/.test(f) && !f.endsWith('README.md'))
       .map((f) => f.replace(/^\.bumpy\//, '').replace(/\.md$/, '')),
   );
-  const prChangesets = allChangesets.filter((cs) => prChangesetIds.has(cs.id));
+  const prBumpFiles = allBumpFiles.filter((bf) => prBumpFileIds.has(bf.id));
 
-  if (prChangesets.length === 0) {
-    const msg = 'No changesets found in this PR.';
+  if (prBumpFiles.length === 0) {
+    const msg = 'No bump files found in this PR.';
     log.info(msg);
 
     if (shouldComment && prNumber) {
       const prBranch = detectPrBranch(rootDir);
-      await postOrUpdatePrComment(prNumber, formatNoChangesetsComment(prBranch, pm), rootDir);
+      await postOrUpdatePrComment(prNumber, formatNoBumpFilesComment(prBranch, pm), rootDir);
     }
 
     if (opts.failOnMissing) {
@@ -92,10 +92,10 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
     return;
   }
 
-  const plan = assembleReleasePlan(prChangesets, packages, depGraph, config);
+  const plan = assembleReleasePlan(prBumpFiles, packages, depGraph, config);
 
   // Pretty output for logs
-  log.bold(`${prChangesets.length} changeset(s) → ${plan.releases.length} package(s) to release\n`);
+  log.bold(`${prBumpFiles.length} bump file(s) → ${plan.releases.length} package(s) to release\n`);
   for (const r of plan.releases) {
     const tag = r.isDependencyBump ? ' (dep)' : r.isCascadeBump ? ' (cascade)' : '';
     console.log(`  ${r.name}: ${r.oldVersion} → ${colorize(r.newVersion, 'cyan')}${tag}`);
@@ -109,7 +109,7 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
   // Comment on PR
   if (shouldComment && prNumber) {
     const prBranch = detectPrBranch(rootDir);
-    const comment = formatReleasePlanComment(plan, prChangesets, prNumber, prBranch, pm, plan.warnings);
+    const comment = formatReleasePlanComment(plan, prBumpFiles, prNumber, prBranch, pm, plan.warnings);
     await postOrUpdatePrComment(prNumber, comment, rootDir);
   }
 }
@@ -131,20 +131,20 @@ export async function ciReleaseCommand(rootDir: string, opts: ReleaseOptions): P
   ensureGitIdentity(rootDir, config);
   const { packages } = await discoverWorkspace(rootDir, config);
   const depGraph = new DependencyGraph(packages);
-  const changesets = await readChangesets(rootDir);
+  const bumpFiles = await readBumpFiles(rootDir);
 
-  if (changesets.length === 0) {
-    // No changesets — check if there are unpublished packages to publish
+  if (bumpFiles.length === 0) {
+    // No bump files — check if there are unpublished packages to publish
     // (this handles the case where a version PR was just merged)
-    log.info('No pending changesets — checking for unpublished packages...');
+    log.info('No pending bump files — checking for unpublished packages...');
     const { publishCommand } = await import('./publish.ts');
     await publishCommand(rootDir, { tag: opts.tag });
     return;
   }
 
-  const plan = assembleReleasePlan(changesets, packages, depGraph, config);
+  const plan = assembleReleasePlan(bumpFiles, packages, depGraph, config);
   if (plan.releases.length === 0) {
-    log.info('Changesets found but no packages would be released.');
+    log.info('Bump files found but no packages would be released.');
     return;
   }
 
@@ -332,7 +332,7 @@ async function createVersionPr(
 
 const FROG_IMG_BASE = 'https://raw.githubusercontent.com/dmno-dev/bumpy/main/images';
 
-function buildAddChangesetLink(prBranch: string | null): string | null {
+function buildAddBumpFileLink(prBranch: string | null): string | null {
   if (!prBranch) return null;
   const repo = process.env.GITHUB_REPOSITORY;
   if (!repo) return null;
@@ -351,7 +351,7 @@ function pmRunCommand(pm: PackageManager): string {
 
 function formatReleasePlanComment(
   plan: ReleasePlan,
-  changesets: Changeset[],
+  bumpFiles: BumpFile[],
   prNumber: string,
   prBranch: string | null,
   pm: PackageManager,
@@ -388,11 +388,11 @@ function formatReleasePlanComment(
     lines.push('');
   }
 
-  // Changeset file list with links
-  lines.push(`#### Changesets in this PR`);
+  // Bump file list with links
+  lines.push(`#### Bump files in this PR`);
   lines.push('');
-  for (const cs of changesets) {
-    const filename = `${cs.id}.md`;
+  for (const bf of bumpFiles) {
+    const filename = `${bf.id}.md`;
     const parts: string[] = [`\`${filename}\``];
     if (repo) {
       parts.push(`([view diff](https://github.com/${repo}/pull/${prNumber}/files#diff-.bumpy/${filename}))`);
@@ -413,11 +413,11 @@ function formatReleasePlanComment(
     lines.push('');
   }
 
-  const addLink = buildAddChangesetLink(prBranch);
+  const addLink = buildAddBumpFileLink(prBranch);
   if (addLink) {
-    lines.push(`[Click here if you want to add another changeset to this PR](${addLink})\n`);
+    lines.push(`[Click here if you want to add another bump file to this PR](${addLink})\n`);
   } else {
-    lines.push(`To add another changeset, run \`${pmRunCommand(pm)} add\`\n`);
+    lines.push(`To add another bump file, run \`${pmRunCommand(pm)} add\`\n`);
   }
 
   lines.push('---');
@@ -425,23 +425,23 @@ function formatReleasePlanComment(
   return lines.join('\n');
 }
 
-function formatNoChangesetsComment(prBranch: string | null, pm: PackageManager): string {
+function formatNoBumpFilesComment(prBranch: string | null, pm: PackageManager): string {
   const runCmd = pmRunCommand(pm);
   const lines = [
     `<a href="${__BUMPY_WEBSITE_URL__}"><img src="${FROG_IMG_BASE}/frog-neutral.png" alt="bumpy-frog" width="60" align="left" style="image-rendering: pixelated;" title="Hi! I'm bumpy!" /></a>`,
     '',
-    "Merging this PR will not cause a version bump for any packages. If these changes should not result in a new version, you're good to go. **If these changes should result in a version bump, you need to add a changeset.**",
+    "Merging this PR will not cause a version bump for any packages. If these changes should not result in a new version, you're good to go. **If these changes should result in a version bump, you need to add a bump file.**",
     '<br clear="left" />\n',
-    'You can add a changeset by running:\n',
+    'You can add a bump file by running:\n',
     '```bash',
     `${runCmd} add`,
     '```',
   ];
 
-  const addLink = buildAddChangesetLink(prBranch);
+  const addLink = buildAddBumpFileLink(prBranch);
   if (addLink) {
     lines.push('');
-    lines.push(`Or [click here to add a changeset](${addLink}) directly on GitHub.`);
+    lines.push(`Or [click here to add a bump file](${addLink}) directly on GitHub.`);
   }
 
   lines.push('\n---');
@@ -498,14 +498,14 @@ function formatVersionPrBody(plan: ReleasePlan, preamble: string, packageDirs: M
       lines.push(`#### \`${r.name}\` ${r.oldVersion} → **${r.newVersion}**${suffix}${diffLinks}`);
       lines.push('');
 
-      const relevantChangesets = plan.changesets.filter((cs) => r.changesets.includes(cs.id));
+      const relevantBumpFiles = plan.bumpFiles.filter((bf) => r.bumpFiles.includes(bf.id));
 
-      if (relevantChangesets.length > 0) {
-        for (const cs of relevantChangesets) {
-          if (cs.summary) {
-            const csLink = ` ([changeset](#diff-${sha256Hex(`.bumpy/${cs.id}.md`)}))`;
-            const summaryLines = cs.summary.split('\n');
-            lines.push(`- ${summaryLines[0]}${csLink}`);
+      if (relevantBumpFiles.length > 0) {
+        for (const bf of relevantBumpFiles) {
+          if (bf.summary) {
+            const bfLink = ` ([bump file](#diff-${sha256Hex(`.bumpy/${bf.id}.md`)}))`;
+            const summaryLines = bf.summary.split('\n');
+            lines.push(`- ${summaryLines[0]}${bfLink}`);
             for (let i = 1; i < summaryLines.length; i++) {
               if (summaryLines[i]!.trim()) {
                 lines.push(`  ${summaryLines[i]}`);

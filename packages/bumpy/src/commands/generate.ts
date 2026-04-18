@@ -2,11 +2,11 @@ import { log, colorize } from '../utils/logger.ts';
 import { tryRunArgs } from '../utils/shell.ts';
 import { loadConfig } from '../core/config.ts';
 import { discoverPackages } from '../core/workspace.ts';
-import { writeChangeset } from '../core/changeset.ts';
+import { writeBumpFile } from '../core/bump-file.ts';
 import { getBumpyDir } from '../core/config.ts';
 import { ensureDir } from '../utils/fs.ts';
 import { slugify, randomName } from '../utils/names.ts';
-import type { BumpType, BumpTypeWithIsolated, BumpyConfig, ChangesetRelease, WorkspacePackage } from '../types.ts';
+import type { BumpType, BumpTypeWithIsolated, BumpyConfig, BumpFileRelease, WorkspacePackage } from '../types.ts';
 
 interface GenerateOptions {
   from?: string; // git ref to start from (default: auto-detect last version tag)
@@ -112,7 +112,7 @@ export async function generateCommand(rootDir: string, opts: GenerateOptions): P
   }
 
   // Build releases and summary
-  const releases: ChangesetRelease[] = [];
+  const releases: BumpFileRelease[] = [];
   const summaryLines: string[] = [];
 
   for (const [name, info] of releaseMap) {
@@ -123,7 +123,7 @@ export async function generateCommand(rootDir: string, opts: GenerateOptions): P
   }
 
   if (opts.dryRun) {
-    log.bold('Would create changeset:');
+    log.bold('Would create bump file:');
     for (const r of releases) {
       console.log(
         `  ${r.name}: ${colorize(r.type, r.type === 'major' ? 'red' : r.type === 'minor' ? 'yellow' : 'green')}`,
@@ -137,13 +137,13 @@ export async function generateCommand(rootDir: string, opts: GenerateOptions): P
     return;
   }
 
-  // Write the changeset
+  // Write the bump file
   await ensureDir(getBumpyDir(rootDir));
   const filename = opts.name ? slugify(opts.name) : randomName();
   const summary = summaryLines.join('\n');
-  await writeChangeset(rootDir, filename, releases, summary);
+  await writeBumpFile(rootDir, filename, releases, summary);
 
-  log.success(`Created changeset: .bumpy/${filename}.md`);
+  log.success(`Created bump file: .bumpy/${filename}.md`);
   for (const r of releases) {
     log.dim(`  ${r.name}: ${r.type}`);
   }

@@ -2,7 +2,7 @@ import { log, colorize } from '../utils/logger.ts';
 import { loadConfig } from '../core/config.ts';
 import { discoverPackages } from '../core/workspace.ts';
 import { DependencyGraph } from '../core/dep-graph.ts';
-import { readChangesets } from '../core/changeset.ts';
+import { readBumpFiles } from '../core/bump-file.ts';
 import { assembleReleasePlan } from '../core/release-plan.ts';
 import type { PlannedRelease, WorkspacePackage } from '../types.ts';
 
@@ -14,7 +14,7 @@ interface StatusOptions {
   bumpType?: string;
   /** Filter to specific packages (comma-separated names or globs) */
   filter?: string;
-  /** Show verbose output including changeset details */
+  /** Show verbose output including bump file details */
   verbose?: boolean;
 }
 
@@ -22,18 +22,18 @@ export async function statusCommand(rootDir: string, opts: StatusOptions): Promi
   const config = await loadConfig(rootDir);
   const packages = await discoverPackages(rootDir, config);
   const depGraph = new DependencyGraph(packages);
-  const changesets = await readChangesets(rootDir);
+  const bumpFiles = await readBumpFiles(rootDir);
 
-  if (changesets.length === 0) {
+  if (bumpFiles.length === 0) {
     if (opts.json) {
-      console.log(JSON.stringify({ changesets: [], releases: [], packageNames: [] }, null, 2));
+      console.log(JSON.stringify({ bumpFiles: [], releases: [], packageNames: [] }, null, 2));
     } else if (!opts.packagesOnly) {
-      log.info('No pending changesets.');
+      log.info('No pending bump files.');
     }
     process.exit(1); // exit 1 = no releases pending (useful for CI)
   }
 
-  const plan = assembleReleasePlan(changesets, packages, depGraph, config);
+  const plan = assembleReleasePlan(bumpFiles, packages, depGraph, config);
 
   // Apply filters
   let releases = plan.releases;
@@ -49,10 +49,10 @@ export async function statusCommand(rootDir: string, opts: StatusOptions): Promi
 
   if (opts.json) {
     const jsonOutput = {
-      changesets: plan.changesets.map((cs) => ({
-        id: cs.id,
-        summary: cs.summary,
-        releases: cs.releases.map((r) => ({ name: r.name, type: r.type })),
+      bumpFiles: plan.bumpFiles.map((bf) => ({
+        id: bf.id,
+        summary: bf.summary,
+        releases: bf.releases.map((r) => ({ name: r.name, type: r.type })),
       })),
       releases: releases.map((r) => ({
         name: r.name,
@@ -60,7 +60,7 @@ export async function statusCommand(rootDir: string, opts: StatusOptions): Promi
         oldVersion: r.oldVersion,
         newVersion: r.newVersion,
         dir: packages.get(r.name)?.relativeDir,
-        changesets: r.changesets,
+        bumpFiles: r.bumpFiles,
         isDependencyBump: r.isDependencyBump,
         isCascadeBump: r.isCascadeBump,
       })),
@@ -78,7 +78,7 @@ export async function statusCommand(rootDir: string, opts: StatusOptions): Promi
   }
 
   // Pretty output
-  log.bold(`${changesets.length} changeset(s) pending\n`);
+  log.bold(`${bumpFiles.length} bump file(s) pending\n`);
 
   if (releases.length === 0) {
     log.warn('No packages match the current filters.');
@@ -110,14 +110,14 @@ export async function statusCommand(rootDir: string, opts: StatusOptions): Promi
   }
 
   if (opts.verbose) {
-    log.bold('Changesets:');
-    for (const cs of plan.changesets) {
-      console.log(`  ${colorize(cs.id, 'cyan')}`);
-      for (const r of cs.releases) {
+    log.bold('Bump files:');
+    for (const bf of plan.bumpFiles) {
+      console.log(`  ${colorize(bf.id, 'cyan')}`);
+      for (const r of bf.releases) {
         console.log(`    ${r.name}: ${r.type}`);
       }
-      if (cs.summary) {
-        console.log(`    ${colorize(cs.summary.split('\n')[0]!, 'dim')}`);
+      if (bf.summary) {
+        console.log(`    ${colorize(bf.summary.split('\n')[0]!, 'dim')}`);
       }
     }
   }
