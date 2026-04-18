@@ -21,7 +21,7 @@ export function createGithubFormatter(options: GithubChangelogOptions = {}): Cha
   const internalAuthorsSet = new Set((options.internalAuthors ?? []).map((a) => a.toLowerCase()));
 
   return async (ctx: ChangelogContext) => {
-    const { release, changesets, date } = ctx;
+    const { release, bumpFiles, date } = ctx;
     const repoSlug = options.repo ?? detectRepo();
     const serverUrl = process.env.GITHUB_SERVER_URL || 'https://github.com';
 
@@ -31,17 +31,17 @@ export function createGithubFormatter(options: GithubChangelogOptions = {}): Cha
     lines.push(`_${date}_`);
     lines.push('');
 
-    const relevantChangesets = changesets.filter((cs) => release.changesets.includes(cs.id));
+    const relevantBumpFiles = bumpFiles.filter((bf) => release.bumpFiles.includes(bf.id));
 
-    if (relevantChangesets.length > 0) {
-      for (const cs of relevantChangesets) {
-        if (!cs.summary) continue;
+    if (relevantBumpFiles.length > 0) {
+      for (const bf of relevantBumpFiles) {
+        if (!bf.summary) continue;
 
         // Extract metadata overrides from summary (pr, commit, author lines)
-        const { cleanSummary, overrides } = extractSummaryMeta(cs.summary);
+        const { cleanSummary, overrides } = extractSummaryMeta(bf.summary);
 
         // Look up git/PR info, with overrides taking precedence
-        const gitInfo = resolveChangesetInfo(cs.id, repoSlug, serverUrl, overrides);
+        const gitInfo = resolveBumpFileInfo(bf.id, repoSlug, serverUrl, overrides);
 
         const summaryLines = cleanSummary.split('\n');
         const firstLine = linkifyIssueRefs(summaryLines[0]!, serverUrl, repoSlug);
@@ -60,11 +60,11 @@ export function createGithubFormatter(options: GithubChangelogOptions = {}): Cha
       }
     }
 
-    if (release.isDependencyBump && relevantChangesets.length === 0) {
+    if (release.isDependencyBump && relevantBumpFiles.length === 0) {
       lines.push('- Updated dependencies');
     }
 
-    if (release.isCascadeBump && !release.isDependencyBump && relevantChangesets.length === 0) {
+    if (release.isCascadeBump && !release.isDependencyBump && relevantBumpFiles.length === 0) {
       lines.push('- Version bump via cascade rule');
     }
 
@@ -75,7 +75,7 @@ export function createGithubFormatter(options: GithubChangelogOptions = {}): Cha
 
 // ---- Types ----
 
-interface ChangesetGitInfo {
+interface BumpFileGitInfo {
   prNumber?: number;
   prUrl?: string;
   commitHash?: string;
@@ -88,10 +88,10 @@ interface SummaryOverrides {
   authors?: string[];
 }
 
-// ---- Metadata extraction from changeset summary ----
+// ---- Metadata extraction from bump file summary ----
 
 /**
- * Extract metadata lines (pr, commit, author) from a changeset summary.
+ * Extract metadata lines (pr, commit, author) from a bump file summary.
  * These override git-derived info, matching the behavior of @changesets/changelog-github.
  */
 function extractSummaryMeta(summary: string): { cleanSummary: string; overrides: SummaryOverrides } {
@@ -120,15 +120,15 @@ function extractSummaryMeta(summary: string): { cleanSummary: string; overrides:
 // ---- Git/PR info resolution ----
 
 /**
- * Resolve PR, commit, and author info for a changeset.
+ * Resolve PR, commit, and author info for a bump file.
  * Summary overrides take precedence over git-derived info.
  */
-function resolveChangesetInfo(
-  changesetId: string,
+function resolveBumpFileInfo(
+  bumpFileId: string,
   repo: string | undefined,
   serverUrl: string,
   overrides: SummaryOverrides,
-): ChangesetGitInfo {
+): BumpFileGitInfo {
   // If we have a PR override, look it up directly
   if (overrides.pr !== undefined) {
     const prInfo = lookupPr(overrides.pr, repo);
@@ -140,8 +140,8 @@ function resolveChangesetInfo(
     };
   }
 
-  // Otherwise, find the commit that added this changeset file
-  const gitInfo = findChangesetCommitInfo(changesetId, repo);
+  // Otherwise, find the commit that added this bump file
+  const gitInfo = findBumpFileCommitInfo(bumpFileId, repo);
 
   return {
     prNumber: gitInfo?.prNumber,
@@ -172,20 +172,20 @@ function lookupPr(prNumber: number, repo?: string): { url: string; author?: stri
 }
 
 /**
- * Find the PR that introduced a changeset file by checking git log
+ * Find the PR that introduced a bump file by checking git log
  * for the commit that added the file, then looking up the PR.
  */
-function findChangesetCommitInfo(changesetId: string, repo?: string): ChangesetGitInfo | null {
+function findBumpFileCommitInfo(bumpFileId: string, repo?: string): BumpFileGitInfo | null {
   try {
-    // Find the commit that added this changeset file
+    // Find the commit that added this bump file
     const commitOutput = tryRunArgs([
       'git',
       'log',
       '--diff-filter=A',
       '--format=%H',
       '--',
-      `.bumpy/${changesetId}.md`,
-      `.changeset/${changesetId}.md`,
+      `.bumpy/${bumpFileId}.md`,
+      `.changeset/${bumpFileId}.md`,
     ]);
     if (!commitOutput) return null;
 
@@ -236,7 +236,7 @@ function findChangesetCommitInfo(changesetId: string, repo?: string): ChangesetG
  * Matches the format used by @changesets/changelog-github.
  */
 function formatPrefix(
-  info: ChangesetGitInfo,
+  info: BumpFileGitInfo,
   serverUrl: string,
   repo: string | undefined,
   internalAuthors: Set<string>,

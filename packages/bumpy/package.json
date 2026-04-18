@@ -2,6 +2,16 @@
   "name": "@varlock/bumpy",
   "version": "0.0.2",
   "description": "Modern monorepo versioning and changelog tool",
+  "keywords": [
+    "bump",
+    "changelog",
+    "changesets",
+    "monorepo",
+    "version",
+    "version management"
+  ],
+  "license": "MIT",
+  "author": "dmno-dev",
   "repository": {
     "type": "git",
     "url": "https://github.com/dmno-dev/bumpy",

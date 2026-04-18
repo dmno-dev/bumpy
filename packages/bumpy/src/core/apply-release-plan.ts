@@ -1,10 +1,10 @@
 import { resolve } from 'node:path';
 import { readJson, readText, writeText, exists, updateJsonFields, updateJsonNestedField } from '../utils/fs.ts';
-import { deleteChangesets } from './changeset.ts';
+import { deleteBumpFiles } from './bump-file.ts';
 import { generateChangelogEntry, prependToChangelog, loadFormatter } from './changelog.ts';
 import type { ReleasePlan, WorkspacePackage, BumpyConfig } from '../types.ts';
 
-/** Apply the release plan: bump versions, update changelogs, delete changesets */
+/** Apply the release plan: bump versions, update changelogs, delete bump files */
 export async function applyReleasePlan(
   releasePlan: ReleasePlan,
   packages: Map<string, WorkspacePackage>,
@@ -41,7 +41,7 @@ export async function applyReleasePlan(
     const pkg = packages.get(release.name)!;
     const changelogPath = resolve(pkg.dir, 'CHANGELOG.md');
 
-    const entry = await generateChangelogEntry(release, releasePlan.changesets, formatter);
+    const entry = await generateChangelogEntry(release, releasePlan.bumpFiles, formatter);
     let existingContent = '';
     if (await exists(changelogPath)) {
       existingContent = await readText(changelogPath);
@@ -50,9 +50,9 @@ export async function applyReleasePlan(
     await writeText(changelogPath, newContent);
   }
 
-  // 3. Delete consumed changeset files
-  const csIds = releasePlan.changesets.map((cs) => cs.id);
-  await deleteChangesets(rootDir, csIds);
+  // 3. Delete consumed bump files
+  const bfIds = releasePlan.bumpFiles.map((bf) => bf.id);
+  await deleteBumpFiles(rootDir, bfIds);
 }
 
 /** Update a version range to include a new version, preserving the range prefix */

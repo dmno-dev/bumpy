@@ -4,7 +4,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { writeJson, readJson, readText, writeText, ensureDir, exists } from '../../src/utils/fs.ts';
-import { makeRelease, makeChangeset, makeReleasePlan, makeConfig } from '../helpers.ts';
+import { makeRelease, makeBumpFile, makeReleasePlan, makeConfig } from '../helpers.ts';
 import { applyReleasePlan } from '../../src/core/apply-release-plan.ts';
 import type { WorkspacePackage } from '../../src/types.ts';
 
@@ -43,18 +43,18 @@ describe('applyReleasePlan', () => {
       optionalDependencies: {},
     });
 
-    const changeset = makeChangeset('cs1', [{ name: 'pkg-a', type: 'minor' }], 'New feature');
+    const bumpFile = makeBumpFile('cs1', [{ name: 'pkg-a', type: 'minor' }], 'New feature');
     const release = makeRelease('pkg-a', '1.1.0', {
       type: 'minor',
       oldVersion: '1.0.0',
-      changesets: ['cs1'],
+      bumpFiles: ['cs1'],
     });
 
     // Create the .bumpy dir with changeset file
     await ensureDir(resolve(tmpDir, '.bumpy'));
     await writeText(resolve(tmpDir, '.bumpy/cs1.md'), '---\n"pkg-a": minor\n---\n\nNew feature\n');
 
-    await applyReleasePlan(makeReleasePlan([release], [changeset]), packages, tmpDir, makeConfig());
+    await applyReleasePlan(makeReleasePlan([release], [bumpFile]), packages, tmpDir, makeConfig());
 
     const pkgJson = await readJson<Record<string, unknown>>(resolve(pkgDir, 'package.json'));
     expect(pkgJson.version).toBe('1.1.0');
@@ -77,16 +77,16 @@ describe('applyReleasePlan', () => {
       optionalDependencies: {},
     });
 
-    const changeset = makeChangeset('cs1', [{ name: 'pkg-a', type: 'patch' }], 'Bug fix');
+    const bumpFile = makeBumpFile('cs1', [{ name: 'pkg-a', type: 'patch' }], 'Bug fix');
     const release = makeRelease('pkg-a', '1.0.1', {
       oldVersion: '1.0.0',
-      changesets: ['cs1'],
+      bumpFiles: ['cs1'],
     });
 
     await ensureDir(resolve(tmpDir, '.bumpy'));
     await writeText(resolve(tmpDir, '.bumpy/cs1.md'), '---\n"pkg-a": patch\n---\n\nBug fix\n');
 
-    await applyReleasePlan(makeReleasePlan([release], [changeset]), packages, tmpDir, makeConfig());
+    await applyReleasePlan(makeReleasePlan([release], [bumpFile]), packages, tmpDir, makeConfig());
 
     const changelogPath = resolve(pkgDir, 'CHANGELOG.md');
     expect(await exists(changelogPath)).toBe(true);
@@ -113,17 +113,17 @@ describe('applyReleasePlan', () => {
       optionalDependencies: {},
     });
 
-    const changeset = makeChangeset('cs1', [{ name: 'pkg-a', type: 'minor' }], 'Feature');
+    const bumpFile = makeBumpFile('cs1', [{ name: 'pkg-a', type: 'minor' }], 'Feature');
     const release = makeRelease('pkg-a', '1.1.0', {
       type: 'minor',
       oldVersion: '1.0.0',
-      changesets: ['cs1'],
+      bumpFiles: ['cs1'],
     });
 
     await ensureDir(resolve(tmpDir, '.bumpy'));
     await writeText(resolve(tmpDir, '.bumpy/cs1.md'), '---\n"pkg-a": minor\n---\n\nFeature\n');
 
-    await applyReleasePlan(makeReleasePlan([release], [changeset]), packages, tmpDir, makeConfig());
+    await applyReleasePlan(makeReleasePlan([release], [bumpFile]), packages, tmpDir, makeConfig());
 
     const content = await readText(resolve(pkgDir, 'CHANGELOG.md'));
     // New entry should be before old entry
@@ -165,11 +165,11 @@ describe('applyReleasePlan', () => {
       optionalDependencies: {},
     });
 
-    const changeset = makeChangeset('cs1', [{ name: 'core', type: 'major' }], 'Breaking');
+    const bumpFile = makeBumpFile('cs1', [{ name: 'core', type: 'major' }], 'Breaking');
     const coreRelease = makeRelease('core', '2.0.0', {
       type: 'major',
       oldVersion: '1.0.0',
-      changesets: ['cs1'],
+      bumpFiles: ['cs1'],
     });
     const appRelease = makeRelease('app', '1.0.1', {
       oldVersion: '1.0.0',
@@ -179,7 +179,7 @@ describe('applyReleasePlan', () => {
     await ensureDir(resolve(tmpDir, '.bumpy'));
     await writeText(resolve(tmpDir, '.bumpy/cs1.md'), '---\n"core": major\n---\n\nBreaking\n');
 
-    await applyReleasePlan(makeReleasePlan([coreRelease, appRelease], [changeset]), packages, tmpDir, makeConfig());
+    await applyReleasePlan(makeReleasePlan([coreRelease, appRelease], [bumpFile]), packages, tmpDir, makeConfig());
 
     const appPkg = await readJson<Record<string, unknown>>(resolve(appDir, 'package.json'));
     const deps = appPkg.dependencies as Record<string, string>;
@@ -262,17 +262,17 @@ describe('applyReleasePlan', () => {
       optionalDependencies: {},
     });
 
-    const changeset = makeChangeset('cs1', [{ name: 'pkg-a', type: 'minor' }], 'New feature');
+    const bumpFile = makeBumpFile('cs1', [{ name: 'pkg-a', type: 'minor' }], 'New feature');
     const release = makeRelease('pkg-a', '1.1.0', {
       type: 'minor',
       oldVersion: '1.0.0',
-      changesets: ['cs1'],
+      bumpFiles: ['cs1'],
     });
 
     await ensureDir(resolve(tmpDir, '.bumpy'));
     await writeText(resolve(tmpDir, '.bumpy/cs1.md'), '---\n"pkg-a": minor\n---\n\nNew feature\n');
 
-    await applyReleasePlan(makeReleasePlan([release], [changeset]), packages, tmpDir, makeConfig());
+    await applyReleasePlan(makeReleasePlan([release], [bumpFile]), packages, tmpDir, makeConfig());
 
     const result = await readFile(resolve(pkgDir, 'package.json'), 'utf-8');
     // Version should be updated
@@ -336,14 +336,14 @@ describe('applyReleasePlan', () => {
       optionalDependencies: {},
     });
 
-    const changeset = makeChangeset('cs1', [{ name: 'core', type: 'major' }], 'Breaking');
-    const coreRelease = makeRelease('core', '2.0.0', { type: 'major', oldVersion: '1.0.0', changesets: ['cs1'] });
+    const bumpFile = makeBumpFile('cs1', [{ name: 'core', type: 'major' }], 'Breaking');
+    const coreRelease = makeRelease('core', '2.0.0', { type: 'major', oldVersion: '1.0.0', bumpFiles: ['cs1'] });
     const appRelease = makeRelease('app', '1.0.1', { oldVersion: '1.0.0', isDependencyBump: true });
 
     await ensureDir(resolve(tmpDir, '.bumpy'));
     await writeText(resolve(tmpDir, '.bumpy/cs1.md'), '---\n"core": major\n---\n\nBreaking\n');
 
-    await applyReleasePlan(makeReleasePlan([coreRelease, appRelease], [changeset]), packages, tmpDir, makeConfig());
+    await applyReleasePlan(makeReleasePlan([coreRelease, appRelease], [bumpFile]), packages, tmpDir, makeConfig());
 
     const result = await readFile(resolve(appDir, 'package.json'), 'utf-8');
     // Version should be updated
@@ -359,7 +359,7 @@ describe('applyReleasePlan', () => {
     expect(result).toContain('"lodash": "^4.17.0"');
   });
 
-  test('deletes consumed changeset files', async () => {
+  test('deletes consumed bump files', async () => {
     const pkgDir = await setupPackage('pkg-a', '1.0.0');
 
     const packages = new Map<string, WorkspacePackage>();
@@ -376,10 +376,10 @@ describe('applyReleasePlan', () => {
       optionalDependencies: {},
     });
 
-    const changeset = makeChangeset('cs-to-delete', [{ name: 'pkg-a', type: 'patch' }], 'Fix');
+    const bumpFile = makeBumpFile('cs-to-delete', [{ name: 'pkg-a', type: 'patch' }], 'Fix');
     const release = makeRelease('pkg-a', '1.0.1', {
       oldVersion: '1.0.0',
-      changesets: ['cs-to-delete'],
+      bumpFiles: ['cs-to-delete'],
     });
 
     await ensureDir(resolve(tmpDir, '.bumpy'));
@@ -387,7 +387,7 @@ describe('applyReleasePlan', () => {
     await writeText(csPath, '---\n"pkg-a": patch\n---\n\nFix\n');
     expect(await exists(csPath)).toBe(true);
 
-    await applyReleasePlan(makeReleasePlan([release], [changeset]), packages, tmpDir, makeConfig());
+    await applyReleasePlan(makeReleasePlan([release], [bumpFile]), packages, tmpDir, makeConfig());
 
     expect(await exists(csPath)).toBe(false);
   });

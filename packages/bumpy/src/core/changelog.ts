@@ -1,13 +1,13 @@
 import { resolve } from 'node:path';
 import { log } from '../utils/logger.ts';
-import type { Changeset, PlannedRelease, BumpyConfig } from '../types.ts';
+import type { BumpFile, PlannedRelease, BumpyConfig } from '../types.ts';
 
 // ---- Formatter interface ----
 
 export interface ChangelogContext {
   release: PlannedRelease;
-  /** Changesets that contributed to this release */
-  changesets: Changeset[];
+  /** Bump files that contributed to this release */
+  bumpFiles: BumpFile[];
   /** ISO date string (YYYY-MM-DD) */
   date: string;
 }
@@ -22,19 +22,19 @@ export type ChangelogFormatter = (ctx: ChangelogContext) => string | Promise<str
 
 /** Default formatter — version heading, date, bullet points */
 export const defaultFormatter: ChangelogFormatter = (ctx) => {
-  const { release, changesets, date } = ctx;
+  const { release, bumpFiles, date } = ctx;
   const lines: string[] = [];
   lines.push(`## ${release.newVersion}`);
   lines.push('');
   lines.push(`_${date}_`);
   lines.push('');
 
-  const relevantChangesets = changesets.filter((cs) => release.changesets.includes(cs.id));
+  const relevantBumpFiles = bumpFiles.filter((bf) => release.bumpFiles.includes(bf.id));
 
-  if (relevantChangesets.length > 0) {
-    for (const cs of relevantChangesets) {
-      if (cs.summary) {
-        const summaryLines = cs.summary.split('\n');
+  if (relevantBumpFiles.length > 0) {
+    for (const bf of relevantBumpFiles) {
+      if (bf.summary) {
+        const summaryLines = bf.summary.split('\n');
         lines.push(`- ${summaryLines[0]}`);
         for (let i = 1; i < summaryLines.length; i++) {
           if (summaryLines[i]!.trim()) {
@@ -45,11 +45,11 @@ export const defaultFormatter: ChangelogFormatter = (ctx) => {
     }
   }
 
-  if (release.isDependencyBump && relevantChangesets.length === 0) {
+  if (release.isDependencyBump && relevantBumpFiles.length === 0) {
     lines.push('- Updated dependencies');
   }
 
-  if (release.isCascadeBump && !release.isDependencyBump && relevantChangesets.length === 0) {
+  if (release.isCascadeBump && !release.isDependencyBump && relevantBumpFiles.length === 0) {
     lines.push('- Version bump via cascade rule');
   }
 
@@ -131,11 +131,11 @@ export async function loadFormatter(changelog: BumpyConfig['changelog'], rootDir
 /** Generate a changelog entry using the configured formatter */
 export async function generateChangelogEntry(
   release: PlannedRelease,
-  changesets: Changeset[],
+  bumpFiles: BumpFile[],
   formatter: ChangelogFormatter = defaultFormatter,
   date: string = new Date().toISOString().split('T')[0]!,
 ): Promise<string> {
-  return formatter({ release, changesets, date });
+  return formatter({ release, bumpFiles, date });
 }
 
 /** Prepend a new entry to an existing CHANGELOG.md content */
