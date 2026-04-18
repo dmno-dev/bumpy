@@ -8,15 +8,36 @@ Bumpy is built as a modern successor to [@changesets/changesets](https://github.
 
 ### Sane dependency bump propagation
 
-Changesets hardcodes aggressive behavior: a **minor** bump on a package triggers a **major** bump on all packages that peer-depend on it. This is the single biggest community complaint. Bumpy makes propagation **fully configurable** at 5 levels with sensible defaults (peer deps only trigger on major, dev deps never propagate).
+Changesets hardcodes aggressive behavior: a **minor** bump on a package triggers a **major** bump on all packages that peer-depend on it. This is the single biggest community complaint.
+
+Bumpy splits propagation into three phases inside an iterative loop:
+
+- **Phase A (always runs):** fixes broken version ranges — peer dep bumps match the triggering bump level, regular deps get patch, dev deps are skipped. Cannot be disabled.
+- **Phase B:** enforces fixed/linked group constraints.
+- **Phase C (opt-in):** proactive propagation via configurable `dependencyBumpRules` and `cascadeTo` rules. Off by default (`updateInternalDependencies: "out-of-range"`).
+
+Key differences from changesets:
+
+- Out-of-range peer dep bumps match the triggering bump level (not always major) — a minor bump on `core` → minor bump on `plugin`, not major
+- Dev deps never propagate by default (configurable per-package for bundled devDeps)
+- `cascadeTo` config for source-side "when I change, cascade to these packages"
+- Per-changeset `none` and `patch-isolated` to suppress propagation on specific changes
+- Warns about `^0.x` caret range gotchas and `workspace:*` on peer deps
+
+See [docs/version-propagation.md](docs/version-propagation.md) for the full algorithm.
 
 - [changesets#1011](https://github.com/changesets/changesets/issues/1011) — peerDependencies cause unnecessary major bumps (70+ thumbs-up)
 - [changesets#822](https://github.com/changesets/changesets/issues/822) — unexpected major version bumps from peer deps
 - [changesets#1126](https://github.com/changesets/changesets/issues/1126) — peer dep bumping is too aggressive
-- [changesets#1228](https://github.com/changesets/changesets/issues/1228) — allow configuring peer dep bump behavior
+- [changesets#1228](https://github.com/changesets/changesets/issues/1228) — allow configuring peer dep bump behavior / 0.x versions
 - [changesets#827](https://github.com/changesets/changesets/issues/827) — peer dep bump propagation should be configurable
 - [changesets#960](https://github.com/changesets/changesets/issues/960) — unexpected version bumps in monorepos
 - [changesets#944](https://github.com/changesets/changesets/issues/944) — devDependencies should be configurable (17 thumbs-up)
+- [changesets#568](https://github.com/changesets/changesets/issues/568) — allow dependents to not be automatically bumped
+- [changesets#1128](https://github.com/changesets/changesets/issues/1128) — `updateInternalDependencies` only on certain packages
+- [changesets#808](https://github.com/changesets/changesets/issues/808) — ignore some packages on `updateInternalDependencies`
+- [changesets#1819](https://github.com/changesets/changesets/issues/1819) — support major version propagation to dependents (`bumpAs: "match"`)
+- [changesets#1735](https://github.com/changesets/changesets/issues/1735) — unidirectional dependency relationships (solved by `cascadeTo`)
 
 ### Custom publish commands
 
@@ -34,6 +55,7 @@ Changesets uses `npm publish` even in Yarn/pnpm workspaces, so `workspace:^` and
 
 - [changesets#432](https://github.com/changesets/changesets/issues/432) — workspace: ranges not resolved (33 comments)
 - [changesets#1290](https://github.com/changesets/changesets/issues/1290) — workspace:^ not handled correctly
+- [changesets#1421](https://github.com/changesets/changesets/issues/1421) — workspace:^ bumped on patch despite `updateInternalDependencies: "minor"`
 - [changesets#1229](https://github.com/changesets/changesets/issues/1229) — workspace: protocol causes publish failures
 - [changesets#1468](https://github.com/changesets/changesets/issues/1468) — workspace:^ published as-is (16 thumbs-up)
 - [changesets#1454](https://github.com/changesets/changesets/issues/1454) — publishing with Yarn is broken (38 thumbs-up)
@@ -119,7 +141,7 @@ Custom changelog formatters with full context (release info, changesets, dates).
 
 ### CI without a separate action
 
-`bumpy ci check` and `bumpy ci release` handle PR checks and release automation without needing a separate GitHub Action or bot installation. Just `bunx @varlock/bumpy ci check` in any workflow.
+`bumpy ci check` and `bumpy ci release` handle PR checks and release automation without needing a separate GitHub Action or bot installation. Just `bunx @varlock/bumpy ci check` in any workflow. No extra repository to trust, audit, or pin — your CI runs the same package you already depend on.
 
 ### Local changeset verification
 

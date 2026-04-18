@@ -57,7 +57,11 @@ Added new encryption provider for secrets management.
 Internal refactor — no API changes, dependents don't need to bump.
 ```
 
-Valid bump types: `major`, `minor`, `patch`, `minor-isolated`, `patch-isolated`
+Valid bump types: `major`, `minor`, `patch`, `patch-isolated`, `none`
+
+`patch-isolated` bumps as a patch but skips Phase C propagation. If the bump would break a dependent's range, bumpy throws an error.
+
+`none` suppresses a bump on a package that would otherwise be included via propagation. If skipping would leave a broken range, bumpy throws an error.
 
 ### Nested format with explicit cascade control
 
@@ -103,22 +107,21 @@ Added new encryption provider. Plugins need a patch bump for compatibility.
   // Package names/globs to explicitly include (overrides private status and ignore)
   "include": ["my-vscode-ext", "@myorg/app-*"],
 
-  // When to update internal dependency version ranges
-  // "out-of-range" = only when new version falls outside existing range (default)
-  // "patch" = always bump dependents
-  // "minor" = only on minor+ bumps
-  // "none" = never auto-bump dependents
+  // When to update internal dependency version ranges (Phase C)
+  // "out-of-range" = only fix broken ranges via Phase A (default)
+  // "patch" = also proactively bump dependents on any dep bump
+  // "minor" = also proactively bump dependents on minor+ dep bumps
   "updateInternalDependencies": "out-of-range",
 
-  // Global rules for how dependency bumps propagate
+  // Global rules for how dependency bumps propagate (Phase C only)
+  // Each rule is either false (disabled) or { trigger, bumpAs }
   "dependencyBumpRules": {
     // When a regular dependency bumps, what happens to dependents?
     "dependencies": { "trigger": "patch", "bumpAs": "patch" },
     // When a peer dependency bumps, what happens to dependents?
-    // DEFAULT: only major triggers propagation (changesets uses minor!)
-    "peerDependencies": { "trigger": "major", "bumpAs": "major" },
+    "peerDependencies": { "trigger": "major", "bumpAs": "match" },
     // Dev dependencies never propagate by default
-    "devDependencies": { "trigger": "none", "bumpAs": "patch" },
+    "devDependencies": false,
     "optionalDependencies": { "trigger": "minor", "bumpAs": "patch" },
   },
 
@@ -190,9 +193,6 @@ Any package can have bumpy config in its own `package.json`:
     "buildCommand": "bun run build",
     "cascadeTo": {
       "@myorg/plugin-*": { "trigger": "minor", "bumpAs": "patch" }
-    },
-    "specificDependencyRules": {
-      "@myorg/core": { "trigger": "minor", "bumpAs": "minor" }
     }
   }
 }
@@ -200,18 +200,17 @@ Any package can have bumpy config in its own `package.json`:
 
 #### Per-package config fields
 
-| Field                     | Type                                 | Description                                                                                           |
-| ------------------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------- |
-| `managed`                 | `boolean`                            | Explicitly opt in (`true`) or out (`false`) of version management. Overrides private/ignore/include.  |
-| `access`                  | `"public" \| "restricted"`           | npm access level override                                                                             |
-| `publishCommand`          | `string \| string[]`                 | Custom publish command(s). Supports `{{version}}` and `{{name}}` template variables.                  |
-| `buildCommand`            | `string`                             | Build command to run before publishing                                                                |
-| `registry`                | `string`                             | Custom npm registry URL                                                                               |
-| `skipNpmPublish`          | `boolean`                            | Skip npm publish (use with `publishCommand` for non-npm publishing)                                   |
-| `checkPublished`          | `string`                             | Command to check if version is published. Should output the version string. Used for non-npm targets. |
-| `dependencyBumpRules`     | `object`                             | Override global dependency bump rules for this package                                                |
-| `specificDependencyRules` | `Record<string, DependencyBumpRule>` | Rules for specific dependencies by name/glob                                                          |
-| `cascadeTo`               | `Record<string, DependencyBumpRule>` | When this package bumps, cascade to these packages (supports globs)                                   |
+| Field                 | Type                                 | Description                                                                                           |
+| --------------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------- |
+| `managed`             | `boolean`                            | Explicitly opt in (`true`) or out (`false`) of version management. Overrides private/ignore/include.  |
+| `access`              | `"public" \| "restricted"`           | npm access level override                                                                             |
+| `publishCommand`      | `string \| string[]`                 | Custom publish command(s). Supports `{{version}}` and `{{name}}` template variables.                  |
+| `buildCommand`        | `string`                             | Build command to run before publishing                                                                |
+| `registry`            | `string`                             | Custom npm registry URL                                                                               |
+| `skipNpmPublish`      | `boolean`                            | Skip npm publish (use with `publishCommand` for non-npm publishing)                                   |
+| `checkPublished`      | `string`                             | Command to check if version is published. Should output the version string. Used for non-npm targets. |
+| `dependencyBumpRules` | `object`                             | Override global dependency bump rules for this package (or `false` to disable)                        |
+| `cascadeTo`           | `Record<string, DependencyBumpRule>` | When this package bumps, cascade to these packages (supports globs)                                   |
 
 ## Package Management (include/exclude)
 
@@ -234,30 +233,33 @@ A `DependencyBumpRule` has two fields:
 { "trigger": "minor", "bumpAs": "patch" }
 ```
 
-- `trigger`: what bump level in the dependency triggers propagation. Values: `"major"`, `"minor"`, `"patch"`, `"none"`
-- `bumpAs`: what bump to apply to the dependent. Values: `"major"`, `"minor"`, `"patch"`, `"match"` (same as trigger)
+- `trigger`: minimum bump level in the dependency that activates propagation. Values: `"major"`, `"minor"`, `"patch"`
+- `bumpAs`: what bump to apply to the dependent. Values: `"major"`, `"minor"`, `"patch"`, `"match"` (same level as triggering bump)
+
+A rule can also be `false` to disable propagation for that dep type entirely.
+
+Note: dependency bump rules only apply in **Phase C** (proactive propagation). **Phase A** (out-of-range fixes) always runs with hardcoded behavior: peer deps get "match", regular deps get "patch", dev deps are skipped.
 
 ### Rule resolution order
 
-When package A bumps and package B depends on A, bumpy looks for a rule in this order:
+When package A bumps and package B depends on A, bumpy looks for a Phase C rule in this order:
 
-1. **Changeset cascade** — explicit `cascade:` in the changeset file (always applies, no trigger check)
-2. **Source cascadeTo** — `cascadeTo` config on package A
-3. **Specific dependency rule** — `specificDependencyRules["A"]` on package B
-4. **Per-package dep type rule** — `dependencyBumpRules[depType]` on package B
-5. **Global dep type rule** — root config `dependencyBumpRules[depType]`
-6. **Built-in defaults**
+1. **Per-package dep type rule** — `dependencyBumpRules[depType]` on package B _(most specific)_
+2. **Global dep type rule** — root config `dependencyBumpRules[depType]`
+3. **Built-in defaults** _(least specific)_
+
+Changeset cascades and `cascadeTo` config are separate from dependency bump rules and always apply.
 
 ### Built-in defaults (the key difference from changesets)
 
-| Dependency type        | trigger   | bumpAs | Changesets behavior |
-| ---------------------- | --------- | ------ | ------------------- |
-| `dependencies`         | patch     | patch  | Same                |
-| `peerDependencies`     | **major** | major  | minor → major (!)   |
-| `devDependencies`      | none      | patch  | patch → patch       |
-| `optionalDependencies` | minor     | patch  | Same                |
+| Dependency type        | Phase C trigger | Phase C bumpAs | Phase A behavior        |
+| ---------------------- | --------------- | -------------- | ----------------------- |
+| `dependencies`         | patch           | patch          | patch (on out-of-range) |
+| `peerDependencies`     | **major**       | **match**      | match (on out-of-range) |
+| `devDependencies`      | _(disabled)_    | —              | _(skipped)_             |
+| `optionalDependencies` | minor           | patch          | patch (on out-of-range) |
 
-The critical difference: changesets bumps dependents to **major** when a peer dependency gets a **minor** bump. Bumpy only propagates peer dep bumps on **major** by default.
+The critical difference: changesets bumps dependents to **major** when a peer dependency gets a **minor** bump. Bumpy's Phase A matches the triggering bump level for peer deps, and Phase C only triggers on major by default.
 
 ## CLI Reference
 
@@ -538,7 +540,7 @@ Or permanently via config:
   "packages": {
     "@myorg/internal-*": {
       "dependencyBumpRules": {
-        "dependencies": { "trigger": "none", "bumpAs": "patch" }
+        "dependencies": false
       }
     }
   }
@@ -688,8 +690,8 @@ This will:
 
 Key behavioral differences after migration:
 
-- Peer dependency minor bumps no longer cascade to major on dependents
-- Use `patch-isolated`/`minor-isolated` bump types to skip propagation
+- Out-of-range peer dep bumps match the triggering bump level (not always major)
+- Use `patch-isolated` to skip Phase C propagation, or `none` to suppress a propagated bump
 - Per-package config moves to `package.json["bumpy"]` instead of root config only
 
 ## AI Integration

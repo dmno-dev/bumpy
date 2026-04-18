@@ -93,8 +93,9 @@ export async function migrateCommand(rootDir: string, opts: MigrateOptions): Pro
   log.success('Migration complete!');
   log.dim('Review .bumpy/_config.json and adjust settings as needed.');
   log.dim('Key differences from changesets:');
-  log.dim('  - peerDependency bumps only propagate on major (not minor)');
-  log.dim("  - Use 'patch-isolated'/'minor-isolated' to skip propagation");
+  log.dim('  - Out-of-range peer dep bumps match the triggering bump level (not always major)');
+  log.dim("  - Use 'patch-isolated' to skip Phase C propagation");
+  log.dim("  - Use 'none' in a changeset to suppress a propagated bump");
   log.dim('  - Per-package config goes in package.json["bumpy"]');
 }
 

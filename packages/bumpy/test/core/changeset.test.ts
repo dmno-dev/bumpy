@@ -21,15 +21,29 @@ Added a new feature to pkg-a
     expect(cs!.summary).toBe('Added a new feature to pkg-a');
   });
 
-  test('parses isolated bump types', () => {
+  test('parses patch-isolated bump type', () => {
     const content = `---
-"pkg-a": minor-isolated
+"pkg-a": patch-isolated
 ---
 
 Internal change
 `;
     const cs = parseChangeset(content, 'test-cs');
-    expect(cs!.releases[0]!.type).toBe('minor-isolated');
+    expect(cs!.releases[0]!.type).toBe('patch-isolated');
+  });
+
+  test('parses none bump type', () => {
+    const content = `---
+"pkg-a": minor
+"pkg-b": none
+---
+
+Feature in pkg-a, suppress bump on pkg-b
+`;
+    const cs = parseChangeset(content, 'test-cs');
+    expect(cs!.releases).toHaveLength(2);
+    expect(cs!.releases[0]!.type).toBe('minor');
+    expect(cs!.releases[1]!.type).toBe('none');
   });
 
   test('parses nested format with cascade', () => {

@@ -22,8 +22,7 @@ const BUMP_CHOICES: { label: string; value: BumpTypeWithIsolated; hint?: string 
   { label: 'patch', value: 'patch' },
   { label: 'minor', value: 'minor' },
   { label: 'major', value: 'major' },
-  { label: 'patch (isolated)', value: 'patch-isolated', hint: 'no cascade' },
-  { label: 'minor (isolated)', value: 'minor-isolated', hint: 'no cascade' },
+  { label: 'patch (isolated)', value: 'patch-isolated', hint: 'skips propagation' },
 ];
 
 const CASCADE_CHOICES: { label: string; value: BumpType }[] = [
