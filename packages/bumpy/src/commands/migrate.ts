@@ -4,10 +4,10 @@ import pc from 'picocolors';
 import { log } from '../utils/logger.ts';
 import { readJson, readText, exists } from '../utils/fs.ts';
 import { getBumpyDir } from '../core/config.ts';
-import { writeChangeset } from '../core/changeset.ts';
+import { writeBumpFile } from '../core/bump-file.ts';
 import { p, unwrap } from '../utils/clack.ts';
 import { initCommand } from './init.ts';
-import type { ChangesetRelease, BumpTypeWithIsolated } from '../types.ts';
+import type { BumpFileRelease, BumpTypeWithIsolated } from '../types.ts';
 
 interface MigrateOptions {
   force?: boolean;
@@ -36,12 +36,12 @@ export async function migrateCommand(rootDir: string, opts: MigrateOptions): Pro
     await migrateConfig(changesetConfigPath, bumpyDir);
   }
 
-  // Step 2: Migrate pending changeset files
+  // Step 2: Migrate pending changeset files to bump files
   const files = await readdir(changesetDir);
   const mdFiles = files.filter((f) => f.endsWith('.md') && f !== 'README.md');
 
   if (mdFiles.length > 0) {
-    log.step(`Migrating ${mdFiles.length} pending changeset(s)...`);
+    log.step(`Migrating ${mdFiles.length} pending changeset(s) to bump files...`);
     let migrated = 0;
     for (const file of mdFiles) {
       const content = await readText(resolve(changesetDir, file));
@@ -59,11 +59,11 @@ export async function migrateCommand(rootDir: string, opts: MigrateOptions): Pro
       }
 
       // Write in bumpy format (which is the same, but let's go through our writer for consistency)
-      await writeChangeset(rootDir, name, result.releases, result.summary);
+      await writeBumpFile(rootDir, name, result.releases, result.summary);
       migrated++;
       log.dim(`  Migrated ${file}`);
     }
-    log.success(`Migrated ${migrated} changeset(s)`);
+    log.success(`Migrated ${migrated} bump file(s)`);
   } else {
     log.info('No pending changesets to migrate.');
   }
@@ -95,7 +95,7 @@ export async function migrateCommand(rootDir: string, opts: MigrateOptions): Pro
   log.dim('Key differences from changesets:');
   log.dim('  - Out-of-range peer dep bumps match the triggering bump level (not always major)');
   log.dim("  - Use 'patch-isolated' to skip Phase C propagation");
-  log.dim("  - Use 'none' in a changeset to suppress a propagated bump");
+  log.dim("  - Use 'none' in a bump file to suppress a propagated bump");
   log.dim('  - Per-package config goes in package.json["bumpy"]');
 }
 
@@ -140,7 +140,7 @@ async function migrateConfig(changesetConfigPath: string, bumpyDir: string): Pro
 }
 
 /** Parse a changesets-format markdown file */
-function parseChangesetFile(content: string): { releases: ChangesetRelease[]; summary: string } | null {
+function parseChangesetFile(content: string): { releases: BumpFileRelease[]; summary: string } | null {
   const match = content.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
   if (!match) return null;
 
@@ -149,7 +149,7 @@ function parseChangesetFile(content: string): { releases: ChangesetRelease[]; su
 
   if (!frontmatter) return null;
 
-  const releases: ChangesetRelease[] = [];
+  const releases: BumpFileRelease[] = [];
   for (const line of frontmatter.split('\n')) {
     const trimmed = line.trim();
     if (!trimmed) continue;

@@ -4,12 +4,12 @@ import { log } from '../utils/logger.ts';
 import { p, unwrap } from '../utils/clack.ts';
 import { ensureDir, exists } from '../utils/fs.ts';
 import { randomName, slugify } from '../utils/names.ts';
-import { writeChangeset } from '../core/changeset.ts';
+import { writeBumpFile } from '../core/bump-file.ts';
 import { getBumpyDir, loadConfig } from '../core/config.ts';
 import { discoverPackages } from '../core/workspace.ts';
 import { DependencyGraph } from '../core/dep-graph.ts';
 import { matchGlob } from '../core/config.ts';
-import type { BumpType, BumpTypeWithIsolated, ChangesetRelease, ChangesetReleaseCascade } from '../types.ts';
+import type { BumpType, BumpTypeWithIsolated, BumpFileRelease, BumpFileReleaseCascade } from '../types.ts';
 
 interface AddOptions {
   packages?: string; // "pkg-a:minor,pkg-b:patch-isolated"
@@ -42,11 +42,11 @@ export async function addCommand(rootDir: string, opts: AddOptions): Promise<voi
     const filePath = resolve(bumpyDir, `${filename}.md`);
     const { writeText } = await import('../utils/fs.ts');
     await writeText(filePath, '---\n---\n');
-    log.success(`Created empty changeset: .bumpy/${filename}.md`);
+    log.success(`Created empty bump file: .bumpy/${filename}.md`);
     return;
   }
 
-  let releases: ChangesetRelease[];
+  let releases: BumpFileRelease[];
   let summary: string;
   let filename: string;
 
@@ -69,7 +69,7 @@ export async function addCommand(rootDir: string, opts: AddOptions): Promise<voi
 
     const selected = unwrap(
       await p.multiselect<string>({
-        message: 'Which packages should be included in this changeset?',
+        message: 'Which packages should be included in this bump file?',
         options: [...pkgs.values()].map((pkg) => ({
           label: pkg.name,
           value: pkg.name,
@@ -88,7 +88,7 @@ export async function addCommand(rootDir: string, opts: AddOptions): Promise<voi
         }),
       );
 
-      const release: ChangesetRelease = { name, type: bumpType };
+      const release: BumpFileRelease = { name, type: bumpType };
 
       // Offer cascade options if the package has dependents and bump is not isolated
       if (!bumpType.endsWith('-isolated')) {
@@ -134,7 +134,7 @@ export async function addCommand(rootDir: string, opts: AddOptions): Promise<voi
               for (const target of cascadeSelected) {
                 cascade[target] = cascadeBump;
               }
-              (release as ChangesetReleaseCascade).cascade = cascade;
+              (release as BumpFileReleaseCascade).cascade = cascade;
             }
           }
         }
@@ -157,7 +157,7 @@ export async function addCommand(rootDir: string, opts: AddOptions): Promise<voi
     const defaultName = randomName();
     const nameInput = unwrap(
       await p.text({
-        message: 'Changeset name',
+        message: 'Bump file name',
         placeholder: defaultName,
         defaultValue: defaultName,
         validate: (value) => {
@@ -175,29 +175,29 @@ export async function addCommand(rootDir: string, opts: AddOptions): Promise<voi
     filename = `${filename}-${Date.now()}`;
   }
 
-  await writeChangeset(rootDir, filename, releases, summary);
+  await writeBumpFile(rootDir, filename, releases, summary);
 
   if (opts.packages) {
-    log.success(`Created changeset: .bumpy/${filename}.md`);
+    log.success(`Created bump file: .bumpy/${filename}.md`);
     for (const r of releases) {
       log.dim(`  ${r.name}: ${r.type}${formatCascade(r)}`);
     }
   } else {
     p.note(
       releases.map((r) => `${pc.cyan(r.name)} ${pc.dim('→')} ${pc.bold(r.type)}${formatCascade(r)}`).join('\n'),
-      'Changeset',
+      'Bump file',
     );
     p.outro(pc.green(`Created .bumpy/${filename}.md`));
   }
 }
 
-function formatCascade(r: ChangesetRelease): string {
+function formatCascade(r: BumpFileRelease): string {
   if (!('cascade' in r) || Object.keys(r.cascade).length === 0) return '';
   const parts = Object.entries(r.cascade).map(([k, v]) => `${k}:${v}`);
   return pc.dim(` (cascade: ${parts.join(', ')})`);
 }
 
-function parsePackagesFlag(input: string): ChangesetRelease[] {
+function parsePackagesFlag(input: string): BumpFileRelease[] {
   return input.split(',').map((entry) => {
     const [name, type] = entry.trim().split(':');
     if (!name || !type) {

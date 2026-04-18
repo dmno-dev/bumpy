@@ -51,7 +51,7 @@ describe('publishPackages', () => {
 
     const depGraph = new DependencyGraph(packages);
     const plan: ReleasePlan = {
-      changesets: [],
+      bumpFiles: [],
       warnings: [],
       releases: [
         {
@@ -59,7 +59,7 @@ describe('publishPackages', () => {
           type: 'minor',
           oldVersion: '1.0.0',
           newVersion: '1.1.0',
-          changesets: [],
+          bumpFiles: [],
           isDependencyBump: false,
           isCascadeBump: false,
         },
@@ -94,7 +94,7 @@ describe('publishPackages', () => {
 
     const depGraph = new DependencyGraph(packages);
     const plan: ReleasePlan = {
-      changesets: [],
+      bumpFiles: [],
       warnings: [],
       releases: [
         {
@@ -102,7 +102,7 @@ describe('publishPackages', () => {
           type: 'minor',
           oldVersion: '2.0.0',
           newVersion: '2.1.0',
-          changesets: [],
+          bumpFiles: [],
           isDependencyBump: false,
           isCascadeBump: false,
         },
@@ -133,7 +133,7 @@ describe('publishPackages', () => {
 
     const depGraph = new DependencyGraph(packages);
     const plan: ReleasePlan = {
-      changesets: [],
+      bumpFiles: [],
       warnings: [],
       releases: [
         {
@@ -141,7 +141,7 @@ describe('publishPackages', () => {
           type: 'patch',
           oldVersion: '1.0.0',
           newVersion: '1.0.1',
-          changesets: [],
+          bumpFiles: [],
           isDependencyBump: false,
           isCascadeBump: false,
         },
@@ -181,7 +181,7 @@ describe('publishPackages', () => {
 
     const depGraph = new DependencyGraph(packages);
     const plan: ReleasePlan = {
-      changesets: [],
+      bumpFiles: [],
       warnings: [],
       releases: [
         {
@@ -189,7 +189,7 @@ describe('publishPackages', () => {
           type: 'minor',
           oldVersion: '1.0.0',
           newVersion: '1.1.0',
-          changesets: [],
+          bumpFiles: [],
           isDependencyBump: false,
           isCascadeBump: false,
         },
@@ -198,7 +198,7 @@ describe('publishPackages', () => {
           type: 'patch',
           oldVersion: '1.0.0',
           newVersion: '1.0.1',
-          changesets: [],
+          bumpFiles: [],
           isDependencyBump: true,
           isCascadeBump: false,
         },
@@ -228,7 +228,7 @@ describe('publishPackages', () => {
 
     const depGraph = new DependencyGraph(packages);
     const plan: ReleasePlan = {
-      changesets: [],
+      bumpFiles: [],
       warnings: [],
       releases: [
         {
@@ -236,7 +236,7 @@ describe('publishPackages', () => {
           type: 'patch',
           oldVersion: '1.0.0',
           newVersion: '1.0.1',
-          changesets: [],
+          bumpFiles: [],
           isDependencyBump: false,
           isCascadeBump: false,
         },

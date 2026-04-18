@@ -49,7 +49,7 @@ export async function publishCommand(rootDir: string, opts: PublishCommandOption
 
   // Build a synthetic release plan from unpublished packages
   const releasePlan: ReleasePlan = {
-    changesets: [],
+    bumpFiles: [],
     releases: toPublish,
     warnings: [],
   };
@@ -109,12 +109,12 @@ export async function publishCommand(rootDir: string, opts: PublishCommandOption
     const aggTitle = typeof aggConfig === 'object' ? aggConfig.title : undefined;
 
     if (isAggregate) {
-      await createAggregateRelease(publishedReleases, releasePlan.changesets, rootDir, {
+      await createAggregateRelease(publishedReleases, releasePlan.bumpFiles, rootDir, {
         dryRun: opts.dryRun,
         title: aggTitle,
       });
     } else {
-      await createIndividualReleases(publishedReleases, releasePlan.changesets, rootDir, {
+      await createIndividualReleases(publishedReleases, releasePlan.bumpFiles, rootDir, {
         dryRun: opts.dryRun,
       });
     }
@@ -148,7 +148,7 @@ async function findUnpublishedPackages(
         type: 'patch', // doesn't matter for publish, just needs a value
         oldVersion: pkg.version, // we don't know the old version
         newVersion: pkg.version,
-        changesets: [],
+        bumpFiles: [],
         isDependencyBump: false,
         isCascadeBump: false,
       });

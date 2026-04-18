@@ -1,13 +1,13 @@
 ---
 name: add-change
-description: Create a bumpy changeset describing which packages changed and how, for version bumping and changelog generation. Use when the user wants to record a change, add a changeset, or prepare packages for release.
+description: Create a bumpy bump file describing which packages changed and how, for version bumping and changelog generation. Use when the user wants to record a change, add a bump file, or prepare packages for release.
 argument-hint: '[description of changes]'
 allowed-tools: Read Grep Glob Bash Edit Write
 ---
 
-# Create a bumpy changeset
+# Create a bumpy bump file
 
-You are helping the user create a **bumpy changeset** — a markdown file in `.bumpy/` that describes which packages changed and how. Bumpy uses these to bump versions and generate changelogs.
+You are helping the user create a **bumpy bump file** — a markdown file in `.bumpy/` that describes which packages changed and how. Bumpy uses these to bump versions and generate changelogs.
 
 ## Steps
 
@@ -17,7 +17,7 @@ First, understand what changed. Run these in parallel:
 
 - `git diff --stat` — see which files changed
 - `git diff --cached --stat` — see staged changes
-- `bumpy status --json` — see if there are already pending changesets
+- `bumpy status --json` — see if there are already pending bump files
 
 If the user provided a description via `$ARGUMENTS`, use that as additional context for understanding the change.
 
@@ -49,7 +49,7 @@ Use `patch-isolated` if the change is purely internal and dependents should NOT 
 - Dev tooling / test changes
 - Documentation-only changes
 
-Use `none` in a changeset to suppress a bump on a package that would otherwise be included via propagation. If skipping would leave a broken range, bumpy throws an error.
+Use `none` in a bump file to suppress a bump on a package that would otherwise be included via propagation. If skipping would leave a broken range, bumpy throws an error.
 
 ### 4. Write a clear summary
 
@@ -59,7 +59,7 @@ Write a concise summary (1-3 sentences) describing **what** changed and **why**.
 - Focus on user-facing impact, not implementation details
 - Are specific enough to be useful months later
 
-### 5. Create the changeset
+### 5. Create the bump file
 
 Use the non-interactive CLI:
 
@@ -85,7 +85,7 @@ bumpy add \
 
 ## Advanced: cascading bumps
 
-If a change in a core package should explicitly cascade to dependents with specific bump levels, write the changeset file directly instead of using the CLI:
+If a change in a core package should explicitly cascade to dependents with specific bump levels, write the bump file directly instead of using the CLI:
 
 ```bash
 cat > .bumpy/<name>.md << 'EOF'
@@ -107,4 +107,4 @@ EOF
 - Only include packages that have **actual code changes** — bumpy handles dependency propagation automatically
 - If the user hasn't made any changes yet, ask what they're planning to change
 - If the change doesn't affect any publishable packages (e.g., only root config files), suggest using `bumpy add --empty` to satisfy CI checks
-- One changeset per logical change — don't combine unrelated changes
+- One bump file per logical change — don't combine unrelated changes

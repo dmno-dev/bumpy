@@ -8,10 +8,10 @@
 # Initialize in a monorepo root
 bumpy init
 
-# Create a changeset (interactive)
+# Create a bump file (interactive)
 bumpy add
 
-# Create a changeset (non-interactive, for CI/AI)
+# Create a bump file (non-interactive, for CI/AI)
 bumpy add --packages "pkg-a:minor,pkg-b:patch" --message "Added feature X" --name "add-feature-x"
 
 # Preview what would be released
@@ -19,7 +19,7 @@ bumpy status
 bumpy status --json
 bumpy status --packages  # one name per line, for piping
 
-# Apply changesets — bumps versions, updates changelogs, deletes changeset files
+# Apply bump files — bumps versions, updates changelogs, deletes bump files
 bumpy version
 
 # Publish (pack with PM, publish tarball with npm)
@@ -30,13 +30,13 @@ bumpy publish --tag beta
 
 ## How It Works
 
-1. Developers create **changeset files** in `.bumpy/` describing what changed and which packages are affected
-2. `bumpy version` reads all pending changesets, calculates version bumps (including dependency propagation), updates `package.json` versions and `CHANGELOG.md` files, then deletes the consumed changesets
+1. Developers create **bump files** in `.bumpy/` describing what changed and which packages are affected
+2. `bumpy version` reads all pending bump files, calculates version bumps (including dependency propagation), updates `package.json` versions and `CHANGELOG.md` files, then deletes the consumed bump files
 3. `bumpy publish` finds packages with unpublished versions and publishes them in dependency order
 
-## Changeset File Format
+## Bump File Format
 
-Changeset files are markdown with YAML frontmatter, stored in `.bumpy/<name>.md`.
+Bump files are markdown with YAML frontmatter, stored in `.bumpy/<name>.md`.
 
 ### Simple format
 
@@ -248,7 +248,7 @@ When package A bumps and package B depends on A, bumpy looks for a Phase C rule 
 2. **Global dep type rule** — root config `dependencyBumpRules[depType]`
 3. **Built-in defaults** _(least specific)_
 
-Changeset cascades and `cascadeTo` config are separate from dependency bump rules and always apply.
+Bump file cascades and `cascadeTo` config are separate from dependency bump rules and always apply.
 
 ### Built-in defaults (the key difference from changesets)
 
@@ -269,28 +269,28 @@ Creates `.bumpy/` directory with default `_config.json` and a README.
 
 ### `bumpy add`
 
-Create a new changeset.
+Create a new bump file.
 
 | Flag                | Description                                              |
 | ------------------- | -------------------------------------------------------- |
 | `--packages <list>` | Non-interactive: comma-separated `"name:bumpType"` pairs |
-| `--message <text>`  | Changeset summary                                        |
-| `--name <name>`     | Changeset filename (default: random adjective-noun)      |
-| `--empty`           | Create an empty changeset (no packages, for CI skip)     |
+| `--message <text>`  | Bump file summary                                        |
+| `--name <name>`     | Bump file filename (default: random adjective-noun)      |
+| `--empty`           | Create an empty bump file (no packages, for CI skip)     |
 
-Interactive mode prompts for: packages, bump type per package, cascade options, summary, and filename.
+Interactive mode prompts for: packages, bump type per package, cascade options, summary, and filename for the bump file.
 
 ### `bumpy status`
 
 Show pending releases.
 
-| Flag                  | Description                                                          |
-| --------------------- | -------------------------------------------------------------------- |
-| `--json`              | Full JSON output with `releases[]`, `changesets[]`, `packageNames[]` |
-| `--packages`          | One package name per line (for piping to other commands)             |
-| `--bump <types>`      | Filter by bump type: `"major"`, `"minor,patch"`                      |
-| `--filter <patterns>` | Filter by package name/glob: `"@myorg/*"`                            |
-| `--verbose`           | Show changeset details                                               |
+| Flag                  | Description                                                         |
+| --------------------- | ------------------------------------------------------------------- |
+| `--json`              | Full JSON output with `releases[]`, `bumpFiles[]`, `packageNames[]` |
+| `--packages`          | One package name per line (for piping to other commands)            |
+| `--bump <types>`      | Filter by bump type: `"major"`, `"minor,patch"`                     |
+| `--filter <patterns>` | Filter by package name/glob: `"@myorg/*"`                           |
+| `--verbose`           | Show bump file details                                              |
 
 Exit codes: `0` = releases pending, `1` = no releases pending.
 
@@ -317,7 +317,7 @@ JSON output shape:
 
 ### `bumpy check`
 
-Verify that all changed packages on the current branch have corresponding changesets. Compares files changed vs the base branch, maps them to managed packages, and exits non-zero if any are missing changesets.
+Verify that all changed packages on the current branch have corresponding bump files. Compares files changed vs the base branch, maps them to managed packages, and exits non-zero if any are missing bump files.
 
 Designed for pre-push hooks — no GitHub API needed.
 
@@ -331,7 +331,7 @@ pre-push:
 
 ### `bumpy version`
 
-Apply all pending changesets: bump versions in `package.json`, update `CHANGELOG.md`, delete consumed changeset files. Optionally creates a git commit if `commit: true` in config.
+Apply all pending bump files: bump versions in `package.json`, update `CHANGELOG.md`, delete consumed bump files. Optionally creates a git commit if `commit: true` in config.
 
 ### `bumpy publish`
 
@@ -347,12 +347,12 @@ Default flow: detects PM → packs tarball (resolves workspace:/catalog: protoco
 
 ### `bumpy ci check`
 
-PR check — reports pending changesets and optionally comments on the PR with the release plan.
+PR check — reports pending bump files and optionally comments on the PR with the release plan.
 
 | Flag                | Description                                                   |
 | ------------------- | ------------------------------------------------------------- |
 | `--comment`         | Force PR commenting on/off (auto-detected in CI environments) |
-| `--fail-on-missing` | Exit 1 if no changesets found                                 |
+| `--fail-on-missing` | Exit 1 if no bump files found                                 |
 
 Auto-detects PR number from `GITHUB_REF` in GitHub Actions. Also checks `BUMPY_PR_NUMBER` and `PR_NUMBER` env vars.
 
@@ -378,7 +378,7 @@ Migrate from `.changeset/` to `.bumpy/`.
 | --------- | ---------------------------------------------------------- |
 | `--force` | Skip interactive prompts (don't ask to delete .changeset/) |
 
-Migrates `.changeset/config.json` fields to `.bumpy/_config.json`, copies pending changeset files, and prints key differences from changesets.
+Migrates `.changeset/config.json` fields to `.bumpy/_config.json`, copies pending bump files, and prints key differences from changesets.
 
 ## Changelog Customization
 
@@ -390,14 +390,14 @@ The `changelog` config controls how CHANGELOG.md entries are formatted.
 { "changelog": "default" }
 ```
 
-Simple format: version heading, date, bullet points from changeset summaries.
+Simple format: version heading, date, bullet points from bump file summaries.
 
 ```json
 { "changelog": "github" }
 { "changelog": ["github", { "repo": "dmno-dev/bumpy" }] }
 ```
 
-GitHub-enhanced: adds PR links and author attribution (`- Added feature (#123) by @user`). Looks up PRs via `gh` CLI by finding the commit that introduced each changeset file.
+GitHub-enhanced: adds PR links and author attribution (`- Added feature (#123) by @user`). Looks up PRs via `gh` CLI by finding the commit that introduced each bump file.
 
 ### Custom formatter (TypeScript or JavaScript)
 
@@ -645,7 +645,7 @@ jobs:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 ```
 
-### Non-interactive changeset creation (AI/CI)
+### Non-interactive bump file creation (AI/CI)
 
 ```bash
 bumpy add \
@@ -685,7 +685,7 @@ bumpy migrate
 This will:
 
 1. Create `.bumpy/` and migrate settings to `_config.json`
-2. Copy pending changeset `.md` files
+2. Copy pending bump `.md` files
 3. Optionally remove `.changeset/` directory
 
 Key behavioral differences after migration:
@@ -696,7 +696,7 @@ Key behavioral differences after migration:
 
 ## AI Integration
 
-Bumpy ships with an AI skill that teaches LLMs how to create changesets.
+Bumpy ships with an AI skill that teaches LLMs how to create bump files.
 
 ### Claude Code (plugin)
 
@@ -704,7 +704,7 @@ Bumpy ships with an AI skill that teaches LLMs how to create changesets.
 claude plugin install @varlock/bumpy
 ```
 
-Then use `/bumpy:add-change` in Claude Code to create a changeset.
+Then use `/bumpy:add-change` in Claude Code to create a bump file.
 
 ### OpenCode / Cursor / Codex (setup command)
 
@@ -721,7 +721,7 @@ bumpy ai setup --target codex
 
 ### Any AI tool (non-interactive CLI)
 
-Any LLM can create changesets using the non-interactive CLI:
+Any LLM can create bump files using the non-interactive CLI:
 
 ```bash
 bumpy add \
@@ -730,4 +730,4 @@ bumpy add \
   --name "add-encryption-api"
 ```
 
-See the "Non-interactive changeset creation" section above for details.
+See the "Non-interactive bump file creation" section above for details.

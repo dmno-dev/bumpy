@@ -21,3 +21,6 @@ env.d.ts
 ignore
 
 .claude/worktrees
+
+.DS_Store
+images-raw
