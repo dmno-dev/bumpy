@@ -3,38 +3,38 @@ import yaml from 'js-yaml';
 import { readText, writeText, listFiles, removeFile } from '../utils/fs.ts';
 import { getBumpyDir } from './config.ts';
 import { tryRunArgs } from '../utils/shell.ts';
-import type { Changeset, ChangesetRelease, ChangesetReleaseCascade, BumpType, BumpTypeWithIsolated } from '../types.ts';
+import type { BumpFile, BumpFileRelease, BumpFileReleaseCascade, BumpType, BumpTypeWithIsolated } from '../types.ts';
 
-/** Read all changeset files from .bumpy/ directory, sorted by git creation order */
-export async function readChangesets(rootDir: string): Promise<Changeset[]> {
+/** Read all bump files from .bumpy/ directory, sorted by git creation order */
+export async function readBumpFiles(rootDir: string): Promise<BumpFile[]> {
   const dir = getBumpyDir(rootDir);
   const files = await listFiles(dir, '.md');
-  const changesets: Changeset[] = [];
+  const bumpFiles: BumpFile[] = [];
   for (const file of files) {
     if (file === 'README.md') continue;
-    const cs = await parseChangesetFile(resolve(dir, file));
-    if (cs) changesets.push(cs);
+    const bf = await parseBumpFileFromPath(resolve(dir, file));
+    if (bf) bumpFiles.push(bf);
   }
 
-  // Sort by the commit date when each changeset was first added to git.
-  // Falls back to filename order for uncommitted changesets.
-  const creationOrder = getChangesetCreationOrder(rootDir);
+  // Sort by the commit date when each bump file was first added to git.
+  // Falls back to filename order for uncommitted bump files.
+  const creationOrder = getBumpFileCreationOrder(rootDir);
   if (creationOrder.size > 0) {
-    changesets.sort((a, b) => {
+    bumpFiles.sort((a, b) => {
       const aOrder = creationOrder.get(a.id) ?? Infinity;
       const bOrder = creationOrder.get(b.id) ?? Infinity;
       return aOrder - bOrder || a.id.localeCompare(b.id);
     });
   }
 
-  return changesets;
+  return bumpFiles;
 }
 
 /**
- * Use `git log` to get the commit timestamp when each changeset file was first added.
- * Returns a map of changeset ID → unix timestamp (seconds).
+ * Use `git log` to get the commit timestamp when each bump file was first added.
+ * Returns a map of bump file ID → unix timestamp (seconds).
  */
-function getChangesetCreationOrder(rootDir: string): Map<string, number> {
+function getBumpFileCreationOrder(rootDir: string): Map<string, number> {
   const order = new Map<string, number>();
 
   // git log with --diff-filter=A shows only commits that added files
@@ -62,14 +62,14 @@ function getChangesetCreationOrder(rootDir: string): Map<string, number> {
   return order;
 }
 
-/** Parse a single changeset markdown file */
-export async function parseChangesetFile(filePath: string): Promise<Changeset | null> {
+/** Parse a single bump file from disk */
+export async function parseBumpFileFromPath(filePath: string): Promise<BumpFile | null> {
   const content = await readText(filePath);
-  return parseChangeset(content, fileToId(filePath));
+  return parseBumpFile(content, fileToId(filePath));
 }
 
-/** Parse changeset content (for testing) */
-export function parseChangeset(content: string, id: string): Changeset | null {
+/** Parse bump file content (for testing) */
+export function parseBumpFile(content: string, id: string): BumpFile | null {
   const match = content.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
   if (!match) return null;
 
@@ -79,7 +79,7 @@ export function parseChangeset(content: string, id: string): Changeset | null {
   const parsed = yaml.load(frontmatter) as Record<string, unknown>;
   if (!parsed || typeof parsed !== 'object') return null;
 
-  const releases: ChangesetRelease[] = [];
+  const releases: BumpFileRelease[] = [];
   for (const [name, value] of Object.entries(parsed)) {
     if (typeof value === 'string') {
       // Simple format: "pkg-name": minor
@@ -87,7 +87,7 @@ export function parseChangeset(content: string, id: string): Changeset | null {
     } else if (value && typeof value === 'object') {
       // Nested format: "pkg-name": { bump: minor, cascade: { ... } }
       const obj = value as { bump: BumpTypeWithIsolated; cascade?: Record<string, BumpType> };
-      const release: ChangesetReleaseCascade = {
+      const release: BumpFileReleaseCascade = {
         name,
         type: obj.bump,
         cascade: obj.cascade || {},
@@ -100,11 +100,11 @@ export function parseChangeset(content: string, id: string): Changeset | null {
   return { id, releases, summary };
 }
 
-/** Write a changeset file */
-export async function writeChangeset(
+/** Write a bump file */
+export async function writeBumpFile(
   rootDir: string,
   filename: string,
-  releases: ChangesetRelease[],
+  releases: BumpFileRelease[],
   summary: string,
 ): Promise<string> {
   const dir = getBumpyDir(rootDir);
@@ -126,8 +126,8 @@ export async function writeChangeset(
   return filePath;
 }
 
-/** Delete consumed changeset files */
-export async function deleteChangesets(rootDir: string, ids: string[]): Promise<void> {
+/** Delete consumed bump files */
+export async function deleteBumpFiles(rootDir: string, ids: string[]): Promise<void> {
   const dir = getBumpyDir(rootDir);
   for (const id of ids) {
     await removeFile(resolve(dir, `${id}.md`));

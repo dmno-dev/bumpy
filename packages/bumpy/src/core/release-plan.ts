@@ -4,7 +4,7 @@ import { bumpVersion, satisfies } from './semver.ts';
 import {
   type BumpyConfig,
   type BumpType,
-  type Changeset,
+  type BumpFile,
   type DependencyBumpRule,
   type DepType,
   type PlannedRelease,
@@ -20,15 +20,15 @@ import {
 interface PlannedBump {
   type: BumpType;
   isolated: boolean;
-  /** Explicit 'none' from changeset — suppresses propagation bumps */
+  /** Explicit 'none' from bump file — suppresses propagation bumps */
   suppressed: boolean;
   isDependencyBump: boolean;
   isCascadeBump: boolean;
-  changesets: Set<string>;
+  bumpFiles: Set<string>;
 }
 
 /**
- * Build a release plan from pending changesets, the dependency graph, and config.
+ * Build a release plan from pending bump files, the dependency graph, and config.
  * This is the core algorithm of bumpy.
  *
  * The propagation loop runs three phases until stable:
@@ -37,24 +37,24 @@ interface PlannedBump {
  *   Phase C — apply cascades and proactive propagation rules
  */
 export function assembleReleasePlan(
-  changesets: Changeset[],
+  bumpFiles: BumpFile[],
   packages: Map<string, WorkspacePackage>,
   depGraph: DependencyGraph,
   config: BumpyConfig,
 ): ReleasePlan {
-  if (changesets.length === 0) {
-    return { changesets: [], releases: [], warnings: [] };
+  if (bumpFiles.length === 0) {
+    return { bumpFiles: [], releases: [], warnings: [] };
   }
 
   const planned = new Map<string, PlannedBump>();
   const warnings: string[] = [];
 
-  // Step 1: Collect explicit bumps from changesets
+  // Step 1: Collect explicit bumps from bump files
   const cascadeOverrides = new Map<string, Map<string, BumpType>>(); // pkg → (glob → bumpType)
   const suppressedPackages = new Set<string>(); // packages with explicit 'none'
 
-  for (const cs of changesets) {
-    for (const release of cs.releases) {
+  for (const bf of bumpFiles) {
+    for (const release of bf.releases) {
       if (!packages.has(release.name)) continue;
       const { bump, isolated } = parseIsolatedBump(release.type);
 
@@ -66,9 +66,9 @@ export function assembleReleasePlan(
       const existing = planned.get(release.name);
       if (existing) {
         existing.type = maxBump(existing.type, bump);
-        // If ANY changeset is non-isolated, the package is non-isolated
+        // If ANY bump file is non-isolated, the package is non-isolated
         if (!isolated) existing.isolated = false;
-        existing.changesets.add(cs.id);
+        existing.bumpFiles.add(bf.id);
       } else {
         planned.set(release.name, {
           type: bump,
@@ -76,11 +76,11 @@ export function assembleReleasePlan(
           suppressed: false,
           isDependencyBump: false,
           isCascadeBump: false,
-          changesets: new Set([cs.id]),
+          bumpFiles: new Set([bf.id]),
         });
       }
 
-      // Collect per-changeset cascade overrides
+      // Collect per-bump-file cascade overrides
       if (hasCascade(release)) {
         if (!cascadeOverrides.has(release.name)) {
           cascadeOverrides.set(release.name, new Map());
@@ -94,7 +94,7 @@ export function assembleReleasePlan(
     }
   }
 
-  // Mark suppressed packages (explicit 'none' in changeset)
+  // Mark suppressed packages (explicit 'none' in bump file)
   for (const name of suppressedPackages) {
     if (!planned.has(name)) {
       // Create a placeholder that will be removed later
@@ -105,7 +105,7 @@ export function assembleReleasePlan(
         suppressed: true,
         isDependencyBump: false,
         isCascadeBump: false,
-        changesets: new Set(),
+        bumpFiles: new Set(),
       });
     }
   }
@@ -149,7 +149,7 @@ export function assembleReleasePlan(
         const existingDep = planned.get(dep.name);
         if (existingDep?.suppressed) {
           throw new Error(
-            `Cannot suppress bump for '${dep.name}' (via 'none' in changeset) — ` +
+            `Cannot suppress bump for '${dep.name}' (via 'none' in bump file) — ` +
               `'${pkgName}' is bumping to ${newVersion} which breaks the declared range '${dep.versionRange}'. ` +
               `Either widen the range or remove the 'none' entry.`,
           );
@@ -160,7 +160,7 @@ export function assembleReleasePlan(
           throw new Error(
             `'patch-isolated' bump for '${pkgName}' would break the range '${dep.versionRange}' ` +
               `declared by '${dep.name}'. Either widen the range, drop '-isolated', ` +
-              `or explicitly bump '${dep.name}' in the changeset.`,
+              `or explicitly bump '${dep.name}' in the bump file.`,
           );
         }
 
@@ -180,7 +180,7 @@ export function assembleReleasePlan(
           }
         }
 
-        if (applyBump(planned, dep.name, depBump, true, false, bump.changesets)) {
+        if (applyBump(planned, dep.name, depBump, true, false, bump.bumpFiles)) {
           changed = true;
         }
       }
@@ -219,7 +219,7 @@ export function assembleReleasePlan(
               suppressed: false,
               isDependencyBump: false,
               isCascadeBump: false,
-              changesets: new Set(),
+              bumpFiles: new Set(),
             });
             changed = true;
           }
@@ -264,15 +264,15 @@ export function assembleReleasePlan(
           continue;
         }
 
-        // C1: Apply changeset-level cascade overrides
-        const csOverrides = cascadeOverrides.get(pkgName);
-        if (csOverrides) {
-          for (const [pattern, cascadeBumpType] of csOverrides) {
+        // C1: Apply bump-file-level cascade overrides
+        const bfOverrides = cascadeOverrides.get(pkgName);
+        if (bfOverrides) {
+          for (const [pattern, cascadeBumpType] of bfOverrides) {
             for (const [targetName] of packages) {
               if (!matchGlob(targetName, pattern)) continue;
               const existingTarget = planned.get(targetName);
               if (existingTarget?.suppressed) continue;
-              if (applyBump(planned, targetName, cascadeBumpType, false, true, bump.changesets)) {
+              if (applyBump(planned, targetName, cascadeBumpType, false, true, bump.bumpFiles)) {
                 changed = true;
               }
             }
@@ -290,7 +290,7 @@ export function assembleReleasePlan(
               if (!matchGlob(targetName, pattern)) continue;
               const existingTarget = planned.get(targetName);
               if (existingTarget?.suppressed) continue;
-              if (applyBump(planned, targetName, cascadeBump, false, true, bump.changesets)) {
+              if (applyBump(planned, targetName, cascadeBump, false, true, bump.bumpFiles)) {
                 changed = true;
               }
             }
@@ -308,26 +308,26 @@ export function assembleReleasePlan(
           if (existingDep?.suppressed) continue;
 
           const depBump = rule.bumpAs === 'match' ? bump.type : rule.bumpAs;
-          if (applyBump(planned, dep.name, depBump, true, false, bump.changesets)) {
+          if (applyBump(planned, dep.name, depBump, true, false, bump.bumpFiles)) {
             changed = true;
           }
         }
       }
     } else {
-      // Even in out-of-range mode, still apply changeset cascades and cascadeTo
+      // Even in out-of-range mode, still apply bump file cascades and cascadeTo
       for (const [pkgName, bump] of planned) {
         if (bump.suppressed) continue;
         if (bump.isolated) continue;
 
-        // Changeset-level cascade overrides always apply
-        const csOverrides = cascadeOverrides.get(pkgName);
-        if (csOverrides) {
-          for (const [pattern, cascadeBumpType] of csOverrides) {
+        // Bump-file-level cascade overrides always apply
+        const bfOverrides = cascadeOverrides.get(pkgName);
+        if (bfOverrides) {
+          for (const [pattern, cascadeBumpType] of bfOverrides) {
             for (const [targetName] of packages) {
               if (!matchGlob(targetName, pattern)) continue;
               const existingTarget = planned.get(targetName);
               if (existingTarget?.suppressed) continue;
-              if (applyBump(planned, targetName, cascadeBumpType, false, true, bump.changesets)) {
+              if (applyBump(planned, targetName, cascadeBumpType, false, true, bump.bumpFiles)) {
                 changed = true;
               }
             }
@@ -345,7 +345,7 @@ export function assembleReleasePlan(
               if (!matchGlob(targetName, pattern)) continue;
               const existingTarget = planned.get(targetName);
               if (existingTarget?.suppressed) continue;
-              if (applyBump(planned, targetName, cascadeBump, false, true, bump.changesets)) {
+              if (applyBump(planned, targetName, cascadeBump, false, true, bump.bumpFiles)) {
                 changed = true;
               }
             }
@@ -372,7 +372,7 @@ export function assembleReleasePlan(
         if (!range) continue;
         if (!satisfies(newDepVersion, range, depPkg.version)) {
           throw new Error(
-            `Cannot suppress bump for '${name}' (via 'none' in changeset) — ` +
+            `Cannot suppress bump for '${name}' (via 'none' in bump file) — ` +
               `'${depName}' is bumping to ${newDepVersion} which breaks the declared range '${range}'. ` +
               `Either widen the range or remove the 'none' entry.`,
           );
@@ -394,7 +394,7 @@ export function assembleReleasePlan(
       type: bump.type,
       oldVersion: pkg.version,
       newVersion,
-      changesets: [...bump.changesets],
+      bumpFiles: [...bump.bumpFiles],
       isDependencyBump: bump.isDependencyBump,
       isCascadeBump: bump.isCascadeBump,
     });
@@ -415,7 +415,7 @@ export function assembleReleasePlan(
     }
   }
 
-  return { changesets, releases, warnings };
+  return { bumpFiles, releases, warnings };
 }
 
 /** Apply a bump to a package, upgrading if already planned. Returns true if anything changed. */
@@ -425,7 +425,7 @@ function applyBump(
   type: BumpType,
   isDependencyBump: boolean,
   isCascadeBump: boolean,
-  sourceChangesets: Set<string>,
+  sourceBumpFiles: Set<string>,
 ): boolean {
   const existing = planned.get(name);
   if (existing) {
@@ -435,7 +435,7 @@ function applyBump(
     existing.type = newType;
     if (isDependencyBump) existing.isDependencyBump = true;
     if (isCascadeBump) existing.isCascadeBump = true;
-    for (const cs of sourceChangesets) existing.changesets.add(cs);
+    for (const bf of sourceBumpFiles) existing.bumpFiles.add(bf);
     return true;
   }
   planned.set(name, {
@@ -444,7 +444,7 @@ function applyBump(
     suppressed: false,
     isDependencyBump,
     isCascadeBump,
-    changesets: new Set(sourceChangesets),
+    bumpFiles: new Set(sourceBumpFiles),
   });
   return true;
 }

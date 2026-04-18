@@ -2,7 +2,7 @@ import { log, colorize } from '../utils/logger.ts';
 import { loadConfig } from '../core/config.ts';
 import { discoverPackages } from '../core/workspace.ts';
 import { DependencyGraph } from '../core/dep-graph.ts';
-import { readChangesets } from '../core/changeset.ts';
+import { readBumpFiles } from '../core/bump-file.ts';
 import { assembleReleasePlan } from '../core/release-plan.ts';
 import { applyReleasePlan } from '../core/apply-release-plan.ts';
 import { runArgs, tryRunArgs } from '../utils/shell.ts';
@@ -12,17 +12,17 @@ export async function versionCommand(rootDir: string): Promise<void> {
   const config = await loadConfig(rootDir);
   const packages = await discoverPackages(rootDir, config);
   const depGraph = new DependencyGraph(packages);
-  const changesets = await readChangesets(rootDir);
+  const bumpFiles = await readBumpFiles(rootDir);
 
-  if (changesets.length === 0) {
-    log.info('No pending changesets.');
+  if (bumpFiles.length === 0) {
+    log.info('No pending bump files.');
     return;
   }
 
-  const plan = assembleReleasePlan(changesets, packages, depGraph, config);
+  const plan = assembleReleasePlan(bumpFiles, packages, depGraph, config);
 
   if (plan.releases.length === 0) {
-    log.warn('Changesets found but no packages would be released.');
+    log.warn('Bump files found but no packages would be released.');
     return;
   }
 
@@ -45,7 +45,7 @@ export async function versionCommand(rootDir: string): Promise<void> {
   await applyReleasePlan(plan, packages, rootDir, config);
 
   log.success(`Updated ${plan.releases.length} package(s)`);
-  log.dim(`  Deleted ${changesets.length} changeset file(s)`);
+  log.dim(`  Deleted ${bumpFiles.length} bump file(s)`);
 
   // Update lockfile so it stays in sync with bumped versions
   await updateLockfile(rootDir);
@@ -53,7 +53,7 @@ export async function versionCommand(rootDir: string): Promise<void> {
   // Optionally commit
   if (config.commit) {
     try {
-      // Stage version changes, changelogs, deleted changesets, and lockfile
+      // Stage version changes, changelogs, deleted bump files, and lockfile
       runArgs(['git', 'add', '-A', '.bumpy/'], { cwd: rootDir });
       for (const r of plan.releases) {
         const pkg = packages.get(r.name)!;

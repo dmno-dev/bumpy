@@ -6,7 +6,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import type { WorkspacePackage, PlannedRelease, BumpType, BumpyConfig, Changeset, ReleasePlan } from '../src/types.ts';
+import type { WorkspacePackage, PlannedRelease, BumpType, BumpyConfig, BumpFile, ReleasePlan } from '../src/types.ts';
 import { DEFAULT_CONFIG } from '../src/types.ts';
 
 // ---- Factory functions ----
@@ -46,31 +46,31 @@ export function makeConfig(overrides: Partial<BumpyConfig> = {}): BumpyConfig {
 export function makeRelease(
   name: string,
   newVersion: string,
-  opts: Partial<Pick<PlannedRelease, 'type' | 'oldVersion' | 'changesets' | 'isDependencyBump' | 'isCascadeBump'>> = {},
+  opts: Partial<Pick<PlannedRelease, 'type' | 'oldVersion' | 'bumpFiles' | 'isDependencyBump' | 'isCascadeBump'>> = {},
 ): PlannedRelease {
   return {
     name,
     type: opts.type ?? 'patch',
     oldVersion: opts.oldVersion ?? '0.0.0',
     newVersion,
-    changesets: opts.changesets ?? [],
+    bumpFiles: opts.bumpFiles ?? [],
     isDependencyBump: opts.isDependencyBump ?? false,
     isCascadeBump: opts.isCascadeBump ?? false,
   };
 }
 
-/** Create a Changeset for testing */
-export function makeChangeset(
+/** Create a BumpFile for testing */
+export function makeBumpFile(
   id: string,
   releases: { name: string; type: BumpType }[],
   summary = 'Test change',
-): Changeset {
+): BumpFile {
   return { id, releases, summary };
 }
 
 /** Create a ReleasePlan for testing */
-export function makeReleasePlan(releases: PlannedRelease[], changesets: Changeset[] = []): ReleasePlan {
-  return { releases, changesets, warnings: [] };
+export function makeReleasePlan(releases: PlannedRelease[], bumpFiles: BumpFile[] = []): ReleasePlan {
+  return { releases, bumpFiles, warnings: [] };
 }
 
 // ---- Temp git repo helpers ----

@@ -1,17 +1,17 @@
 import type { ChangelogFormatter } from '@varlock/bumpy';
 
 const formatter: ChangelogFormatter = (ctx) => {
-  const { release, changesets, date } = ctx;
+  const { release, bumpFiles, date } = ctx;
   const lines: string[] = [];
   lines.push(`## 🐸 ${release.newVersion}`);
   lines.push('');
   lines.push(`_${date}_`);
   lines.push('');
 
-  const relevantChangesets = changesets.filter((cs) => release.changesets.includes(cs.id));
+  const relevantBumpFiles = bumpFiles.filter((bf) => release.bumpFiles.includes(bf.id));
 
-  if (relevantChangesets.length > 0) {
-    for (const cs of relevantChangesets) {
+  if (relevantBumpFiles.length > 0) {
+    for (const cs of relevantBumpFiles) {
       if (cs.summary) {
         const summaryLines = cs.summary.split('\n');
         lines.push(`- ${summaryLines[0]}`);
@@ -24,11 +24,11 @@ const formatter: ChangelogFormatter = (ctx) => {
     }
   }
 
-  if (release.isDependencyBump && relevantChangesets.length === 0) {
+  if (release.isDependencyBump && relevantBumpFiles.length === 0) {
     lines.push('- Updated dependencies');
   }
 
-  if (release.isCascadeBump && !release.isDependencyBump && relevantChangesets.length === 0) {
+  if (release.isCascadeBump && !release.isDependencyBump && relevantBumpFiles.length === 0) {
     lines.push('- Version bump via cascade rule');
   }
 
