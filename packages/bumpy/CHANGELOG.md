@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.0
+
+_2026-04-18_
+
+- Preserve package.json formatting when bumping versions
+  Instead of re-serializing the entire file with `JSON.stringify`, version bumps and dependency range updates now use targeted string replacements. This prevents reformatting issues like inline arrays being expanded to multi-line, indentation style changes, and other unnecessary churn.
+- Restructured version propagation into Phase A/B/C architecture. Phase A (out-of-range fixes) always runs — peer deps now match the triggering bump level instead of always forcing major. Added workspace:^ protocol resolution for range checking. Removed minor-isolated and specificDependencyRules. Added none bump type and patch-isolated validation. Added warnings for ^0.x peer dep propagation and workspace:\* on peer deps.
+
 ## 0.0.2
 
 _2026-04-15_
