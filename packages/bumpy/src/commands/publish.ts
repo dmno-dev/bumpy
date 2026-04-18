@@ -51,6 +51,7 @@ export async function publishCommand(rootDir: string, opts: PublishCommandOption
   const releasePlan: ReleasePlan = {
     changesets: [],
     releases: toPublish,
+    warnings: [],
   };
 
   if (opts.dryRun) {

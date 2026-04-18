@@ -61,17 +61,34 @@ describe('satisfies', () => {
     expect(satisfies('1.0.0', '')).toBe(true);
   });
 
-  // workspace: protocol handling
-  test('workspace:^ always satisfies', () => {
+  // workspace: protocol handling with currentVersion
+  test('workspace:^ resolved to ^<currentVersion>', () => {
+    // dep is at 1.2.0, workspace:^ → ^1.2.0
+    // 1.3.0 satisfies ^1.2.0
+    expect(satisfies('1.3.0', 'workspace:^', '1.2.0')).toBe(true);
+    // 2.0.0 does NOT satisfy ^1.2.0
+    expect(satisfies('2.0.0', 'workspace:^', '1.2.0')).toBe(false);
+  });
+
+  test('workspace:~ resolved to ~<currentVersion>', () => {
+    // dep is at 1.2.0, workspace:~ → ~1.2.0
+    // 1.2.5 satisfies ~1.2.0
+    expect(satisfies('1.2.5', 'workspace:~', '1.2.0')).toBe(true);
+    // 1.3.0 does NOT satisfy ~1.2.0
+    expect(satisfies('1.3.0', 'workspace:~', '1.2.0')).toBe(false);
+  });
+
+  test('workspace:^ without currentVersion always satisfies (fallback)', () => {
     expect(satisfies('2.0.0', 'workspace:^')).toBe(true);
   });
 
-  test('workspace:~ always satisfies', () => {
+  test('workspace:~ without currentVersion always satisfies (fallback)', () => {
     expect(satisfies('2.0.0', 'workspace:~')).toBe(true);
   });
 
   test('workspace:* always satisfies', () => {
     expect(satisfies('2.0.0', 'workspace:*')).toBe(true);
+    expect(satisfies('99.0.0', 'workspace:*', '1.0.0')).toBe(true);
   });
 
   test('workspace: with real range checks the range', () => {
