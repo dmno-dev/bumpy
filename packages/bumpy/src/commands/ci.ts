@@ -100,11 +100,16 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
     const tag = r.isDependencyBump ? ' (dep)' : r.isCascadeBump ? ' (cascade)' : '';
     console.log(`  ${r.name}: ${r.oldVersion} → ${colorize(r.newVersion, 'cyan')}${tag}`);
   }
+  if (plan.warnings.length > 0) {
+    for (const w of plan.warnings) {
+      log.warn(w);
+    }
+  }
 
   // Comment on PR
   if (shouldComment && prNumber) {
     const prBranch = detectPrBranch(rootDir);
-    const comment = formatReleasePlanComment(plan, prChangesets, prNumber, prBranch, pm);
+    const comment = formatReleasePlanComment(plan, prChangesets, prNumber, prBranch, pm, plan.warnings);
     await postOrUpdatePrComment(prNumber, comment, rootDir);
   }
 }
@@ -350,6 +355,7 @@ function formatReleasePlanComment(
   prNumber: string,
   prBranch: string | null,
   pm: PackageManager,
+  warnings: string[] = [],
 ): string {
   const repo = process.env.GITHUB_REPOSITORY;
   const lines: string[] = [];
@@ -397,6 +403,15 @@ function formatReleasePlanComment(
     lines.push(`- ${parts.join(' ')}`);
   }
   lines.push('');
+
+  if (warnings.length > 0) {
+    lines.push('#### Warnings');
+    lines.push('');
+    for (const w of warnings) {
+      lines.push(`> ⚠️ ${w}`);
+    }
+    lines.push('');
+  }
 
   const addLink = buildAddChangesetLink(prBranch);
   if (addLink) {

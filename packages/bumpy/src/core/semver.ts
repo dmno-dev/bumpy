@@ -7,12 +7,22 @@ export function bumpVersion(version: string, type: BumpType): string {
   return result;
 }
 
-/** Check if a version satisfies a range */
-export function satisfies(version: string, range: string): boolean {
-  // Handle workspace: protocol — strip and check the underlying range
+/**
+ * Check if a version satisfies a range.
+ * @param version - The version to check
+ * @param range - The version range (may include workspace: or catalog: protocol)
+ * @param currentVersion - The dependency's current version, used to resolve workspace:^ and workspace:~
+ */
+export function satisfies(version: string, range: string, currentVersion?: string): boolean {
+  // Handle workspace: protocol — resolve shorthands using currentVersion
   if (range.startsWith('workspace:')) {
     const cleanRange = range.slice('workspace:'.length);
-    if (!cleanRange || cleanRange === '*' || cleanRange === '^' || cleanRange === '~') return true;
+    if (!cleanRange || cleanRange === '*') return true;
+    if (cleanRange === '^' || cleanRange === '~') {
+      if (!currentVersion) return true; // can't resolve without current version
+      const resolved = `${cleanRange}${currentVersion}`;
+      return semver.satisfies(version, resolved);
+    }
     return semver.satisfies(version, cleanRange);
   }
   // catalog: references can't be range-checked without catalog data,

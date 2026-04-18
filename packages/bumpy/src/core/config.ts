@@ -117,9 +117,6 @@ function mergePackageConfig(...configs: PackageConfig[]): PackageConfig {
     if (cfg.dependencyBumpRules) {
       result.dependencyBumpRules = { ...result.dependencyBumpRules, ...cfg.dependencyBumpRules };
     }
-    if (cfg.specificDependencyRules) {
-      result.specificDependencyRules = { ...result.specificDependencyRules, ...cfg.specificDependencyRules };
-    }
     if (cfg.cascadeTo) {
       result.cascadeTo = { ...result.cascadeTo, ...cfg.cascadeTo };
     }

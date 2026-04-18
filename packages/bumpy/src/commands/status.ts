@@ -101,6 +101,14 @@ export async function statusCommand(rootDir: string, opts: StatusOptions): Promi
     console.log();
   }
 
+  // Show warnings from the release plan
+  if (plan.warnings.length > 0) {
+    for (const w of plan.warnings) {
+      log.warn(w);
+    }
+    console.log();
+  }
+
   if (opts.verbose) {
     log.bold('Changesets:');
     for (const cs of plan.changesets) {

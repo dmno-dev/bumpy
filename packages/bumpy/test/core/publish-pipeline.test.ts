@@ -52,6 +52,7 @@ describe('publishPackages', () => {
     const depGraph = new DependencyGraph(packages);
     const plan: ReleasePlan = {
       changesets: [],
+      warnings: [],
       releases: [
         {
           name: 'my-pkg',
@@ -94,6 +95,7 @@ describe('publishPackages', () => {
     const depGraph = new DependencyGraph(packages);
     const plan: ReleasePlan = {
       changesets: [],
+      warnings: [],
       releases: [
         {
           name: 'my-ext',
@@ -132,6 +134,7 @@ describe('publishPackages', () => {
     const depGraph = new DependencyGraph(packages);
     const plan: ReleasePlan = {
       changesets: [],
+      warnings: [],
       releases: [
         {
           name: 'private-pkg',
@@ -179,6 +182,7 @@ describe('publishPackages', () => {
     const depGraph = new DependencyGraph(packages);
     const plan: ReleasePlan = {
       changesets: [],
+      warnings: [],
       releases: [
         {
           name: 'core',
@@ -225,6 +229,7 @@ describe('publishPackages', () => {
     const depGraph = new DependencyGraph(packages);
     const plan: ReleasePlan = {
       changesets: [],
+      warnings: [],
       releases: [
         {
           name: 'app',

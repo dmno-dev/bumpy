@@ -70,7 +70,7 @@ export function makeChangeset(
 
 /** Create a ReleasePlan for testing */
 export function makeReleasePlan(releases: PlannedRelease[], changesets: Changeset[] = []): ReleasePlan {
-  return { releases, changesets };
+  return { releases, changesets, warnings: [] };
 }
 
 // ---- Temp git repo helpers ----
