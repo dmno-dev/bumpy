@@ -15,16 +15,22 @@ jobs:
         with:
           fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
-      # Node.js is needed for npm publish (trusted publishing via OIDC)
+      # Node.js (npm) is needed for npm publish
       - uses: actions/setup-node@v6
         with:
-          node-version: lts/*
+          node-version: lts/* # newer node needed for OIDC
       - run: bun install
-      # Build first since we use the local workspace package instead of the published one
+
+      # --- You wont need this part ---
+      # Build first since we use the local built version of bumpy instead of the published one
       - run: bun run --filter @varlock/bumpy build
       # run bun install again to make the now built CLI available
       - run: bun install
-      - run: bunx @varlock/bumpy ci release
+      # -------------------------------
+
+      # 🐸 This is the important part - creates/updates release PR when PRs merge to main, publishes packages when release PR is merged
+      # (use --pat-pr if PAT belongs to dedicated bot, rather than person)
+      - run: bunx @varlock/bumpy ci release --pat-pr
         env:
           GH_TOKEN: ${{ github.token }}
-          BUMPY_GH_TOKEN: ${{ secrets.BUMPY_GH_TOKEN }}
+          BUMPY_GH_TOKEN: ${{ secrets.BUMPY_GH_TOKEN }} # <- PAT needed so that release PR will trigger CI
