@@ -114,17 +114,9 @@ Per-package settings can be defined in two places:
 
 ## Changelog formatters
 
-Set `changelog` in config to control how changelog entries are generated:
+Set `changelog` in config to control how changelog entries are generated. Built-in options are `"default"` and `"github"`, or you can provide a path to a custom formatter module.
 
-- **`"default"`** — simple markdown with dates and bump file descriptions
-- **`"github"`** — includes PR links and author attribution (requires `GH_TOKEN`)
-- **Custom** — path to a TypeScript or JavaScript module that exports a formatter function
-
-```json
-{
-  "changelog": ["github", { "repo": "myorg/myrepo" }]
-}
-```
+See the [Changelog Formatters](./changelog-formatters.md) docs for full details and examples.
 
 ## Example config
 
