@@ -8,6 +8,7 @@ import { assembleReleasePlan } from '../core/release-plan.ts';
 import { runArgs, runArgsAsync, tryRunArgs } from '../utils/shell.ts';
 import { randomName } from '../utils/names.ts';
 import { detectPackageManager } from '../utils/package-manager.ts';
+import { createHash } from 'node:crypto';
 import type { BumpyConfig, BumpFile, PackageManager, ReleasePlan, PlannedRelease } from '../types.ts';
 
 // ---- Validation helpers ----
@@ -468,11 +469,7 @@ function buildDiffLinks(pkgDir: string): string {
 }
 
 function sha256Hex(input: string): string {
-  const encoder = new TextEncoder();
-  // Bun supports crypto.subtle synchronously via Bun.CryptoHasher
-  const hasher = new Bun.CryptoHasher('sha256');
-  hasher.update(encoder.encode(input));
-  return hasher.digest('hex');
+  return createHash('sha256').update(input).digest('hex');
 }
 
 function formatVersionPrBody(plan: ReleasePlan, preamble: string, packageDirs: Map<string, string>): string {
