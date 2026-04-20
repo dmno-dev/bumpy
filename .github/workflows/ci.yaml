@@ -22,10 +22,17 @@ jobs:
       - uses: actions/checkout@v6
       - uses: oven-sh/setup-bun@v2
       - run: bun install
-      # Build first since we use the local workspace package instead of the published one
+
+      # --- You wont need this part ---
+      # Build first since we use the local built version of bumpy instead of the published one
       - run: bun run --filter @varlock/bumpy build
       # run bun install again to make the now built CLI available
       - run: bun install
-      - run: bunx @varlock/bumpy ci check --fail-on-missing
+      # -------------------------------
+
+      # 🐸 This is the important part - checks for missing bump files and posts/updates a PR comment with the release plan
+      # (use --pat-comments if PAT belongs to dedicated bot, rather than person)
+      - run: bunx @varlock/bumpy ci check --fail-on-missing --pat-comments
         env:
           GH_TOKEN: ${{ github.token }}
+          BUMPY_GH_TOKEN: ${{ secrets.BUMPY_GH_TOKEN }} # <- PAT needed so that release PR will trigger CI
