@@ -1,13 +1,13 @@
 {
   "name": "bumpy",
   "version": "0.0.1",
-  "description": "AI-assisted changeset creation for bumpy monorepo versioning",
+  "description": "AI-assisted bump file creation for bumpy monorepo versioning",
   "author": {
     "name": "DMNO",
     "url": "https://github.com/dmno-dev"
   },
   "repository": "https://github.com/dmno-dev/bumpy",
   "license": "MIT",
-  "keywords": ["monorepo", "versioning", "changelog", "changesets"],
+  "keywords": ["monorepo", "versioning", "changelog", "bump-files"],
   "skills": "./skills/"
 }

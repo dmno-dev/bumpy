@@ -171,13 +171,13 @@ describe('createIndividualReleases', () => {
     expect(ghCalls[1]!.command).toContain('pkg-b@2.0.0');
   });
 
-  test('includes changeset summaries in release body', async () => {
-    const changesets = [
+  test('includes bump file summaries in release body', async () => {
+    const bumpFiles = [
       { id: 'cs1', releases: [{ name: 'pkg-a', type: 'patch' as const }], summary: 'Fixed the login bug' },
     ];
-    const releases = [makeRelease('pkg-a', '1.0.1', { changesets: ['cs1'] })];
+    const releases = [makeRelease('pkg-a', '1.0.1', { bumpFiles: ['cs1'] })];
 
-    await createIndividualReleases(releases, changesets, tmpDir);
+    await createIndividualReleases(releases, bumpFiles, tmpDir);
 
     const ghCalls = getCallsMatching('gh release create');
     expect(ghCalls).toHaveLength(1);

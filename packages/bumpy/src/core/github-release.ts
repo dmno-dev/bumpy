@@ -1,7 +1,7 @@
 import { tryRunArgs, runArgsAsync } from '../utils/shell.ts';
 import { log } from '../utils/logger.ts';
 import { listTags } from './git.ts';
-import type { PlannedRelease, Changeset } from '../types.ts';
+import type { PlannedRelease, BumpFile } from '../types.ts';
 
 /** Get the current HEAD commit SHA */
 function getHeadSha(rootDir: string): string | null {
@@ -16,7 +16,7 @@ export interface GitHubReleaseOptions {
 /** Create individual GitHub releases for each published package */
 export async function createIndividualReleases(
   releases: PlannedRelease[],
-  changesets: Changeset[],
+  bumpFiles: BumpFile[],
   rootDir: string,
   opts: GitHubReleaseOptions = {},
 ): Promise<void> {
@@ -29,7 +29,7 @@ export async function createIndividualReleases(
 
   for (const release of releases) {
     const tag = `${release.name}@${release.newVersion}`;
-    const body = buildReleaseBody(release, changesets);
+    const body = buildReleaseBody(release, bumpFiles);
     const title = `${release.name} v${release.newVersion}`;
 
     if (opts.dryRun) {
@@ -54,7 +54,7 @@ export async function createIndividualReleases(
 /** Create a single aggregated GitHub release for all published packages */
 export async function createAggregateRelease(
   releases: PlannedRelease[],
-  changesets: Changeset[],
+  bumpFiles: BumpFile[],
   rootDir: string,
   opts: GitHubReleaseOptions = {},
 ): Promise<void> {
@@ -68,7 +68,7 @@ export async function createAggregateRelease(
   const date = new Date().toISOString().split('T')[0];
   const existing = listTags(`release-${date}*`, { cwd: rootDir });
   const { tag, title } = resolveAggregateTagAndTitle(date!, existing, opts.title);
-  const body = buildAggregateBody(releases, changesets);
+  const body = buildAggregateBody(releases, bumpFiles);
 
   if (opts.dryRun) {
     log.dim(`  Would create aggregate GitHub release: ${title}`);
@@ -93,14 +93,14 @@ export async function createAggregateRelease(
   }
 }
 
-function buildReleaseBody(release: PlannedRelease, changesets: Changeset[]): string {
+function buildReleaseBody(release: PlannedRelease, bumpFiles: BumpFile[]): string {
   const lines: string[] = [];
-  const relevant = changesets.filter((cs) => release.changesets.includes(cs.id));
+  const relevant = bumpFiles.filter((bf) => release.bumpFiles.includes(bf.id));
 
   if (relevant.length > 0) {
-    for (const cs of relevant) {
-      if (cs.summary) {
-        lines.push(`- ${cs.summary.split('\n')[0]}`);
+    for (const bf of relevant) {
+      if (bf.summary) {
+        lines.push(`- ${bf.summary.split('\n')[0]}`);
       }
     }
   }
@@ -112,7 +112,7 @@ function buildReleaseBody(release: PlannedRelease, changesets: Changeset[]): str
   return lines.join('\n') || 'No changelog entries.';
 }
 
-function buildAggregateBody(releases: PlannedRelease[], changesets: Changeset[]): string {
+function buildAggregateBody(releases: PlannedRelease[], bumpFiles: BumpFile[]): string {
   const lines: string[] = [];
 
   // Group by bump type
@@ -128,11 +128,11 @@ function buildAggregateBody(releases: PlannedRelease[], changesets: Changeset[])
 
     for (const release of group) {
       lines.push(`### ${release.name} v${release.newVersion}\n`);
-      const relevant = changesets.filter((cs) => release.changesets.includes(cs.id));
+      const relevant = bumpFiles.filter((bf) => release.bumpFiles.includes(bf.id));
       if (relevant.length > 0) {
-        for (const cs of relevant) {
-          if (cs.summary) {
-            lines.push(`- ${cs.summary.split('\n')[0]}`);
+        for (const bf of relevant) {
+          if (bf.summary) {
+            lines.push(`- ${bf.summary.split('\n')[0]}`);
           }
         }
       } else if (release.isDependencyBump) {

@@ -2,24 +2,24 @@ import { relative } from 'node:path';
 import { log, colorize } from '../utils/logger.ts';
 import { loadConfig } from '../core/config.ts';
 import { discoverWorkspace } from '../core/workspace.ts';
-import { readChangesets } from '../core/changeset.ts';
+import { readBumpFiles } from '../core/bump-file.ts';
 import { getChangedFiles } from '../core/git.ts';
 import type { WorkspacePackage } from '../types.ts';
 
 /**
  * Local check: detect which packages have changed on this branch
- * and verify they have corresponding changesets.
+ * and verify they have corresponding bump files.
  * Designed for pre-push hooks — no GitHub API needed.
  */
 export async function checkCommand(rootDir: string): Promise<void> {
   const config = await loadConfig(rootDir);
   const { packages } = await discoverWorkspace(rootDir, config);
-  const changesets = await readChangesets(rootDir);
+  const bumpFiles = await readBumpFiles(rootDir);
 
-  // Find which packages already have changesets
+  // Find which packages already have bump files
   const coveredPackages = new Set<string>();
-  for (const cs of changesets) {
-    for (const release of cs.releases) {
+  for (const bf of bumpFiles) {
+    for (const release of bf.releases) {
       coveredPackages.add(release.name);
     }
   }
@@ -40,21 +40,21 @@ export async function checkCommand(rootDir: string): Promise<void> {
     return;
   }
 
-  // Check which changed packages are missing changesets
+  // Check which changed packages are missing bump files
   const missing = changedPackages.filter((name) => !coveredPackages.has(name));
 
   if (missing.length === 0) {
-    log.success(`All ${changedPackages.length} changed package(s) have changesets.`);
+    log.success(`All ${changedPackages.length} changed package(s) have bump files.`);
     return;
   }
 
   // Report missing
-  log.warn(`${missing.length} changed package(s) missing changesets:\n`);
+  log.warn(`${missing.length} changed package(s) missing bump files:\n`);
   for (const name of missing) {
     console.log(`  ${colorize(name, 'yellow')}`);
   }
   console.log();
-  log.dim('Run `bumpy add` to create a changeset, or `bumpy add --empty` if no release is needed.');
+  log.dim('Run `bumpy add` to create a bump file, or `bumpy add --empty` if no release is needed.');
   process.exit(1);
 }
 
