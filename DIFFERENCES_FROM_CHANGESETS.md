@@ -21,7 +21,7 @@ Key differences from changesets:
 - Out-of-range peer dep bumps match the triggering bump level (not always major) — a minor bump on `core` → minor bump on `plugin`, not major
 - Dev deps never propagate by default (configurable per-package for bundled devDeps)
 - `cascadeTo` config for source-side "when I change, cascade to these packages"
-- Per-changeset `none` and `patch-isolated` to suppress propagation on specific changes
+- Per-bump-file `none` and `patch-isolated` to suppress propagation on specific changes
 - Warns about `^0.x` caret range gotchas and `workspace:*` on peer deps
 
 See [docs/version-propagation.md](docs/version-propagation.md) for the full algorithm.
@@ -121,19 +121,19 @@ Bumpy includes the release date in every changelog heading by default.
 
 ### Migration tool
 
-`bumpy migrate` converts `.changeset/` config and pending changesets to `.bumpy/`.
+`bumpy migrate` converts `.changeset/` config and pending bump files to `.bumpy/`.
 
 - (Previously listed under Planned)
 
 ### Conventional commits bridge
 
-`bumpy generate` scans git history and auto-generates changeset files from conventional commits (`feat(scope): ...` → minor, `fix(scope): ...` → patch, `feat!(scope): ...` → major). Scope is mapped to package names automatically. Not a replacement for explicit changesets — a bridge for teams migrating from semantic-release, or a convenience when you want both.
+`bumpy generate` scans git history and auto-generates bump files from conventional commits (`feat(scope): ...` → minor, `fix(scope): ...` → patch, `feat!(scope): ...` → major). Scope is mapped to package names automatically. Not a replacement for explicit bump files — a bridge for teams migrating from semantic-release, or a convenience when you want both.
 
 - [changesets#862](https://github.com/changesets/changesets/issues/862) — conventional commits integration (70 thumbs-up, 21 comments)
 
 ### Pluggable changelog formatters
 
-Custom changelog formatters with full context (release info, changesets, dates). Built-in `"default"` and `"github"` (with PR links + author attribution) formatters. Users can write custom formatters in TypeScript or JavaScript. Changesets' API is limited to two awkward string-returning functions — bumpy gives you the full context and you return the complete entry.
+Custom changelog formatters with full context (release info, bump files, dates). Built-in `"default"` and `"github"` (with PR links + author attribution) formatters. Users can write custom formatters in TypeScript or JavaScript. Changesets' API is limited to two awkward string-returning functions — bumpy gives you the full context and you return the complete entry.
 
 - [changesets#658](https://github.com/changesets/changesets/issues/658) — changelog titles not customizable (12 thumbs-up)
 - [changesets#556](https://github.com/changesets/changesets/issues/556) — changelog formatting (11 thumbs-up)
@@ -143,11 +143,11 @@ Custom changelog formatters with full context (release info, changesets, dates).
 
 `bumpy ci check` and `bumpy ci release` handle PR checks and release automation without needing a separate GitHub Action or bot installation. Just `bunx @varlock/bumpy ci check` in any workflow. No extra repository to trust, audit, or pin — your CI runs the same package you already depend on.
 
-### Local changeset verification
+### Local bump file verification
 
-`bumpy check` verifies that all changed packages on the current branch have corresponding changesets. Designed for pre-push hooks — compares your branch to the base branch, maps changed files to packages, and exits non-zero if any are missing. No GitHub API needed.
+`bumpy check` verifies that all changed packages on the current branch have corresponding bump files. Designed for pre-push hooks — compares your branch to the base branch, maps changed files to packages, and exits non-zero if any are missing. No GitHub API needed.
 
-Changesets has no built-in equivalent — users rely on the CI bot comment to catch missing changesets after pushing.
+Changesets has no built-in equivalent — users rely on the CI bot comment to catch missing bump files after pushing.
 
 ---
 
@@ -155,7 +155,7 @@ Changesets has no built-in equivalent — users rely on the CI bot comment to ca
 
 ### Prerelease mode that actually works
 
-Changesets' prerelease mode is described in their own docs as "very complicated" with "mistakes that can lead to repository and publish states that are very hard to fix." Key problems: no target on changesets, multi-branch corruption, exiting pre bumps ALL packages, bad interactions with linked/fixed groups.
+Changesets' prerelease mode is described in their own docs as "very complicated" with "mistakes that can lead to repository and publish states that are very hard to fix." Key problems: no target on bump files, multi-branch corruption, exiting pre bumps ALL packages, bad interactions with linked/fixed groups.
 
 - [changesets#729](https://github.com/changesets/changesets/issues/729) — exiting pre mode bumps all versions (14 comments)
 - [changesets#786](https://github.com/changesets/changesets/issues/786) — can't control dist-tag in pre mode (13 comments)

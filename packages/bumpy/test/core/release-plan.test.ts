@@ -2,18 +2,18 @@ import { test, expect, describe } from 'bun:test';
 import { assembleReleasePlan } from '../../src/core/release-plan.ts';
 import { DependencyGraph } from '../../src/core/dep-graph.ts';
 import { makePkg, makeConfig } from '../helpers.ts';
-import type { Changeset } from '../../src/types.ts';
+import type { BumpFile } from '../../src/types.ts';
 
 describe('assembleReleasePlan', () => {
   test('basic single package bump', () => {
     const packages = new Map([['pkg-a', makePkg('pkg-a', '1.0.0')]]);
 
-    const changesets: Changeset[] = [
+    const bumpFiles: BumpFile[] = [
       { id: 'cs1', releases: [{ name: 'pkg-a', type: 'minor' }], summary: 'Added feature' },
     ];
 
     const graph = new DependencyGraph(packages);
-    const plan = assembleReleasePlan(changesets, packages, graph, makeConfig());
+    const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig());
 
     expect(plan.releases).toHaveLength(1);
     expect(plan.releases[0]!.name).toBe('pkg-a');
@@ -22,40 +22,40 @@ describe('assembleReleasePlan', () => {
     expect(plan.releases[0]!.newVersion).toBe('1.1.0');
   });
 
-  test('multiple changesets for same package take highest bump', () => {
+  test('multiple bump files for same package take highest bump', () => {
     const packages = new Map([['pkg-a', makePkg('pkg-a', '1.0.0')]]);
 
-    const changesets: Changeset[] = [
+    const bumpFiles: BumpFile[] = [
       { id: 'cs1', releases: [{ name: 'pkg-a', type: 'patch' }], summary: 'Fix' },
       { id: 'cs2', releases: [{ name: 'pkg-a', type: 'minor' }], summary: 'Feature' },
     ];
 
     const graph = new DependencyGraph(packages);
-    const plan = assembleReleasePlan(changesets, packages, graph, makeConfig());
+    const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig());
 
     expect(plan.releases).toHaveLength(1);
     expect(plan.releases[0]!.type).toBe('minor');
     expect(plan.releases[0]!.newVersion).toBe('1.1.0');
   });
 
-  test('empty changesets returns empty plan', () => {
+  test('empty bump files returns empty plan', () => {
     const packages = new Map([['pkg-a', makePkg('pkg-a', '1.0.0')]]);
 
     const graph = new DependencyGraph(packages);
     const plan = assembleReleasePlan([], packages, graph, makeConfig());
 
     expect(plan.releases).toHaveLength(0);
-    expect(plan.changesets).toHaveLength(0);
+    expect(plan.bumpFiles).toHaveLength(0);
     expect(plan.warnings).toHaveLength(0);
   });
 
-  test('multi-package changeset bumps all listed packages', () => {
+  test('multi-package bump file bumps all listed packages', () => {
     const packages = new Map([
       ['pkg-a', makePkg('pkg-a', '1.0.0')],
       ['pkg-b', makePkg('pkg-b', '2.0.0')],
     ]);
 
-    const changesets: Changeset[] = [
+    const bumpFiles: BumpFile[] = [
       {
         id: 'cs1',
         releases: [
@@ -67,7 +67,7 @@ describe('assembleReleasePlan', () => {
     ];
 
     const graph = new DependencyGraph(packages);
-    const plan = assembleReleasePlan(changesets, packages, graph, makeConfig());
+    const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig());
 
     expect(plan.releases).toHaveLength(2);
     expect(plan.releases.find((r) => r.name === 'pkg-a')!.newVersion).toBe('1.1.0');
@@ -83,10 +83,10 @@ describe('assembleReleasePlan', () => {
         ['plugin', makePkg('plugin', '1.0.0', { peerDependencies: { core: '^1.0.0' } })],
       ]);
 
-      const changesets: Changeset[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'major' }], summary: 'Breaking' }];
+      const bumpFiles: BumpFile[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'major' }], summary: 'Breaking' }];
 
       const graph = new DependencyGraph(packages);
-      const plan = assembleReleasePlan(changesets, packages, graph, makeConfig());
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig());
 
       expect(plan.releases).toHaveLength(2);
       const pluginRelease = plan.releases.find((r) => r.name === 'plugin')!;
@@ -100,10 +100,10 @@ describe('assembleReleasePlan', () => {
         ['app', makePkg('app', '1.0.0', { dependencies: { core: '^1.0.0' } })],
       ]);
 
-      const changesets: Changeset[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'major' }], summary: 'Breaking' }];
+      const bumpFiles: BumpFile[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'major' }], summary: 'Breaking' }];
 
       const graph = new DependencyGraph(packages);
-      const plan = assembleReleasePlan(changesets, packages, graph, makeConfig());
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig());
 
       expect(plan.releases).toHaveLength(2);
       const appRelease = plan.releases.find((r) => r.name === 'app')!;
@@ -117,12 +117,12 @@ describe('assembleReleasePlan', () => {
         ['app', makePkg('app', '1.0.0', { devDependencies: { 'test-utils': '^1.0.0' } })],
       ]);
 
-      const changesets: Changeset[] = [
+      const bumpFiles: BumpFile[] = [
         { id: 'cs1', releases: [{ name: 'test-utils', type: 'major' }], summary: 'Breaking' },
       ];
 
       const graph = new DependencyGraph(packages);
-      const plan = assembleReleasePlan(changesets, packages, graph, makeConfig());
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig());
 
       // Even with major bump going out-of-range, devDeps are skipped
       expect(plan.releases).toHaveLength(1);
@@ -136,10 +136,10 @@ describe('assembleReleasePlan', () => {
       ]);
 
       // Minor bump: 1.2.0 → 1.3.0, which satisfies ^1.2.0
-      const changesets: Changeset[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'minor' }], summary: 'Feature' }];
+      const bumpFiles: BumpFile[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'minor' }], summary: 'Feature' }];
 
       const graph = new DependencyGraph(packages);
-      const plan = assembleReleasePlan(changesets, packages, graph, makeConfig());
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig());
 
       expect(plan.releases).toHaveLength(1); // app is NOT bumped because 1.3.0 satisfies ^1.2.0
     });
@@ -151,10 +151,10 @@ describe('assembleReleasePlan', () => {
       ]);
 
       // Major bump: 1.2.0 → 2.0.0, which does NOT satisfy ^1.2.0
-      const changesets: Changeset[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'major' }], summary: 'Breaking' }];
+      const bumpFiles: BumpFile[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'major' }], summary: 'Breaking' }];
 
       const graph = new DependencyGraph(packages);
-      const plan = assembleReleasePlan(changesets, packages, graph, makeConfig());
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig());
 
       expect(plan.releases).toHaveLength(2); // app IS bumped
       expect(plan.releases.find((r) => r.name === 'app')!.type).toBe('patch');
@@ -167,10 +167,10 @@ describe('assembleReleasePlan', () => {
       ]);
 
       // Minor bump: 0.2.0 → 0.3.0, which does NOT satisfy ^0.2.0 (0.x caret range!)
-      const changesets: Changeset[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'minor' }], summary: 'Feature' }];
+      const bumpFiles: BumpFile[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'minor' }], summary: 'Feature' }];
 
       const graph = new DependencyGraph(packages);
-      const plan = assembleReleasePlan(changesets, packages, graph, makeConfig());
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig());
 
       expect(plan.releases).toHaveLength(2);
       const pluginRelease = plan.releases.find((r) => r.name === 'plugin')!;
@@ -190,12 +190,12 @@ describe('assembleReleasePlan', () => {
       ]);
 
       // patch-isolated on core: 1.0.0 → 1.0.1, satisfies ~1.0.0 → no issue
-      const changesets: Changeset[] = [
+      const bumpFiles: BumpFile[] = [
         { id: 'cs1', releases: [{ name: 'core', type: 'patch-isolated' }], summary: 'Internal' },
       ];
 
       const graph = new DependencyGraph(packages);
-      const plan = assembleReleasePlan(changesets, packages, graph, makeConfig());
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig());
 
       expect(plan.releases).toHaveLength(1);
       expect(plan.releases[0]!.name).toBe('core');
@@ -208,10 +208,10 @@ describe('assembleReleasePlan', () => {
         ['app', makePkg('app', '1.0.0', { dependencies: { core: '^1.0.0' } })],
       ]);
 
-      const changesets: Changeset[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'minor' }], summary: 'Feature' }];
+      const bumpFiles: BumpFile[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'minor' }], summary: 'Feature' }];
 
       const graph = new DependencyGraph(packages);
-      const plan = assembleReleasePlan(changesets, packages, graph, makeConfig());
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig());
 
       expect(plan.releases).toHaveLength(1);
       expect(plan.releases[0]!.name).toBe('core');
@@ -226,10 +226,10 @@ describe('assembleReleasePlan', () => {
 
       // minor bump on core: 1.0.0 → 1.1.0, breaks ~1.0.0
       // middle gets patch: 1.0.0 → 1.0.1, satisfies ~1.0.0 on app → stops
-      const changesets: Changeset[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'minor' }], summary: 'Feature' }];
+      const bumpFiles: BumpFile[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'minor' }], summary: 'Feature' }];
 
       const graph = new DependencyGraph(packages);
-      const plan = assembleReleasePlan(changesets, packages, graph, makeConfig());
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig());
 
       expect(plan.releases.find((r) => r.name === 'core')).toBeDefined();
       expect(plan.releases.find((r) => r.name === 'middle')).toBeDefined();
@@ -247,14 +247,14 @@ describe('assembleReleasePlan', () => {
         ['pkg-c', makePkg('pkg-c', '1.0.0')],
       ]);
 
-      const changesets: Changeset[] = [
+      const bumpFiles: BumpFile[] = [
         { id: 'cs1', releases: [{ name: 'pkg-a', type: 'minor' }], summary: 'Feature' },
         { id: 'cs2', releases: [{ name: 'pkg-b', type: 'patch' }], summary: 'Fix' },
       ];
 
       const graph = new DependencyGraph(packages);
       const config = makeConfig({ fixed: [['pkg-a', 'pkg-b', 'pkg-c']] });
-      const plan = assembleReleasePlan(changesets, packages, graph, config);
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, config);
 
       expect(plan.releases).toHaveLength(3);
       for (const r of plan.releases) {
@@ -272,11 +272,11 @@ describe('assembleReleasePlan', () => {
         ['plugin', makePkg('plugin', '1.0.0', { dependencies: { core: '~1.0.0' } })],
       ]);
 
-      const changesets: Changeset[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'minor' }], summary: 'Feature' }];
+      const bumpFiles: BumpFile[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'minor' }], summary: 'Feature' }];
 
       const graph = new DependencyGraph(packages);
       const config = makeConfig({ fixed: [['core', 'types']] });
-      const plan = assembleReleasePlan(changesets, packages, graph, config);
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, config);
 
       // core gets minor, types gets minor (fixed), plugin gets patch (out-of-range dep)
       expect(plan.releases).toHaveLength(3);
@@ -292,14 +292,14 @@ describe('assembleReleasePlan', () => {
         ['plugin-b', makePkg('plugin-b', '3.0.0', { dependencies: { core: '~1.0.0' } })],
       ]);
 
-      const changesets: Changeset[] = [
+      const bumpFiles: BumpFile[] = [
         { id: 'cs1', releases: [{ name: 'core', type: 'minor' }], summary: 'Feature' },
         { id: 'cs2', releases: [{ name: 'plugin-a', type: 'minor' }], summary: 'Plugin feature' },
       ];
 
       const graph = new DependencyGraph(packages);
       const config = makeConfig({ linked: [['plugin-a', 'plugin-b']] });
-      const plan = assembleReleasePlan(changesets, packages, graph, config);
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, config);
 
       // plugin-a has minor from changeset, plugin-b gets patch from out-of-range propagation
       // linked group raises plugin-b to match plugin-a's minor
@@ -330,10 +330,10 @@ describe('assembleReleasePlan', () => {
         ['unrelated', makePkg('unrelated', '1.0.0')],
       ]);
 
-      const changesets: Changeset[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'minor' }], summary: 'Feature' }];
+      const bumpFiles: BumpFile[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'minor' }], summary: 'Feature' }];
 
       const graph = new DependencyGraph(packages);
-      const plan = assembleReleasePlan(changesets, packages, graph, makeConfig());
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig());
 
       expect(plan.releases).toHaveLength(3);
       expect(plan.releases.find((r) => r.name === 'unrelated')).toBeUndefined();
@@ -346,15 +346,10 @@ describe('assembleReleasePlan', () => {
         ['app', makePkg('app', '2.0.0', { dependencies: { core: '^1.0.0' } })],
       ]);
 
-      const changesets: Changeset[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'patch' }], summary: 'Fix' }];
+      const bumpFiles: BumpFile[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'patch' }], summary: 'Fix' }];
 
       const graph = new DependencyGraph(packages);
-      const plan = assembleReleasePlan(
-        changesets,
-        packages,
-        graph,
-        makeConfig({ updateInternalDependencies: 'patch' }),
-      );
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig({ updateInternalDependencies: 'patch' }));
 
       expect(plan.releases).toHaveLength(2);
       const appRelease = plan.releases.find((r) => r.name === 'app')!;
@@ -368,17 +363,12 @@ describe('assembleReleasePlan', () => {
         ['app', makePkg('app', '2.0.0', { dependencies: { core: '^1.0.0' } })],
       ]);
 
-      const changesets: Changeset[] = [
+      const bumpFiles: BumpFile[] = [
         { id: 'cs1', releases: [{ name: 'core', type: 'patch-isolated' }], summary: 'Internal' },
       ];
 
       const graph = new DependencyGraph(packages);
-      const plan = assembleReleasePlan(
-        changesets,
-        packages,
-        graph,
-        makeConfig({ updateInternalDependencies: 'patch' }),
-      );
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig({ updateInternalDependencies: 'patch' }));
 
       expect(plan.releases).toHaveLength(1);
       expect(plan.releases[0]!.name).toBe('core');
@@ -390,24 +380,24 @@ describe('assembleReleasePlan', () => {
         ['plugin', makePkg('plugin', '1.0.0', { peerDependencies: { core: '^1.0.0' } })],
       ]);
 
-      const changesets: Changeset[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'minor' }], summary: 'Feature' }];
+      const bumpFiles: BumpFile[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'minor' }], summary: 'Feature' }];
 
       const graph = new DependencyGraph(packages);
-      const plan = assembleReleasePlan(changesets, packages, graph, makeConfig());
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig());
 
       // ^1.0.0 satisfies 1.1.0, so no out-of-range propagation
       expect(plan.releases).toHaveLength(1);
       expect(plan.releases[0]!.name).toBe('core');
     });
 
-    test('changeset-level cascade overrides', () => {
+    test('bump-file-level cascade overrides', () => {
       const packages = new Map([
         ['core', makePkg('core', '1.0.0')],
         ['plugin-a', makePkg('plugin-a', '1.0.0')],
         ['plugin-b', makePkg('plugin-b', '1.0.0')],
       ]);
 
-      const changesets: Changeset[] = [
+      const bumpFiles: BumpFile[] = [
         {
           id: 'cs1',
           releases: [
@@ -422,7 +412,7 @@ describe('assembleReleasePlan', () => {
       ];
 
       const graph = new DependencyGraph(packages);
-      const plan = assembleReleasePlan(changesets, packages, graph, makeConfig());
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig());
 
       expect(plan.releases).toHaveLength(3);
       const pluginA = plan.releases.find((r) => r.name === 'plugin-a')!;
@@ -439,17 +429,12 @@ describe('assembleReleasePlan', () => {
         ['app', makePkg('app', '1.0.0', { devDependencies: { 'test-utils': '^1.0.0' } })],
       ]);
 
-      const changesets: Changeset[] = [
+      const bumpFiles: BumpFile[] = [
         { id: 'cs1', releases: [{ name: 'test-utils', type: 'major' }], summary: 'Breaking' },
       ];
 
       const graph = new DependencyGraph(packages);
-      const plan = assembleReleasePlan(
-        changesets,
-        packages,
-        graph,
-        makeConfig({ updateInternalDependencies: 'patch' }),
-      );
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig({ updateInternalDependencies: 'patch' }));
 
       // devDeps rule is false by default → never propagates
       expect(plan.releases).toHaveLength(1);
@@ -466,36 +451,31 @@ describe('assembleReleasePlan', () => {
         ['app', makePkg('app', '2.0.0', { dependencies: { core: '^1.0.0' } })],
       ]);
 
-      const changesets: Changeset[] = [
+      const bumpFiles: BumpFile[] = [
         { id: 'cs1', releases: [{ name: 'core', type: 'patch-isolated' }], summary: 'Internal' },
       ];
 
       const graph = new DependencyGraph(packages);
-      const plan = assembleReleasePlan(changesets, packages, graph, makeConfig());
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig());
 
       expect(plan.releases).toHaveLength(1);
       expect(plan.releases[0]!.name).toBe('core');
       expect(plan.releases[0]!.newVersion).toBe('1.0.1');
     });
 
-    test('non-isolated changeset overrides isolated for same package', () => {
+    test('non-isolated bump file overrides isolated for same package', () => {
       const packages = new Map([
         ['core', makePkg('core', '1.0.0')],
         ['app', makePkg('app', '2.0.0', { dependencies: { core: '^1.0.0' } })],
       ]);
 
-      const changesets: Changeset[] = [
+      const bumpFiles: BumpFile[] = [
         { id: 'cs1', releases: [{ name: 'core', type: 'patch-isolated' }], summary: 'Internal' },
         { id: 'cs2', releases: [{ name: 'core', type: 'patch' }], summary: 'Fix' },
       ];
 
       const graph = new DependencyGraph(packages);
-      const plan = assembleReleasePlan(
-        changesets,
-        packages,
-        graph,
-        makeConfig({ updateInternalDependencies: 'patch' }),
-      );
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig({ updateInternalDependencies: 'patch' }));
 
       expect(plan.releases).toHaveLength(2); // core + app (no longer isolated)
     });
@@ -506,12 +486,12 @@ describe('assembleReleasePlan', () => {
         ['app', makePkg('app', '1.0.0', { dependencies: { core: '1.0.0' } })], // exact range
       ]);
 
-      const changesets: Changeset[] = [
+      const bumpFiles: BumpFile[] = [
         { id: 'cs1', releases: [{ name: 'core', type: 'patch-isolated' }], summary: 'Internal' },
       ];
 
       const graph = new DependencyGraph(packages);
-      expect(() => assembleReleasePlan(changesets, packages, graph, makeConfig())).toThrow(
+      expect(() => assembleReleasePlan(bumpFiles, packages, graph, makeConfig())).toThrow(
         /patch-isolated.*break.*range/,
       );
     });
@@ -526,7 +506,7 @@ describe('assembleReleasePlan', () => {
         ['plugin', makePkg('plugin', '1.0.0', { dependencies: { core: '^1.0.0' } })],
       ]);
 
-      const changesets: Changeset[] = [
+      const bumpFiles: BumpFile[] = [
         {
           id: 'cs1',
           releases: [
@@ -538,12 +518,7 @@ describe('assembleReleasePlan', () => {
       ];
 
       const graph = new DependencyGraph(packages);
-      const plan = assembleReleasePlan(
-        changesets,
-        packages,
-        graph,
-        makeConfig({ updateInternalDependencies: 'patch' }),
-      );
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig({ updateInternalDependencies: 'patch' }));
 
       // Plugin should NOT be in releases because it's suppressed
       expect(plan.releases).toHaveLength(1);
@@ -556,7 +531,7 @@ describe('assembleReleasePlan', () => {
         ['plugin', makePkg('plugin', '1.0.0', { dependencies: { core: '^1.0.0' } })],
       ]);
 
-      const changesets: Changeset[] = [
+      const bumpFiles: BumpFile[] = [
         {
           id: 'cs1',
           releases: [
@@ -568,7 +543,7 @@ describe('assembleReleasePlan', () => {
       ];
 
       const graph = new DependencyGraph(packages);
-      expect(() => assembleReleasePlan(changesets, packages, graph, makeConfig())).toThrow(
+      expect(() => assembleReleasePlan(bumpFiles, packages, graph, makeConfig())).toThrow(
         /Cannot suppress.*plugin.*none/,
       );
     });
@@ -594,15 +569,10 @@ describe('assembleReleasePlan', () => {
         ['normal', makePkg('normal', '1.0.0', { dependencies: { core: '^1.0.0' } })],
       ]);
 
-      const changesets: Changeset[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'patch' }], summary: 'Fix' }];
+      const bumpFiles: BumpFile[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'patch' }], summary: 'Fix' }];
 
       const graph = new DependencyGraph(packages);
-      const plan = assembleReleasePlan(
-        changesets,
-        packages,
-        graph,
-        makeConfig({ updateInternalDependencies: 'patch' }),
-      );
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig({ updateInternalDependencies: 'patch' }));
 
       // Both should be bumped because updateInternalDependencies is 'patch'
       // and both have dependency bump rules that trigger on patch
@@ -628,15 +598,10 @@ describe('assembleReleasePlan', () => {
         ['normal', makePkg('normal', '1.0.0', { dependencies: { core: '^1.0.0' } })],
       ]);
 
-      const changesets: Changeset[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'patch' }], summary: 'Fix' }];
+      const bumpFiles: BumpFile[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'patch' }], summary: 'Fix' }];
 
       const graph = new DependencyGraph(packages);
-      const plan = assembleReleasePlan(
-        changesets,
-        packages,
-        graph,
-        makeConfig({ updateInternalDependencies: 'patch' }),
-      );
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig({ updateInternalDependencies: 'patch' }));
 
       // special should NOT be bumped (rule is false), normal should be
       expect(plan.releases).toHaveLength(2);
@@ -655,9 +620,9 @@ describe('assembleReleasePlan', () => {
       ]);
 
       // Minor bump: 1.2.0 → 1.3.0, does NOT satisfy ~1.2.0 (>=1.2.0 <1.3.0)
-      const changesets: Changeset[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'minor' }], summary: 'Feature' }];
+      const bumpFiles: BumpFile[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'minor' }], summary: 'Feature' }];
       const graph = new DependencyGraph(packages);
-      const plan = assembleReleasePlan(changesets, packages, graph, makeConfig());
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig());
 
       expect(plan.releases).toHaveLength(2);
       expect(plan.releases.find((r) => r.name === 'app')!.type).toBe('patch');
@@ -670,9 +635,9 @@ describe('assembleReleasePlan', () => {
       ]);
 
       // Patch bump: 1.2.0 → 1.2.1, satisfies ~1.2.0
-      const changesets: Changeset[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'patch' }], summary: 'Fix' }];
+      const bumpFiles: BumpFile[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'patch' }], summary: 'Fix' }];
       const graph = new DependencyGraph(packages);
-      const plan = assembleReleasePlan(changesets, packages, graph, makeConfig());
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig());
 
       expect(plan.releases).toHaveLength(1);
     });
@@ -684,9 +649,9 @@ describe('assembleReleasePlan', () => {
       ]);
 
       // Even a major bump should not propagate
-      const changesets: Changeset[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'major' }], summary: 'Breaking' }];
+      const bumpFiles: BumpFile[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'major' }], summary: 'Breaking' }];
       const graph = new DependencyGraph(packages);
-      const plan = assembleReleasePlan(changesets, packages, graph, makeConfig());
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig());
 
       expect(plan.releases).toHaveLength(1);
       expect(plan.releases[0]!.name).toBe('core');
@@ -699,9 +664,9 @@ describe('assembleReleasePlan', () => {
       ]);
 
       // Minor bump: 0.2.0 → 0.3.0, workspace:^ resolves to ^0.2.0, breaks range
-      const changesets: Changeset[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'minor' }], summary: 'Feature' }];
+      const bumpFiles: BumpFile[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'minor' }], summary: 'Feature' }];
       const graph = new DependencyGraph(packages);
-      const plan = assembleReleasePlan(changesets, packages, graph, makeConfig());
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig());
 
       expect(plan.releases).toHaveLength(2);
       const pluginRelease = plan.releases.find((r) => r.name === 'plugin')!;
@@ -717,9 +682,9 @@ describe('assembleReleasePlan', () => {
       ]);
 
       // Patch bump: 0.2.0 → 0.2.1, workspace:^ resolves to ^0.2.0, stays in range
-      const changesets: Changeset[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'patch' }], summary: 'Fix' }];
+      const bumpFiles: BumpFile[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'patch' }], summary: 'Fix' }];
       const graph = new DependencyGraph(packages);
-      const plan = assembleReleasePlan(changesets, packages, graph, makeConfig());
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig());
 
       expect(plan.releases).toHaveLength(1);
     });
@@ -744,9 +709,9 @@ describe('assembleReleasePlan', () => {
       ]);
 
       // Patch bump on core — below minor trigger threshold
-      const changesets: Changeset[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'patch' }], summary: 'Fix' }];
+      const bumpFiles: BumpFile[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'patch' }], summary: 'Fix' }];
       const graph = new DependencyGraph(packages);
-      const plan = assembleReleasePlan(changesets, packages, graph, makeConfig());
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig());
 
       expect(plan.releases).toHaveLength(1);
       expect(plan.releases[0]!.name).toBe('core');
@@ -758,14 +723,9 @@ describe('assembleReleasePlan', () => {
         ['app', makePkg('app', '2.0.0', { dependencies: { core: '^1.0.0' } })],
       ]);
 
-      const changesets: Changeset[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'patch' }], summary: 'Fix' }];
+      const bumpFiles: BumpFile[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'patch' }], summary: 'Fix' }];
       const graph = new DependencyGraph(packages);
-      const plan = assembleReleasePlan(
-        changesets,
-        packages,
-        graph,
-        makeConfig({ updateInternalDependencies: 'minor' }),
-      );
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig({ updateInternalDependencies: 'minor' }));
 
       // Patch bump on core — below minor threshold, app not bumped
       expect(plan.releases).toHaveLength(1);
@@ -777,14 +737,9 @@ describe('assembleReleasePlan', () => {
         ['app', makePkg('app', '2.0.0', { dependencies: { core: '^1.0.0' } })],
       ]);
 
-      const changesets: Changeset[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'minor' }], summary: 'Feature' }];
+      const bumpFiles: BumpFile[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'minor' }], summary: 'Feature' }];
       const graph = new DependencyGraph(packages);
-      const plan = assembleReleasePlan(
-        changesets,
-        packages,
-        graph,
-        makeConfig({ updateInternalDependencies: 'minor' }),
-      );
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig({ updateInternalDependencies: 'minor' }));
 
       expect(plan.releases).toHaveLength(2);
       expect(plan.releases.find((r) => r.name === 'app')!.isDependencyBump).toBe(true);
@@ -797,14 +752,9 @@ describe('assembleReleasePlan', () => {
       ]);
 
       // Major bump — peerDeps default rule is { trigger: 'major', bumpAs: 'match' }
-      const changesets: Changeset[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'major' }], summary: 'Breaking' }];
+      const bumpFiles: BumpFile[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'major' }], summary: 'Breaking' }];
       const graph = new DependencyGraph(packages);
-      const plan = assembleReleasePlan(
-        changesets,
-        packages,
-        graph,
-        makeConfig({ updateInternalDependencies: 'patch' }),
-      );
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig({ updateInternalDependencies: 'patch' }));
 
       const pluginRelease = plan.releases.find((r) => r.name === 'plugin')!;
       // bumpAs: 'match' means plugin gets major (matching core's bump level)
@@ -824,10 +774,10 @@ describe('assembleReleasePlan', () => {
         ['plugin', makePkg('plugin', '1.0.0', { dependencies: { types: '~1.0.0' } })],
       ]);
 
-      const changesets: Changeset[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'minor' }], summary: 'Feature' }];
+      const bumpFiles: BumpFile[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'minor' }], summary: 'Feature' }];
       const graph = new DependencyGraph(packages);
       const config = makeConfig({ fixed: [['core', 'types']] });
-      const plan = assembleReleasePlan(changesets, packages, graph, config);
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, config);
 
       // core: minor (explicit), types: minor (fixed group), plugin: patch (types out of range)
       expect(plan.releases).toHaveLength(3);
@@ -845,9 +795,9 @@ describe('assembleReleasePlan', () => {
         ['d', makePkg('d', '1.0.0', { dependencies: { c: '~1.0.0' } })],
       ]);
 
-      const changesets: Changeset[] = [{ id: 'cs1', releases: [{ name: 'a', type: 'minor' }], summary: 'Feature' }];
+      const bumpFiles: BumpFile[] = [{ id: 'cs1', releases: [{ name: 'a', type: 'minor' }], summary: 'Feature' }];
       const graph = new DependencyGraph(packages);
-      const plan = assembleReleasePlan(changesets, packages, graph, makeConfig());
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig());
 
       // a: minor (1.1.0, breaks ~1.0.0)
       // b: patch (1.0.1, satisfies ~1.0.0 on c) → chain stops
@@ -867,7 +817,7 @@ describe('assembleReleasePlan', () => {
         ['unrelated', makePkg('unrelated', '1.0.0')],
       ]);
 
-      const changesets: Changeset[] = [
+      const bumpFiles: BumpFile[] = [
         {
           id: 'cs1',
           releases: [
@@ -879,7 +829,7 @@ describe('assembleReleasePlan', () => {
       ];
 
       const graph = new DependencyGraph(packages);
-      const plan = assembleReleasePlan(changesets, packages, graph, makeConfig());
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig());
 
       expect(plan.releases).toHaveLength(1);
       expect(plan.releases[0]!.name).toBe('core');
@@ -895,9 +845,9 @@ describe('assembleReleasePlan', () => {
         ['plugin', makePkg('plugin', '1.0.0', { peerDependencies: { core: 'workspace:*' } })],
       ]);
 
-      const changesets: Changeset[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'minor' }], summary: 'Feature' }];
+      const bumpFiles: BumpFile[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'minor' }], summary: 'Feature' }];
       const graph = new DependencyGraph(packages);
-      const plan = assembleReleasePlan(changesets, packages, graph, makeConfig());
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig());
 
       expect(plan.warnings.some((w) => w.includes('workspace:*') && w.includes('plugin'))).toBe(true);
     });

@@ -184,35 +184,35 @@ function printHelp() {
 
   Commands:
     init                    Initialize .bumpy/ directory
-    add                     Create a new changeset
-    generate                Generate changeset from conventional commits
+    add                     Create a new bump file
+    generate                Generate bump file from conventional commits
     status                  Show pending releases
-    check                   Verify changed packages have changesets (for pre-push hooks)
-    version                 Apply changesets and bump versions
+    check                   Verify changed packages have bump files (for pre-push hooks)
+    version                 Apply bump files and bump versions
     publish                 Publish versioned packages
     ci check                PR check — report pending releases, comment on PR
     ci release              Release — create version PR or auto-publish
     ci setup                Set up a token for triggering CI on version PRs
     migrate                 Migrate from .changeset/ to .bumpy/
-    ai setup                Install AI skill for creating changesets
+    ai setup                Install AI skill for creating bump files
 
   Add options:
     --packages <list>       Package bumps (e.g., "pkg-a:minor,pkg-b:patch")
-    --message <text>        Changeset summary
-    --name <name>           Changeset filename
-    --empty                 Create an empty changeset
+    --message <text>        Bump file summary
+    --name <name>           Bump file filename
+    --empty                 Create an empty bump file
 
   Generate options:
     --from <ref>            Git ref to scan from (default: last version tag)
-    --dry-run               Preview without creating a changeset
-    --name <name>           Changeset filename
+    --dry-run               Preview without creating a bump file
+    --name <name>           Bump file filename
 
   Status options:
-    --json                  Output as JSON (includes dirs, changesets, packageNames)
+    --json                  Output as JSON (includes dirs, bumpFiles, packageNames)
     --packages              Output only package names, one per line
     --bump <types>          Filter by bump type (e.g., "major", "minor,patch")
     --filter <names>        Filter by package name/glob (e.g., "@myorg/*")
-    --verbose               Show changeset details
+    --verbose               Show bump file details
 
   Publish options:
     --dry-run               Preview without publishing
@@ -222,7 +222,7 @@ function printHelp() {
 
   CI check options:
     --comment               Force PR comment on/off (auto-detected in CI)
-    --fail-on-missing       Exit 1 if no changesets found
+    --fail-on-missing       Exit 1 if no bump files found
 
   CI release options:
     --auto-publish          Version + publish directly (default: create version PR)

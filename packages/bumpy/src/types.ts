@@ -145,34 +145,34 @@ export const DEFAULT_CONFIG: BumpyConfig = {
     preamble: [
       `<a href="${__BUMPY_WEBSITE_URL__}"><img src="https://raw.githubusercontent.com/dmno-dev/bumpy/main/images/frog-talking.png" alt="bumpy-frog" width="60" align="left" style="image-rendering: pixelated;" title="Hi! I'm bumpy!" /></a>`,
       '',
-      `This PR was created and will be kept in sync by [bumpy](${__BUMPY_WEBSITE_URL__}) based on your .bumpy changeset files. Merge it when you are ready to release the packages listed below:`,
+      `This PR was created and will be kept in sync by [bumpy](${__BUMPY_WEBSITE_URL__}) based on your .bumpy bump files. Merge it when you are ready to release the packages listed below:`,
       '<br clear="left" />',
     ].join('\n'),
   },
 };
 
-// ---- Changeset ----
+// ---- Bump file ----
 
-export interface ChangesetReleaseSimple {
+export interface BumpFileReleaseSimple {
   name: string;
   type: BumpTypeWithIsolated;
 }
 
-export interface ChangesetReleaseCascade {
+export interface BumpFileReleaseCascade {
   name: string;
   type: BumpTypeWithIsolated;
   cascade: Record<string, BumpType>; // glob pattern → bump type
 }
 
-export type ChangesetRelease = ChangesetReleaseSimple | ChangesetReleaseCascade;
+export type BumpFileRelease = BumpFileReleaseSimple | BumpFileReleaseCascade;
 
-export function hasCascade(r: ChangesetRelease): r is ChangesetReleaseCascade {
+export function hasCascade(r: BumpFileRelease): r is BumpFileReleaseCascade {
   return 'cascade' in r && Object.keys(r.cascade).length > 0;
 }
 
-export interface Changeset {
+export interface BumpFile {
   id: string; // filename without .md
-  releases: ChangesetRelease[];
+  releases: BumpFileRelease[];
   summary: string; // markdown body
 }
 
@@ -210,13 +210,13 @@ export interface PlannedRelease {
   type: BumpType;
   oldVersion: string;
   newVersion: string;
-  changesets: string[]; // changeset IDs that contributed
+  bumpFiles: string[]; // bump file IDs that contributed
   isDependencyBump: boolean;
   isCascadeBump: boolean;
 }
 
 export interface ReleasePlan {
-  changesets: Changeset[];
+  bumpFiles: BumpFile[];
   releases: PlannedRelease[];
   warnings: string[];
 }

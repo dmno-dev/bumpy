@@ -1,20 +1,20 @@
 import { test, expect, describe } from 'bun:test';
-import { makeRelease, makeChangeset } from '../helpers.ts';
+import { makeRelease, makeBumpFile } from '../helpers.ts';
 import { defaultFormatter, generateChangelogEntry, prependToChangelog } from '../../src/core/changelog.ts';
 
 describe('defaultFormatter', () => {
-  test('formats basic release with changesets', async () => {
+  test('formats basic release with bump files', async () => {
     const release = makeRelease('pkg-a', '1.1.0', {
       type: 'minor',
       oldVersion: '1.0.0',
-      changesets: ['cs1', 'cs2'],
+      bumpFiles: ['cs1', 'cs2'],
     });
-    const changesets = [
-      makeChangeset('cs1', [{ name: 'pkg-a', type: 'minor' }], 'Added new feature'),
-      makeChangeset('cs2', [{ name: 'pkg-a', type: 'patch' }], 'Fixed a bug'),
+    const bumpFiles = [
+      makeBumpFile('cs1', [{ name: 'pkg-a', type: 'minor' }], 'Added new feature'),
+      makeBumpFile('cs2', [{ name: 'pkg-a', type: 'patch' }], 'Fixed a bug'),
     ];
 
-    const result = await defaultFormatter({ release, changesets, date: '2026-04-14' });
+    const result = await defaultFormatter({ release, bumpFiles, date: '2026-04-14' });
 
     expect(result).toContain('## 1.1.0');
     expect(result).toContain('_2026-04-14_');
@@ -22,24 +22,24 @@ describe('defaultFormatter', () => {
     expect(result).toContain('- Fixed a bug');
   });
 
-  test('formats dependency bump with no changesets', async () => {
+  test('formats dependency bump with no bump files', async () => {
     const release = makeRelease('pkg-a', '1.0.1', {
       isDependencyBump: true,
-      changesets: [],
+      bumpFiles: [],
     });
 
-    const result = await defaultFormatter({ release, changesets: [], date: '2026-04-14' });
+    const result = await defaultFormatter({ release, bumpFiles: [], date: '2026-04-14' });
 
     expect(result).toContain('- Updated dependencies');
   });
 
-  test('formats cascade bump with no changesets', async () => {
+  test('formats cascade bump with no bump files', async () => {
     const release = makeRelease('pkg-a', '1.0.1', {
       isCascadeBump: true,
-      changesets: [],
+      bumpFiles: [],
     });
 
-    const result = await defaultFormatter({ release, changesets: [], date: '2026-04-14' });
+    const result = await defaultFormatter({ release, bumpFiles: [], date: '2026-04-14' });
 
     expect(result).toContain('- Version bump via cascade rule');
   });
@@ -48,36 +48,36 @@ describe('defaultFormatter', () => {
     const release = makeRelease('pkg-a', '1.0.1', {
       isDependencyBump: true,
       isCascadeBump: true,
-      changesets: [],
+      bumpFiles: [],
     });
 
-    const result = await defaultFormatter({ release, changesets: [], date: '2026-04-14' });
+    const result = await defaultFormatter({ release, bumpFiles: [], date: '2026-04-14' });
 
     expect(result).toContain('- Updated dependencies');
     expect(result).not.toContain('cascade');
   });
 
-  test('handles multi-line changeset summaries', async () => {
+  test('handles multi-line bump file summaries', async () => {
     const release = makeRelease('pkg-a', '1.1.0', {
       type: 'minor',
-      changesets: ['cs1'],
+      bumpFiles: ['cs1'],
     });
-    const changesets = [makeChangeset('cs1', [{ name: 'pkg-a', type: 'minor' }], 'First line\n\nSecond paragraph')];
+    const bumpFiles = [makeBumpFile('cs1', [{ name: 'pkg-a', type: 'minor' }], 'First line\n\nSecond paragraph')];
 
-    const result = await defaultFormatter({ release, changesets, date: '2026-04-14' });
+    const result = await defaultFormatter({ release, bumpFiles, date: '2026-04-14' });
 
     expect(result).toContain('- First line');
     expect(result).toContain('  Second paragraph');
   });
 
-  test('only includes changesets referenced by the release', async () => {
-    const release = makeRelease('pkg-a', '1.0.1', { changesets: ['cs1'] });
-    const changesets = [
-      makeChangeset('cs1', [{ name: 'pkg-a', type: 'patch' }], 'Relevant fix'),
-      makeChangeset('cs2', [{ name: 'pkg-b', type: 'patch' }], 'Unrelated fix'),
+  test('only includes bump files referenced by the release', async () => {
+    const release = makeRelease('pkg-a', '1.0.1', { bumpFiles: ['cs1'] });
+    const bumpFiles = [
+      makeBumpFile('cs1', [{ name: 'pkg-a', type: 'patch' }], 'Relevant fix'),
+      makeBumpFile('cs2', [{ name: 'pkg-b', type: 'patch' }], 'Unrelated fix'),
     ];
 
-    const result = await defaultFormatter({ release, changesets, date: '2026-04-14' });
+    const result = await defaultFormatter({ release, bumpFiles, date: '2026-04-14' });
 
     expect(result).toContain('Relevant fix');
     expect(result).not.toContain('Unrelated fix');
@@ -86,10 +86,10 @@ describe('defaultFormatter', () => {
 
 describe('generateChangelogEntry', () => {
   test('uses default formatter when none specified', async () => {
-    const release = makeRelease('pkg-a', '1.0.1', { changesets: ['cs1'] });
-    const changesets = [makeChangeset('cs1', [{ name: 'pkg-a', type: 'patch' }], 'Fix')];
+    const release = makeRelease('pkg-a', '1.0.1', { bumpFiles: ['cs1'] });
+    const bumpFiles = [makeBumpFile('cs1', [{ name: 'pkg-a', type: 'patch' }], 'Fix')];
 
-    const result = await generateChangelogEntry(release, changesets);
+    const result = await generateChangelogEntry(release, bumpFiles);
 
     expect(result).toContain('## 1.0.1');
     expect(result).toContain('- Fix');
