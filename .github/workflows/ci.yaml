@@ -26,6 +26,6 @@ jobs:
       - run: bun run --filter @varlock/bumpy build
       # run bun install again to make the now built CLI available
       - run: bun install
-      - run: bunx @varlock/bumpy ci check
+      - run: bunx @varlock/bumpy ci check --fail-on-missing
         env:
           GH_TOKEN: ${{ github.token }}
