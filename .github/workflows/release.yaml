@@ -15,6 +15,7 @@ jobs:
         with:
           fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
+      # Node.js is needed for npm publish (trusted publishing via OIDC)
       - uses: actions/setup-node@v6
         with:
           node-version: lts/*
