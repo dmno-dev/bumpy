@@ -1,4 +1,4 @@
 {
   "baseBranch": "main",
-  "changelog": "./_changelog-formatter.ts"
+  "changelog": ["github", { "internalAuthors": ["theoephraim", "philmillman"] }]
 }

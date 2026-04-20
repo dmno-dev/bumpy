@@ -4,6 +4,8 @@ import type { ChangelogContext, ChangelogFormatter } from './changelog.ts';
 export interface GithubChangelogOptions {
   /** "owner/repo" — auto-detected from gh CLI if not provided */
   repo?: string;
+  /** Whether to include "Thanks @user" messages for contributors (default: true) */
+  thankContributors?: boolean;
   /** GitHub usernames (without @) to skip "Thanks" messages for (e.g. internal team members) */
   internalAuthors?: string[];
 }
@@ -15,9 +17,11 @@ export interface GithubChangelogOptions {
  * Usage in config:
  *   "changelog": "github"
  *   "changelog": ["github", { "repo": "dmno-dev/bumpy" }]
- *   "changelog": ["github", { "repo": "dmno-dev/bumpy", "internalAuthors": ["theoephraim"] }]
+ *   "changelog": ["github", { "thankContributors": false }]
+ *   "changelog": ["github", { "internalAuthors": ["theoephraim"] }]
  */
 export function createGithubFormatter(options: GithubChangelogOptions = {}): ChangelogFormatter {
+  const thankContributors = options.thankContributors ?? true;
   const internalAuthorsSet = new Set((options.internalAuthors ?? []).map((a) => a.toLowerCase()));
 
   return async (ctx: ChangelogContext) => {
@@ -47,7 +51,7 @@ export function createGithubFormatter(options: GithubChangelogOptions = {}): Cha
         const firstLine = linkifyIssueRefs(summaryLines[0]!, serverUrl, repoSlug);
 
         // Build the prefix: PR link, commit link, thanks
-        const prefix = formatPrefix(gitInfo, serverUrl, repoSlug, internalAuthorsSet);
+        const prefix = formatPrefix(gitInfo, serverUrl, repoSlug, thankContributors, internalAuthorsSet);
 
         lines.push(`-${prefix ? ` ${prefix} -` : ''} ${firstLine}`);
 
@@ -239,6 +243,7 @@ function formatPrefix(
   info: BumpFileGitInfo,
   serverUrl: string,
   repo: string | undefined,
+  thankContributors: boolean,
   internalAuthors: Set<string>,
 ): string {
   const parts: string[] = [];
@@ -252,7 +257,7 @@ function formatPrefix(
     parts.push(`[\`${short}\`](${serverUrl}/${repo}/commit/${info.commitHash})`);
   }
 
-  if (info.author && !internalAuthors.has(info.author.toLowerCase())) {
+  if (thankContributors && info.author && !internalAuthors.has(info.author.toLowerCase())) {
     parts.push(`Thanks [@${info.author}](${serverUrl}/${info.author})!`);
   }
 
