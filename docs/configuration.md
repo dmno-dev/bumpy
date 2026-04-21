@@ -86,18 +86,18 @@ Per-package settings can be defined in two places:
 
 `package.json` settings take precedence over global config.
 
-| Option                | Type                       | Description                                                             |
-| --------------------- | -------------------------- | ----------------------------------------------------------------------- |
-| `managed`             | `boolean`                  | Opt this package in or out of versioning                                |
-| `access`              | `"public" \| "restricted"` | Override the global access level                                        |
-| `publishCommand`      | `string \| string[]`       | Custom command(s) to publish this package (replaces npm publish)        |
-| `buildCommand`        | `string`                   | Command to run before publishing                                        |
-| `registry`            | `string`                   | Custom npm registry URL                                                 |
-| `skipNpmPublish`      | `boolean`                  | Don't publish to npm (still creates git tags)                           |
-| `checkPublished`      | `string`                   | Custom command that outputs the currently published version             |
-| `changedFilePatterns` | `string[]`                 | Glob patterns for changed-file detection (overrides root setting)       |
-| `dependencyBumpRules` | `object`                   | Per-package override for dependency propagation rules                   |
-| `cascadeTo`           | `object`                   | Explicit cascade targets — glob pattern mapped to `{ trigger, bumpAs }` |
+| Option                | Type                       | Description                                                                  |
+| --------------------- | -------------------------- | ---------------------------------------------------------------------------- |
+| `managed`             | `boolean`                  | Opt this package in or out of versioning                                     |
+| `access`              | `"public" \| "restricted"` | Override the global access level                                             |
+| `publishCommand`      | `string \| string[]`       | Custom command(s) to publish this package (replaces npm publish)             |
+| `buildCommand`        | `string`                   | Command to run before publishing                                             |
+| `registry`            | `string`                   | Custom npm registry URL                                                      |
+| `skipNpmPublish`      | `boolean`                  | Don't publish to npm (still creates git tags)                                |
+| `checkPublished`      | `string`                   | Custom command that outputs the currently published version                  |
+| `changedFilePatterns` | `string[]`                 | Glob patterns for changed-file detection (replaces root setting, not merged) |
+| `dependencyBumpRules` | `object`                   | Per-package override for dependency propagation rules                        |
+| `cascadeTo`           | `object`                   | Explicit cascade targets — glob pattern mapped to `{ trigger, bumpAs }`      |
 
 ### Custom commands and `allowCustomCommands`
 
