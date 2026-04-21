@@ -48,18 +48,7 @@ Bump files are markdown with YAML frontmatter, stored in `.bumpy/<name>.md`.
 Added new encryption provider for secrets management.
 ```
 
-### Isolated bumps (skip dependency propagation)
-
-```yaml
----
-'@myorg/utils': patch-isolated
----
-Internal refactor — no API changes, dependents don't need to bump.
-```
-
-Valid bump types: `major`, `minor`, `patch`, `patch-isolated`, `none`
-
-`patch-isolated` bumps as a patch but skips Phase C propagation. If the bump would break a dependent's range, bumpy throws an error.
+Valid bump types: `major`, `minor`, `patch`, `none`
 
 `none` suppresses a bump on a package that would otherwise be included via propagation. If skipping would leave a broken range, bumpy throws an error.
 
@@ -527,14 +516,7 @@ Both `workspace:` (pnpm, bun, yarn) and `catalog:` (pnpm, bun) protocols are res
 
 ### Internal packages that should never propagate bumps
 
-```yaml
----
-'@myorg/internal-utils': patch-isolated
----
-Refactored internal helpers.
-```
-
-Or permanently via config:
+Configure via per-package dependency bump rules:
 
 ```json
 // In root .bumpy/_config.json
@@ -693,7 +675,7 @@ This will:
 Key behavioral differences after migration:
 
 - Out-of-range peer dep bumps match the triggering bump level (not always major)
-- Use `patch-isolated` to skip Phase C propagation, or `none` to suppress a propagated bump
+- Use `none` to suppress a propagated bump
 - Per-package config moves to `package.json["bumpy"]` instead of root config only
 
 ## AI Integration

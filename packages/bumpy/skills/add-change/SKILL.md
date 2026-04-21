@@ -43,12 +43,6 @@ For each affected package, choose the appropriate bump level:
 | **minor** | New features: added exports, new options, new functionality                             |
 | **patch** | Bug fixes, internal refactors, documentation, dependency updates                        |
 
-Use `patch-isolated` if the change is purely internal and dependents should NOT be bumped (skips Phase C propagation). If the bump would break a dependent's declared range, bumpy will throw an error. Use this for:
-
-- Internal refactors with no API changes
-- Dev tooling / test changes
-- Documentation-only changes
-
 Use `none` in a bump file to suppress a bump on a package that would otherwise be included via propagation. If skipping would leave a broken range, bumpy throws an error.
 
 ### 4. Write a clear summary

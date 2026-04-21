@@ -22,13 +22,12 @@ Fixed locale fallback logic in utils.
 
 ### Bump levels
 
-| Level            | When to use                                                                                                                  |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `major`          | Breaking changes                                                                                                             |
-| `minor`          | New features (backwards-compatible)                                                                                          |
-| `patch`          | Bug fixes, minor improvements                                                                                                |
-| `patch-isolated` | Like `patch`, but skips dependency propagation (Phase C). Useful for internal fixes that shouldn't trigger downstream bumps. |
-| `none`           | Suppresses a bump — used in cascades to exclude specific packages from propagation (advanced)                                |
+| Level   | When to use                                                                                   |
+| ------- | --------------------------------------------------------------------------------------------- |
+| `major` | Breaking changes                                                                              |
+| `minor` | New features (backwards-compatible)                                                           |
+| `patch` | Bug fixes, minor improvements                                                                 |
+| `none`  | Suppresses a bump — used in cascades to exclude specific packages from propagation (advanced) |
 
 ## File naming
 
