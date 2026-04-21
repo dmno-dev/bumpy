@@ -234,7 +234,7 @@ function printHelp() {
   AI setup options:
     --target <tool>         Target AI tool: opencode, cursor, codex
 
-  ${colorize(__BUMPY_WEBSITE_URL__, 'dim')}
+  ${colorize('https://bumpy.varlock.dev', 'dim')}
 `);
 }
 
