@@ -39,13 +39,6 @@ export const DEP_TYPES: DepType[] = ['dependencies', 'devDependencies', 'peerDep
 
 // ---- Config ----
 
-export interface VersionCommitMessageConfig {
-  /** Static commit message */
-  message?: string;
-  /** Path to a module that exports a function to generate the commit message */
-  generateFn?: string;
-}
-
 export interface PublishConfig {
   /** Package manager to use for packing. "auto" detects from lockfile. Default: "auto" */
   packManager: 'auto' | 'npm' | 'pnpm' | 'bun' | 'yarn';
@@ -68,12 +61,12 @@ export interface BumpyConfig {
   access: 'public' | 'restricted';
   /**
    * Customize the commit message used when versioning.
-   * string = static commit message
-   * { message: "..." } = static commit message
-   * { generateFn: "./path.ts" } = dynamically generated message (module receives the release plan)
+   * A string starting with "./" is treated as a path to a module that exports
+   * a function receiving the release plan and returning a message string.
+   * Any other string is used as a static commit message.
    * Omit to use the default: "Version packages\n\npkg@version..."
    */
-  versionCommitMessage?: string | VersionCommitMessageConfig;
+  versionCommitMessage?: string;
   changelog: false | string | [string, Record<string, unknown>];
   fixed: string[][];
   linked: string[][];
