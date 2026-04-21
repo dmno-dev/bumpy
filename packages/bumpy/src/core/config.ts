@@ -1,6 +1,7 @@
 import { resolve } from 'node:path';
 import { readJson, exists } from '../utils/fs.ts';
 import { type BumpyConfig, type PackageConfig, DEFAULT_CONFIG } from '../types.ts';
+import { log } from '../utils/logger.ts';
 
 const BUMPY_DIR = '.bumpy';
 const CONFIG_FILE = '_config.json';
@@ -55,6 +56,22 @@ export async function loadPackageConfig(
     }
   } catch {
     // ignore
+  }
+
+  // Block custom commands from per-package config unless the root explicitly allows them.
+  // Commands defined in the root config's `packages` map are always trusted.
+  const CUSTOM_CMD_KEYS = ['buildCommand', 'publishCommand', 'checkPublished'] as const;
+  const disallowedKeys = CUSTOM_CMD_KEYS.filter((k) => pkgJsonConfig[k] != null);
+  if (disallowedKeys.length > 0 && !isCustomCommandAllowed(pkgName, rootConfig)) {
+    const fields = disallowedKeys.map((k) => `"${k}"`).join(', ');
+    throw new Error(
+      `Package "${pkgName}" defines custom command(s) (${fields}) in its package.json "bumpy" config, ` +
+        'but the root config does not allow this.\n' +
+        'Custom commands execute shell commands during publishing and must be explicitly enabled.\n\n' +
+        'To fix this, either:\n' +
+        '  1. Move the command(s) to .bumpy/_config.json under "packages" (always trusted)\n' +
+        `  2. Add "allowCustomCommands": true (or ["${pkgName}"]) to .bumpy/_config.json`,
+    );
   }
 
   // Merge: root packages map → package.json["bumpy"] (later wins)
@@ -122,6 +139,16 @@ function mergePackageConfig(...configs: PackageConfig[]): PackageConfig {
     }
   }
   return result;
+}
+
+/** Check if a package is allowed to define custom commands via package.json */
+function isCustomCommandAllowed(pkgName: string, config: BumpyConfig): boolean {
+  const { allowCustomCommands } = config;
+  if (allowCustomCommands === true) return true;
+  if (Array.isArray(allowCustomCommands)) {
+    return allowCustomCommands.some((pattern) => matchGlob(pkgName, pattern));
+  }
+  return false;
 }
 
 export function getBumpyDir(rootDir: string): string {
