@@ -39,7 +39,7 @@ export const DEP_TYPES: DepType[] = ['dependencies', 'devDependencies', 'peerDep
 
 // ---- Config ----
 
-export interface CommitConfig {
+export interface VersionCommitMessageConfig {
   /** Static commit message */
   message?: string;
   /** Path to a module that exports a function to generate the commit message */
@@ -67,13 +67,13 @@ export interface BumpyConfig {
   baseBranch: string;
   access: 'public' | 'restricted';
   /**
-   * Auto-commit changes after `bumpy version`.
-   * false = don't commit (default)
-   * true = commit with default message
-   * { message: "..." } = commit with a static custom message
-   * { generateFn: "./path.ts" } = commit with a dynamically generated message
+   * Customize the commit message used when versioning.
+   * string = static commit message
+   * { message: "..." } = static commit message
+   * { generateFn: "./path.ts" } = dynamically generated message (module receives the release plan)
+   * Omit to use the default: "Version packages\n\npkg@version..."
    */
-  commit: boolean | CommitConfig;
+  versionCommitMessage?: string | VersionCommitMessageConfig;
   changelog: false | string | [string, Record<string, unknown>];
   fixed: string[][];
   linked: string[][];
@@ -144,7 +144,7 @@ export const DEFAULT_PUBLISH_CONFIG: PublishConfig = {
 export const DEFAULT_CONFIG: BumpyConfig = {
   baseBranch: 'main',
   access: 'public',
-  commit: false,
+  versionCommitMessage: undefined,
   changedFilePatterns: ['**'],
   changelog: 'default',
   fixed: [],

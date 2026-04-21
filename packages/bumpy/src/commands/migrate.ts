@@ -124,15 +124,7 @@ async function migrateConfig(changesetConfigPath: string, bumpyDir: string): Pro
     }
   }
 
-  // Migrate commit (changesets supports boolean | string | [string, options], bumpy only takes boolean for simple migration)
-  if (typeof csConfig.commit === 'boolean') {
-    bumpyConfig.commit = csConfig.commit;
-  } else if (csConfig.commit) {
-    bumpyConfig.commit = true;
-    log.warn('Changesets custom commit message module not migrated — using `commit: true` instead.');
-  }
-
-  // Note: changesets' changelog, ___experimentalUnsafeOptions_WILL_CHANGE_IN_PATCH, etc. are not migrated
+  // Note: changesets' commit, changelog, ___experimentalUnsafeOptions_WILL_CHANGE_IN_PATCH, etc. are not migrated
   // The user should configure these manually
 
   const { writeJson } = await import('../utils/fs.ts');
