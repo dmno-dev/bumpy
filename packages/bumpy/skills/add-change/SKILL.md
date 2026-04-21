@@ -58,9 +58,11 @@ Write a concise summary for the CHANGELOG entry. Keep it short — ideally a sin
 Bad: "Updated the authentication module to fix an issue where the token refresh mechanism was not properly handling expired refresh tokens, causing silent failures in the auth flow."
 Good: "Fixed token refresh failing silently on expired refresh tokens."
 
-### 5. Create the bump file
+### 5. Create or update the bump file
 
-Use the non-interactive CLI:
+Check if there are already bump files on this branch (from step 1's `bumpy status`). If one exists that covers the same logical change, **update it in place** by editing the `.bumpy/<name>.md` file directly — adjust the package list, bump levels, and summary to reflect the current state of the branch. Don't create a new bump file for every incremental change on the same branch.
+
+If no relevant bump file exists yet, create one with the non-interactive CLI:
 
 ```bash
 bumpy add \
@@ -107,3 +109,4 @@ EOF
 - If the user hasn't made any changes yet, ask what they're planning to change
 - If the change doesn't affect any publishable packages (e.g., only root config files), suggest using `bumpy add --empty` to satisfy CI checks
 - One bump file per logical change — don't combine unrelated changes
+- **Keep bump files up to date** — as work continues on a branch, the bump file should reflect the final state of all changes, not just the first commit. If packages were added/removed or the bump level changed (e.g., a patch fix grew into a minor feature), update the existing bump file accordingly

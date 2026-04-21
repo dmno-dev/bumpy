@@ -202,7 +202,7 @@ bumpy ai setup --target cursor    # creates Cursor rule file
 bumpy ai setup --target codex     # creates Codex instruction file
 ```
 
-The skill teaches the AI to examine git changes, identify affected packages, choose bump levels, and run `bumpy add` with the right arguments.
+The skill teaches the AI to examine git changes, identify affected packages, choose bump levels, and create bump files with `bumpy add`. It also instructs the AI to keep existing bump files up to date as work continues on a branch — updating packages, bump levels, and summaries to reflect the final state of changes.
 
 ## Documentation
 
