@@ -2,7 +2,7 @@ import { log, colorize } from '../utils/logger.ts';
 import { loadConfig } from '../core/config.ts';
 import { discoverWorkspace } from '../core/workspace.ts';
 import { DependencyGraph } from '../core/dep-graph.ts';
-import { readBumpFiles } from '../core/bump-file.ts';
+import { readBumpFiles, filterBranchBumpFiles } from '../core/bump-file.ts';
 import { getChangedFiles } from '../core/git.ts';
 import { assembleReleasePlan } from '../core/release-plan.ts';
 import { runArgs, runArgsAsync, tryRunArgs } from '../utils/shell.ts';
@@ -107,12 +107,22 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
 
   // Filter to only bump files added/modified in this PR
   const changedFiles = getChangedFiles(rootDir, config.baseBranch);
-  const prBumpFileIds = new Set(
-    changedFiles
-      .filter((f) => /^\.bumpy\/.*\.md$/.test(f) && !f.endsWith('README.md'))
-      .map((f) => f.replace(/^\.bumpy\//, '').replace(/\.md$/, '')),
+  const { branchBumpFiles: prBumpFiles, branchBumpFileIds: prBumpFileIds } = filterBranchBumpFiles(
+    allBumpFiles,
+    changedFiles,
   );
-  const prBumpFiles = allBumpFiles.filter((bf) => prBumpFileIds.has(bf.id));
+
+  // An empty bump file signals intentionally no releases needed
+  const hasEmptyBumpFile = prBumpFileIds.size > prBumpFiles.length;
+
+  if (hasEmptyBumpFile) {
+    log.success('Empty bump file found — no releases needed.');
+    if (shouldComment && prNumber) {
+      const prBranch = detectPrBranch(rootDir);
+      await postOrUpdatePrComment(prNumber, formatNoBumpFilesComment(prBranch, pm), rootDir, opts.patComments);
+    }
+    return;
+  }
 
   if (prBumpFiles.length === 0) {
     const msg = 'No bump files found in this PR.';
