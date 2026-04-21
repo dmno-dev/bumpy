@@ -172,3 +172,29 @@ function fileToId(filePath: string): string {
   const base = filePath.split('/').pop()!;
   return base.replace(/\.md$/, '');
 }
+
+/**
+ * Given a list of changed file paths (relative to root), extract the IDs
+ * of bump files that were added/modified. Shared by `check` and `ci check`.
+ */
+export function extractBumpFileIdsFromChangedFiles(changedFiles: string[]): Set<string> {
+  return new Set(
+    changedFiles
+      .filter((f) => /^\.bumpy\/.*\.md$/.test(f) && !f.endsWith('README.md'))
+      .map((f) => f.replace(/^\.bumpy\//, '').replace(/\.md$/, '')),
+  );
+}
+
+/**
+ * Filter bump files to only those added/modified on the current branch.
+ * Returns the filtered bump files and whether any changed bump file was
+ * empty (has no releases — signals intentionally no releases needed).
+ */
+export function filterBranchBumpFiles(
+  allBumpFiles: BumpFile[],
+  changedFiles: string[],
+): { branchBumpFiles: BumpFile[]; branchBumpFileIds: Set<string> } {
+  const branchBumpFileIds = extractBumpFileIdsFromChangedFiles(changedFiles);
+  const branchBumpFiles = allBumpFiles.filter((bf) => branchBumpFileIds.has(bf.id));
+  return { branchBumpFiles, branchBumpFileIds };
+}
