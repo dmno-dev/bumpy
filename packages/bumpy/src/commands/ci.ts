@@ -274,9 +274,16 @@ function pushWithToken(rootDir: string, branch: string, config: BumpyConfig): vo
         tryRunArgs(['git', 'config', '--local', '--unset', entry.key], { cwd: rootDir });
       }
       // Pass auth via ephemeral -c flag — never written to .git/config
-      runArgs(['git', '-c', `${extraHeaderKey}=${authHeader}`, 'push', '-u', 'origin', branch, '--force'], {
-        cwd: rootDir,
-      });
+      try {
+        runArgs(['git', '-c', `${extraHeaderKey}=${authHeader}`, 'push', '-u', 'origin', branch, '--force'], {
+          cwd: rootDir,
+        });
+      } catch (err) {
+        // Redact all forms of the token from error messages to prevent leakage
+        const msg = err instanceof Error ? err.message : String(err);
+        const redacted = msg.replaceAll(basicAuth, '***').replaceAll(token, '***');
+        throw new Error(redacted);
+      }
     } finally {
       // Restore extraheader and includeIf entries cleared above
       if (savedHeader) {
