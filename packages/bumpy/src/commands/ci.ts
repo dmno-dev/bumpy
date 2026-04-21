@@ -228,10 +228,9 @@ async function autoPublish(rootDir: string, config: BumpyConfig, tag?: string): 
  * When only the default `GITHUB_TOKEN` is available the push still succeeds,
  * but PR workflows won't be triggered automatically.
  */
-function pushWithToken(rootDir: string, branch: string): void {
+function pushWithToken(rootDir: string, branch: string, config: BumpyConfig): void {
   // Guard against misconfigured versionPr.branch pointing at the base branch
-  const baseBranch = tryRunArgs(['git', 'rev-parse', '--abbrev-ref', 'HEAD'], { cwd: rootDir });
-  if (branch === baseBranch || branch === 'main' || branch === 'master') {
+  if (branch === config.baseBranch || branch === 'main' || branch === 'master') {
     throw new Error(`Refusing to force-push to "${branch}" — this looks like a base branch, not a version PR branch`);
   }
 
@@ -347,7 +346,7 @@ async function createVersionPr(
   const commitMsg = ['Version packages', '', ...plan.releases.map((r) => `${r.name}@${r.newVersion}`)].join('\n');
   runArgs(['git', 'commit', '-F', '-'], { cwd: rootDir, input: commitMsg });
 
-  pushWithToken(rootDir, branch);
+  pushWithToken(rootDir, branch, config);
 
   // Create or update PR
   const prBody = formatVersionPrBody(plan, config.versionPr.preamble, packageDirs);
@@ -377,7 +376,7 @@ async function createVersionPr(
       // `pull_request: synchronize` event is generated and CI workflows trigger.
       // (The initial push happened before the PR existed, and the PR creation
       // event from GITHUB_TOKEN doesn't trigger workflows.)
-      pushWithToken(rootDir, branch);
+      pushWithToken(rootDir, branch, config);
     }
   }
 
