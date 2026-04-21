@@ -391,4 +391,73 @@ describe('applyReleasePlan', () => {
 
     expect(await exists(csPath)).toBe(false);
   });
+
+  test('deletes empty bump files that are not in the release plan', async () => {
+    const pkgDir = await setupPackage('pkg-a', '1.0.0');
+
+    const packages = new Map<string, WorkspacePackage>();
+    packages.set('pkg-a', {
+      name: 'pkg-a',
+      version: '1.0.0',
+      dir: pkgDir,
+      relativeDir: 'packages/pkg-a',
+      packageJson: { name: 'pkg-a', version: '1.0.0' },
+      private: false,
+      dependencies: {},
+      devDependencies: {},
+      peerDependencies: {},
+      optionalDependencies: {},
+    });
+
+    const bumpFile = makeBumpFile('real-bump', [{ name: 'pkg-a', type: 'patch' }], 'Fix');
+    const release = makeRelease('pkg-a', '1.0.1', {
+      oldVersion: '1.0.0',
+      bumpFiles: ['real-bump'],
+    });
+
+    await ensureDir(resolve(tmpDir, '.bumpy'));
+    const realPath = resolve(tmpDir, '.bumpy/real-bump.md');
+    const emptyPath = resolve(tmpDir, '.bumpy/empty-ci-setup.md');
+    await writeText(realPath, '---\n"pkg-a": patch\n---\n\nFix\n');
+    await writeText(emptyPath, '---\n---\n\n');
+    expect(await exists(emptyPath)).toBe(true);
+
+    await applyReleasePlan(makeReleasePlan([release], [bumpFile]), packages, tmpDir, makeConfig());
+
+    expect(await exists(realPath)).toBe(false);
+    expect(await exists(emptyPath)).toBe(false);
+  });
+
+  test('preserves README.md in .bumpy directory', async () => {
+    const pkgDir = await setupPackage('pkg-a', '1.0.0');
+
+    const packages = new Map<string, WorkspacePackage>();
+    packages.set('pkg-a', {
+      name: 'pkg-a',
+      version: '1.0.0',
+      dir: pkgDir,
+      relativeDir: 'packages/pkg-a',
+      packageJson: { name: 'pkg-a', version: '1.0.0' },
+      private: false,
+      dependencies: {},
+      devDependencies: {},
+      peerDependencies: {},
+      optionalDependencies: {},
+    });
+
+    const bumpFile = makeBumpFile('cs1', [{ name: 'pkg-a', type: 'patch' }], 'Fix');
+    const release = makeRelease('pkg-a', '1.0.1', {
+      oldVersion: '1.0.0',
+      bumpFiles: ['cs1'],
+    });
+
+    await ensureDir(resolve(tmpDir, '.bumpy'));
+    await writeText(resolve(tmpDir, '.bumpy/cs1.md'), '---\n"pkg-a": patch\n---\n\nFix\n');
+    const readmePath = resolve(tmpDir, '.bumpy/README.md');
+    await writeText(readmePath, '# Bump files go here\n');
+
+    await applyReleasePlan(makeReleasePlan([release], [bumpFile]), packages, tmpDir, makeConfig());
+
+    expect(await exists(readmePath)).toBe(true);
+  });
 });
