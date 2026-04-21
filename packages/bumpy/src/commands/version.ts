@@ -5,8 +5,10 @@ import { DependencyGraph } from '../core/dep-graph.ts';
 import { readBumpFiles } from '../core/bump-file.ts';
 import { assembleReleasePlan } from '../core/release-plan.ts';
 import { applyReleasePlan } from '../core/apply-release-plan.ts';
+import { resolve } from 'node:path';
 import { runArgs, tryRunArgs } from '../utils/shell.ts';
 import { detectWorkspaces } from '../utils/package-manager.ts';
+import type { ReleasePlan, CommitConfig } from '../types.ts';
 
 export async function versionCommand(rootDir: string): Promise<void> {
   const config = await loadConfig(rootDir);
@@ -64,7 +66,7 @@ export async function versionCommand(rootDir: string): Promise<void> {
       for (const lockfile of ['bun.lock', 'bun.lockb', 'pnpm-lock.yaml', 'yarn.lock', 'package-lock.json']) {
         tryRunArgs(['git', 'add', '--', lockfile], { cwd: rootDir });
       }
-      const msg = ['Version packages', '', ...plan.releases.map((r) => `${r.name}@${r.newVersion}`)].join('\n');
+      const msg = await resolveCommitMessage(config.commit, plan, rootDir);
       runArgs(['git', 'commit', '-F', '-'], { cwd: rootDir, input: msg });
       log.success('Created git commit');
     } catch (e) {
@@ -85,6 +87,26 @@ async function updateLockfile(rootDir: string): Promise<void> {
   } catch (err) {
     log.warn(`  Lockfile update failed: ${err instanceof Error ? err.message : err}`);
   }
+}
+
+async function resolveCommitMessage(commit: true | CommitConfig, plan: ReleasePlan, rootDir: string): Promise<string> {
+  const defaultMsg = ['Version packages', '', ...plan.releases.map((r) => `${r.name}@${r.newVersion}`)].join('\n');
+
+  if (commit === true) return defaultMsg;
+
+  if (commit.message) return commit.message;
+
+  if (commit.generateFn) {
+    const fnPath = resolve(rootDir, commit.generateFn);
+    const mod = await import(fnPath);
+    const fn = mod.default ?? mod;
+    if (typeof fn !== 'function') {
+      throw new Error(`commit.generateFn module "${commit.generateFn}" must export a function`);
+    }
+    return fn(plan);
+  }
+
+  return defaultMsg;
 }
 
 function getInstallArgs(pm: string): string[] {

@@ -39,6 +39,13 @@ export const DEP_TYPES: DepType[] = ['dependencies', 'devDependencies', 'peerDep
 
 // ---- Config ----
 
+export interface CommitConfig {
+  /** Static commit message */
+  message?: string;
+  /** Path to a module that exports a function to generate the commit message */
+  generateFn?: string;
+}
+
 export interface PublishConfig {
   /** Package manager to use for packing. "auto" detects from lockfile. Default: "auto" */
   packManager: 'auto' | 'npm' | 'pnpm' | 'bun' | 'yarn';
@@ -59,10 +66,19 @@ export interface PublishConfig {
 export interface BumpyConfig {
   baseBranch: string;
   access: 'public' | 'restricted';
-  commit: boolean;
-  changelog: string | [string, Record<string, unknown>];
+  /**
+   * Auto-commit changes after `bumpy version`.
+   * false = don't commit (default)
+   * true = commit with default message
+   * { message: "..." } = commit with a static custom message
+   * { generateFn: "./path.ts" } = commit with a dynamically generated message
+   */
+  commit: boolean | CommitConfig;
+  changelog: false | string | [string, Record<string, unknown>];
   fixed: string[][];
   linked: string[][];
+  /** Glob patterns to filter which changed files count toward marking a package as changed */
+  changedFilePatterns: string[];
   /** Package names/globs to exclude from version management */
   ignore: string[];
   /** Package names/globs to explicitly include (overrides private + ignore) */
@@ -112,6 +128,8 @@ export interface PackageConfig {
   skipNpmPublish?: boolean;
   /** Command to check if a version is already published. Should output the published version string. */
   checkPublished?: string;
+  /** Glob patterns to filter which changed files count toward marking this package as changed */
+  changedFilePatterns?: string[];
   dependencyBumpRules?: Partial<Record<DepType, DependencyBumpRule | false>>;
   cascadeTo?: Record<string, DependencyBumpRule>;
 }
@@ -127,6 +145,7 @@ export const DEFAULT_CONFIG: BumpyConfig = {
   baseBranch: 'main',
   access: 'public',
   commit: false,
+  changedFilePatterns: ['**'],
   changelog: 'default',
   fixed: [],
   linked: [],

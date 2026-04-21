@@ -111,7 +111,6 @@ async function migrateConfig(changesetConfigPath: string, bumpyDir: string): Pro
   const migrateableFields = [
     'baseBranch',
     'access',
-    'commit',
     'fixed',
     'linked',
     'ignore',
@@ -123,6 +122,14 @@ async function migrateConfig(changesetConfigPath: string, bumpyDir: string): Pro
     if (csConfig[field] !== undefined) {
       bumpyConfig[field] = csConfig[field];
     }
+  }
+
+  // Migrate commit (changesets supports boolean | string | [string, options], bumpy only takes boolean for simple migration)
+  if (typeof csConfig.commit === 'boolean') {
+    bumpyConfig.commit = csConfig.commit;
+  } else if (csConfig.commit) {
+    bumpyConfig.commit = true;
+    log.warn('Changesets custom commit message module not migrated — using `commit: true` instead.');
   }
 
   // Note: changesets' changelog, ___experimentalUnsafeOptions_WILL_CHANGE_IN_PATCH, etc. are not migrated

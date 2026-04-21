@@ -5,10 +5,10 @@ import { p, unwrap } from '../utils/clack.ts';
 import { ensureDir, exists } from '../utils/fs.ts';
 import { randomName, slugify } from '../utils/names.ts';
 import { writeBumpFile } from '../core/bump-file.ts';
-import { getBumpyDir, loadConfig } from '../core/config.ts';
+import picomatch from 'picomatch';
+import { getBumpyDir, loadConfig, loadPackageConfig, matchGlob } from '../core/config.ts';
 import { discoverPackages } from '../core/workspace.ts';
 import { DependencyGraph } from '../core/dep-graph.ts';
-import { matchGlob } from '../core/config.ts';
 import { getChangedFiles } from '../core/git.ts';
 import { bumpSelectPrompt } from '../prompts/bump-select.ts';
 import type { BumpSelectItem } from '../prompts/bump-select.ts';
@@ -66,12 +66,23 @@ export async function addCommand(rootDir: string, opts: AddOptions): Promise<voi
     // Detect which packages have changed on this branch
     const baseBranch = config.baseBranch;
     const changedFiles = getChangedFiles(rootDir, baseBranch);
+    // Build per-package matchers (per-package patterns override root patterns)
+    const matchers = new Map<string, picomatch.Matcher>();
+    for (const [name, pkg] of pkgs) {
+      const pkgConfig = await loadPackageConfig(pkg.dir, config, name);
+      const patterns = pkgConfig.changedFilePatterns ?? config.changedFilePatterns;
+      matchers.set(name, picomatch(patterns));
+    }
+
     const changedPackageNames = new Set<string>();
     for (const file of changedFiles) {
       for (const [name, pkg] of pkgs) {
         const pkgRelDir = relative(rootDir, pkg.dir);
         if (file.startsWith(pkgRelDir + '/')) {
-          changedPackageNames.add(name);
+          const relToPackage = file.slice(pkgRelDir.length + 1);
+          if (matchers.get(name)!(relToPackage)) {
+            changedPackageNames.add(name);
+          }
         }
       }
     }
