@@ -5,7 +5,6 @@ import { DependencyGraph } from '../core/dep-graph.ts';
 import { readBumpFiles } from '../core/bump-file.ts';
 import { assembleReleasePlan } from '../core/release-plan.ts';
 import { applyReleasePlan } from '../core/apply-release-plan.ts';
-import { resolve } from 'node:path';
 import { runArgs, tryRunArgs } from '../utils/shell.ts';
 import { detectWorkspaces } from '../utils/package-manager.ts';
 import { resolveCommitMessage } from '../core/commit-message.ts';
