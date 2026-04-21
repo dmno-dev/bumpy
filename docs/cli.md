@@ -84,7 +84,7 @@ bumpy publish --filter "@myorg/*"
 
 **How bumpy detects unpublished packages:**
 
-1. Custom `checkPublished` command (if configured per-package)
+1. Custom `checkPublished` command (if configured per-package — see [`allowCustomCommands`](./configuration.md#custom-commands-and-allowcustomcommands))
 2. Git tags (for packages with `skipNpmPublish` or custom `publishCommand`)
 3. npm registry query (default)
 
