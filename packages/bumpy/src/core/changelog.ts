@@ -74,7 +74,13 @@ const BUILTIN_FORMATTERS: Record<string, ChangelogFormatter | (() => Promise<Cha
 export async function loadFormatter(changelog: BumpyConfig['changelog'], rootDir: string): Promise<ChangelogFormatter> {
   const [name, options] = Array.isArray(changelog) ? changelog : [changelog, {}];
 
-  // Built-in formatter
+  // Built-in with options (e.g., ["github", { repo: "..." }])
+  if (name === 'github') {
+    const { createGithubFormatter } = await import('./changelog-github.ts');
+    return createGithubFormatter(options as import('./changelog-github.ts').GithubChangelogOptions);
+  }
+
+  // Built-in formatter (no options)
   if (typeof name === 'string' && BUILTIN_FORMATTERS[name]) {
     const builtin = BUILTIN_FORMATTERS[name];
     if (typeof builtin === 'function' && builtin.length === 0) {
@@ -82,12 +88,6 @@ export async function loadFormatter(changelog: BumpyConfig['changelog'], rootDir
       return (builtin as () => Promise<ChangelogFormatter>)();
     }
     return builtin as ChangelogFormatter;
-  }
-
-  // Built-in with options (e.g., ["github", { repo: "..." }])
-  if (name === 'github') {
-    const { createGithubFormatter } = await import('./changelog-github.ts');
-    return createGithubFormatter(options as import('./changelog-github.ts').GithubChangelogOptions);
   }
 
   // Custom module

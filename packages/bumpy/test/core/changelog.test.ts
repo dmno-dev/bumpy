@@ -1,6 +1,12 @@
-import { test, expect, describe } from 'bun:test';
+import { test, expect, describe, beforeEach, afterEach } from 'bun:test';
 import { makeRelease, makeBumpFile } from '../helpers.ts';
-import { defaultFormatter, generateChangelogEntry, prependToChangelog } from '../../src/core/changelog.ts';
+import { installShellMock, uninstallShellMock, addMockRule } from '../helpers-shell-mock.ts';
+import {
+  defaultFormatter,
+  generateChangelogEntry,
+  loadFormatter,
+  prependToChangelog,
+} from '../../src/core/changelog.ts';
 
 describe('defaultFormatter', () => {
   test('formats basic release with bump files', async () => {
@@ -152,5 +158,54 @@ describe('prependToChangelog', () => {
 
     expect(result).toContain('- Old entry');
     expect(result).toContain('- New entry');
+  });
+});
+
+describe('loadFormatter', () => {
+  beforeEach(() => {
+    installShellMock();
+    addMockRule({ match: 'gh repo view', response: 'dmno-dev/bumpy' });
+  });
+
+  afterEach(() => {
+    uninstallShellMock();
+  });
+
+  test('passes options through to github formatter', async () => {
+    addMockRule({ match: /^git log/, response: '' });
+
+    const formatter = await loadFormatter(
+      ['github', { internalAuthors: ['theoephraim'], repo: 'dmno-dev/bumpy' }],
+      '/tmp',
+    );
+    const release = makeRelease('pkg-a', '1.0.1', { bumpFiles: ['cs1'] });
+    const bumpFiles = [makeBumpFile('cs1', [{ name: 'pkg-a', type: 'patch' }], 'author: @theoephraim\nFixed it')];
+
+    const result = await formatter({ release, bumpFiles, date: '2026-04-14' });
+
+    expect(result).not.toContain('Thanks');
+  });
+
+  test('github formatter without options still works', async () => {
+    addMockRule({ match: /^git log/, response: '' });
+
+    const formatter = await loadFormatter('github', '/tmp');
+    const release = makeRelease('pkg-a', '1.0.1', { bumpFiles: ['cs1'] });
+    const bumpFiles = [makeBumpFile('cs1', [{ name: 'pkg-a', type: 'patch' }], 'author: @someone\nFixed it')];
+
+    const result = await formatter({ release, bumpFiles, date: '2026-04-14' });
+
+    expect(result).toContain('Thanks [@someone]');
+  });
+
+  test('loads default formatter by name', async () => {
+    const formatter = await loadFormatter('default', '/tmp');
+    const release = makeRelease('pkg-a', '1.0.0', { bumpFiles: ['cs1'] });
+    const bumpFiles = [makeBumpFile('cs1', [{ name: 'pkg-a', type: 'patch' }], 'A fix')];
+
+    const result = await formatter({ release, bumpFiles, date: '2026-04-14' });
+
+    expect(result).toContain('## 1.0.0');
+    expect(result).toContain('- A fix');
   });
 });
