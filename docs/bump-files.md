@@ -65,19 +65,18 @@ Flags:
 - `--name <name>` — set the filename (auto-slugified). If omitted, a random name is generated.
 - `--empty` — create an empty bump file (marks a PR as intentionally having no releases)
 
-### From conventional commits
+### From branch commits
 
 ```bash
 bumpy generate
 ```
 
-Scans git history and auto-creates bump files from conventional commit messages:
+Scans commits on the current branch and auto-creates a bump file. Works with any commit style:
 
-- `feat:` → minor
-- `fix:`, `perf:`, `refactor:`, etc. → patch
-- `feat!:` or `BREAKING CHANGE:` → major
+- **Conventional commits** (`feat(scope): ...`) get bump levels from the commit type (`feat` → minor, `fix` → patch, `feat!` → major)
+- **All other commits** are mapped to packages via changed file paths, defaulting to `patch`
 
-Commit scopes are mapped to package names automatically.
+See [`bumpy generate`](cli.md#bumpy-generate) for full details.
 
 ## Empty bump files
 

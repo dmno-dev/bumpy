@@ -54,6 +54,43 @@ export function getChangedFiles(rootDir: string, baseBranch: string): string[] {
   return diff.split('\n').filter(Boolean);
 }
 
+/** Get commits on the current branch since it diverged from baseBranch */
+export function getBranchCommits(
+  rootDir: string,
+  baseBranch: string,
+): { hash: string; subject: string; body: string }[] {
+  // Ensure we have the base branch ref
+  if (!tryRunArgs(['git', 'rev-parse', '--verify', `origin/${baseBranch}`], { cwd: rootDir })) {
+    tryRunArgs(['git', 'fetch', 'origin', baseBranch, '--depth=1'], { cwd: rootDir });
+  }
+
+  const mergeBase = tryRunArgs(['git', 'merge-base', 'HEAD', `origin/${baseBranch}`], { cwd: rootDir });
+  const ref = mergeBase || `origin/${baseBranch}`;
+
+  const rawLog = tryRunArgs(['git', 'log', `${ref}..HEAD`, '--format=%H%n%s%n%b%n---END---'], { cwd: rootDir });
+  if (!rawLog) return [];
+
+  const commits: { hash: string; subject: string; body: string }[] = [];
+  const entries = rawLog.split('---END---').filter((e) => e.trim());
+  for (const entry of entries) {
+    const lines = entry.trim().split('\n');
+    if (lines.length < 2) continue;
+    commits.push({
+      hash: lines[0]!.trim(),
+      subject: lines[1]!.trim(),
+      body: lines.slice(2).join('\n').trim(),
+    });
+  }
+  return commits;
+}
+
+/** Get files changed in a specific commit */
+export function getFilesChangedInCommit(hash: string, opts?: { cwd?: string }): string[] {
+  const result = tryRunArgs(['git', 'diff-tree', '--no-commit-id', '--name-only', '-r', hash], opts);
+  if (!result) return [];
+  return result.split('\n').filter(Boolean);
+}
+
 /** Get all tags matching a pattern */
 export function listTags(pattern: string, opts?: { cwd?: string }): string[] {
   const result = tryRunArgs(['git', 'tag', '-l', pattern], opts);
