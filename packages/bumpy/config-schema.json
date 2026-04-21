@@ -20,11 +20,10 @@
       "description": "Default npm publish access level",
       "default": "public"
     },
-    "commit": {
-      "description": "Auto-commit changes after `bumpy version`. false = don't commit, true = commit with default message, or an object for custom message.",
-      "default": false,
+    "versionCommitMessage": {
+      "description": "Customize the commit message used when versioning (by `bumpy version --commit` and CI commands). Omit to use the default message.",
       "oneOf": [
-        { "type": "boolean" },
+        { "type": "string", "description": "Static commit message" },
         {
           "type": "object",
           "properties": {

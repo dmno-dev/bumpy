@@ -17,7 +17,7 @@ Bumpy is configured via `.bumpy/_config.json`, created by `bumpy init`. Per-pack
 | `updateInternalDependencies` | `"patch" \| "minor" \| "out-of-range"` | `"out-of-range"`                 | When to update internal dependency version ranges                                                |
 | `dependencyBumpRules`        | `object`                               | see below                        | Controls how bumps propagate through dependency types                                            |
 | `aggregateRelease`           | `boolean \| { enabled, title }`        | `false`                          | Create a single GitHub release instead of one per package                                        |
-| `commit`                     | `boolean \| object`                    | `false`                          | Auto-commit after `bumpy version` (see below)                                                    |
+| `versionCommitMessage`       | `string \| object`                     | —                                | Customize the version commit message (see below)                                                 |
 | `changedFilePatterns`        | `string[]`                             | `["**"]`                         | Glob patterns to filter which changed files count toward marking a package as changed            |
 | `publish`                    | `object`                               | see below                        | Publishing pipeline config                                                                       |
 | `gitUser`                    | `{ name, email }`                      | bumpy-bot                        | Git identity for CI commits                                                                      |
@@ -47,14 +47,15 @@ Set a dependency type to `false` to disable propagation entirely.
 
 See [version-propagation.md](version-propagation.md) for the full propagation algorithm.
 
-### Commit config
+### Version commit message
 
-Controls whether `bumpy version` auto-commits changes:
+Customize the commit message used when versioning — both by `bumpy version --commit` and CI commands. Omit to use the default ("Version packages" + list of releases).
 
-- `false` — don't commit (default)
-- `true` — commit with the default message ("Version packages" + list of releases)
-- `{ message: "..." }` — commit with a static custom message
-- `{ generateFn: "./path.ts" }` — commit with a dynamically generated message. The module should export a function that receives the release plan and returns a string.
+- `"My release"` — static commit message string
+- `{ message: "..." }` — static commit message
+- `{ generateFn: "./path.ts" }` — dynamically generated message. The module should export a function that receives the release plan and returns a string.
+
+To auto-commit locally, pass the `--commit` flag: `bumpy version --commit`. CI commands always commit and push automatically.
 
 ### Publishing config
 

@@ -8,9 +8,13 @@ import { applyReleasePlan } from '../core/apply-release-plan.ts';
 import { resolve } from 'node:path';
 import { runArgs, tryRunArgs } from '../utils/shell.ts';
 import { detectWorkspaces } from '../utils/package-manager.ts';
-import type { ReleasePlan, CommitConfig } from '../types.ts';
+import { resolveCommitMessage } from '../core/commit-message.ts';
 
-export async function versionCommand(rootDir: string): Promise<void> {
+interface VersionOptions {
+  commit?: boolean;
+}
+
+export async function versionCommand(rootDir: string, opts: VersionOptions = {}): Promise<void> {
   const config = await loadConfig(rootDir);
   const packages = await discoverPackages(rootDir, config);
   const depGraph = new DependencyGraph(packages);
@@ -53,7 +57,7 @@ export async function versionCommand(rootDir: string): Promise<void> {
   await updateLockfile(rootDir);
 
   // Optionally commit
-  if (config.commit) {
+  if (opts.commit) {
     try {
       // Stage version changes, changelogs, deleted bump files, and lockfile
       runArgs(['git', 'add', '-A', '.bumpy/'], { cwd: rootDir });
@@ -66,7 +70,7 @@ export async function versionCommand(rootDir: string): Promise<void> {
       for (const lockfile of ['bun.lock', 'bun.lockb', 'pnpm-lock.yaml', 'yarn.lock', 'package-lock.json']) {
         tryRunArgs(['git', 'add', '--', lockfile], { cwd: rootDir });
       }
-      const msg = await resolveCommitMessage(config.commit, plan, rootDir);
+      const msg = await resolveCommitMessage(config.versionCommitMessage, plan, rootDir);
       runArgs(['git', 'commit', '-F', '-'], { cwd: rootDir, input: msg });
       log.success('Created git commit');
     } catch (e) {
@@ -87,26 +91,6 @@ async function updateLockfile(rootDir: string): Promise<void> {
   } catch (err) {
     log.warn(`  Lockfile update failed: ${err instanceof Error ? err.message : err}`);
   }
-}
-
-async function resolveCommitMessage(commit: true | CommitConfig, plan: ReleasePlan, rootDir: string): Promise<string> {
-  const defaultMsg = ['Version packages', '', ...plan.releases.map((r) => `${r.name}@${r.newVersion}`)].join('\n');
-
-  if (commit === true) return defaultMsg;
-
-  if (commit.message) return commit.message;
-
-  if (commit.generateFn) {
-    const fnPath = resolve(rootDir, commit.generateFn);
-    const mod = await import(fnPath);
-    const fn = mod.default ?? mod;
-    if (typeof fn !== 'function') {
-      throw new Error(`commit.generateFn module "${commit.generateFn}" must export a function`);
-    }
-    return fn(plan);
-  }
-
-  return defaultMsg;
 }
 
 function getInstallArgs(pm: string): string[] {
