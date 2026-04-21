@@ -207,7 +207,7 @@ async function autoPublish(rootDir: string, config: BumpyConfig, tag?: string): 
   const status = tryRunArgs(['git', 'status', '--porcelain'], { cwd: rootDir });
   if (status) {
     runArgs(['git', 'commit', '-m', 'Version packages'], { cwd: rootDir });
-    runArgs(['git', 'push'], { cwd: rootDir });
+    runArgs(['git', 'push', '--no-verify'], { cwd: rootDir });
   }
 
   log.step('Running bumpy publish...');
@@ -244,14 +244,14 @@ function pushWithToken(rootDir: string, branch: string, config: BumpyConfig): vo
 
     // `actions/checkout@v6` persists the default GITHUB_TOKEN in two ways:
     //   1. Direct http.<server>/.extraheader config
-    //   2. includeIf.gitdir entries pointing to a credentials config file
+    //   2. includeIf.gitdir entries pointing to credential config files
     //      that also sets http.<server>/.extraheader
     // Both must be cleared for our custom token to be used.
     const extraHeaderKey = `http.${server}/.extraheader`;
     const savedHeader = tryRunArgs(['git', 'config', '--local', extraHeaderKey], { cwd: rootDir });
 
     // Collect includeIf entries that point to credential config files
-    // git config --get-regexp outputs keys in lowercase, so match accordingly
+    // git config --get-regexp outputs keys in lowercase
     const includeIfRaw = tryRunArgs(['git', 'config', '--local', '--get-regexp', '^includeif\\.gitdir:'], {
       cwd: rootDir,
     });
@@ -274,7 +274,9 @@ function pushWithToken(rootDir: string, branch: string, config: BumpyConfig): vo
       }
       runArgs(['git', 'remote', 'set-url', 'origin', authedUrl], { cwd: rootDir });
       try {
-        runArgs(['git', 'push', '-u', 'origin', branch, '--force'], { cwd: rootDir });
+        // --no-verify skips pre-push hooks (e.g. bumpy check) which would fail
+        // on the version branch since bump files are consumed during versioning
+        runArgs(['git', 'push', '-u', 'origin', branch, '--force', '--no-verify'], { cwd: rootDir });
       } catch (err) {
         // Redact token from error messages to prevent leakage in CI logs
         const msg = err instanceof Error ? err.message : String(err);
@@ -294,7 +296,7 @@ function pushWithToken(rootDir: string, branch: string, config: BumpyConfig): vo
     }
     log.dim('  Pushed with custom token — PR workflows will be triggered');
   } else {
-    runArgs(['git', 'push', '-u', 'origin', branch, '--force'], { cwd: rootDir });
+    runArgs(['git', 'push', '-u', 'origin', branch, '--force', '--no-verify'], { cwd: rootDir });
     if (!token && repo) {
       // Only warn on GitHub Actions — other CI providers don't have this limitation
       log.warn(
