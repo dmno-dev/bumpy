@@ -1,7 +1,16 @@
 import { resolve } from 'node:path';
-import { readJson, readText, writeText, exists, updateJsonFields, updateJsonNestedField } from '../utils/fs.ts';
-import { deleteBumpFiles } from './bump-file.ts';
+import {
+  readJson,
+  readText,
+  writeText,
+  exists,
+  updateJsonFields,
+  updateJsonNestedField,
+  listFiles,
+  removeFile,
+} from '../utils/fs.ts';
 import { generateChangelogEntry, prependToChangelog, loadFormatter } from './changelog.ts';
+import { getBumpyDir } from './config.ts';
 import type { ReleasePlan, WorkspacePackage, BumpyConfig } from '../types.ts';
 
 /** Apply the release plan: bump versions, update changelogs, delete bump files */
@@ -50,9 +59,13 @@ export async function applyReleasePlan(
     await writeText(changelogPath, newContent);
   }
 
-  // 3. Delete consumed bump files
-  const bfIds = releasePlan.bumpFiles.map((bf) => bf.id);
-  await deleteBumpFiles(rootDir, bfIds);
+  // 3. Delete all bump files (including empty ones that aren't in the release plan)
+  const bumpyDir = getBumpyDir(rootDir);
+  const allBumpFiles = await listFiles(bumpyDir, '.md');
+  for (const file of allBumpFiles) {
+    if (file === 'README.md') continue;
+    await removeFile(resolve(bumpyDir, file));
+  }
 }
 
 /** Update a version range to include a new version, preserving the range prefix */
