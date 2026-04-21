@@ -1,7 +1,6 @@
 import { resolve } from 'node:path';
 import { readJson, exists } from '../utils/fs.ts';
 import { type BumpyConfig, type PackageConfig, DEFAULT_CONFIG } from '../types.ts';
-import { log } from '../utils/logger.ts';
 
 const BUMPY_DIR = '.bumpy';
 const CONFIG_FILE = '_config.json';

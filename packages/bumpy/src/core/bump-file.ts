@@ -16,8 +16,8 @@ const VALID_BUMP_TYPES = new Set<string>(['major', 'minor', 'patch', 'none']);
  */
 function validatePackageName(name: string): boolean {
   if (!name || name.length > 214) return false;
-  // disallow control chars, HTML/shell metacharacters, whitespace (except internal spaces in theory, but let's be strict)
-  if (/[\x00-\x1f\x7f<>"'`&;|$(){}[\]\\!#%\s]/.test(name)) return false;
+  // disallow control chars, HTML/shell metacharacters, whitespace
+  if (/[\u0000-\u001f\u007f<>"'`&;|$(){}[\]\\!#%\s]/.test(name)) return false;
   // must not start with - (could be interpreted as a CLI flag)
   if (name.startsWith('-')) return false;
   return true;
