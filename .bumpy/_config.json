@@ -1,4 +1,5 @@
 {
+  "$schema": "../packages/bumpy/config-schema.json",
   "baseBranch": "main",
   "changelog": ["github", { "internalAuthors": ["theoephraim", "philmillman"] }]
 }

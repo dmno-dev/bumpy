@@ -2,7 +2,6 @@ import { resolve } from 'node:path';
 import { ensureDir, writeJson, writeText, exists } from '../utils/fs.ts';
 import { log } from '../utils/logger.ts';
 import { detectPackageManager } from '../utils/package-manager.ts';
-import type { BumpyConfig } from '../types.ts';
 import readmeTemplate from '../../../../.bumpy/README.md';
 
 const PM_RUNNER: Record<string, string> = {
@@ -23,7 +22,8 @@ export async function initCommand(rootDir: string): Promise<void> {
   await ensureDir(bumpyDir);
 
   // Write a minimal config (only non-default values would go here)
-  const config: Partial<BumpyConfig> = {
+  const config: Record<string, unknown> = {
+    $schema: '../node_modules/@varlock/bumpy/config-schema.json',
     baseBranch: 'main',
     changelog: 'default',
   };

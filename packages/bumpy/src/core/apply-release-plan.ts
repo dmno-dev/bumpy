@@ -21,7 +21,7 @@ export async function applyReleasePlan(
   config: BumpyConfig,
 ): Promise<void> {
   const releaseMap = new Map(releasePlan.releases.map((r) => [r.name, r]));
-  const formatter = await loadFormatter(config.changelog, rootDir);
+  const formatter = config.changelog !== false ? await loadFormatter(config.changelog, rootDir) : null;
 
   // 1. Update package.json versions and internal dependency ranges (preserving formatting)
   for (const release of releasePlan.releases) {
@@ -46,17 +46,19 @@ export async function applyReleasePlan(
   }
 
   // 2. Update changelogs
-  for (const release of releasePlan.releases) {
-    const pkg = packages.get(release.name)!;
-    const changelogPath = resolve(pkg.dir, 'CHANGELOG.md');
+  if (formatter) {
+    for (const release of releasePlan.releases) {
+      const pkg = packages.get(release.name)!;
+      const changelogPath = resolve(pkg.dir, 'CHANGELOG.md');
 
-    const entry = await generateChangelogEntry(release, releasePlan.bumpFiles, formatter);
-    let existingContent = '';
-    if (await exists(changelogPath)) {
-      existingContent = await readText(changelogPath);
+      const entry = await generateChangelogEntry(release, releasePlan.bumpFiles, formatter);
+      let existingContent = '';
+      if (await exists(changelogPath)) {
+        existingContent = await readText(changelogPath);
+      }
+      const newContent = prependToChangelog(existingContent, entry);
+      await writeText(changelogPath, newContent);
     }
-    const newContent = prependToChangelog(existingContent, entry);
-    await writeText(changelogPath, newContent);
   }
 
   // 3. Delete all bump files (including empty ones that aren't in the release plan)
