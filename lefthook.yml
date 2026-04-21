@@ -8,3 +8,8 @@ pre-commit:
       glob: '*.{js,ts,tsx,jsx,json,css,md,yml,yaml}'
       run: bunx oxfmt {staged_files}
       stage_fixed: true
+
+pre-push:
+  jobs:
+    - name: bumpy-check
+      run: bunx @varlock/bumpy check
