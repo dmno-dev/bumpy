@@ -1,4 +1,4 @@
-import { resolve } from 'node:path';
+import { relative, resolve } from 'node:path';
 import pc from 'picocolors';
 import { log } from '../utils/logger.ts';
 import { p, unwrap } from '../utils/clack.ts';
@@ -9,6 +9,9 @@ import { getBumpyDir, loadConfig } from '../core/config.ts';
 import { discoverPackages } from '../core/workspace.ts';
 import { DependencyGraph } from '../core/dep-graph.ts';
 import { matchGlob } from '../core/config.ts';
+import { getChangedFiles } from '../core/git.ts';
+import { bumpSelectPrompt } from '../prompts/bump-select.ts';
+import type { BumpSelectItem } from '../prompts/bump-select.ts';
 import type { BumpType, BumpTypeWithIsolated, BumpFileRelease, BumpFileReleaseCascade } from '../types.ts';
 
 interface AddOptions {
@@ -17,13 +20,6 @@ interface AddOptions {
   name?: string;
   empty?: boolean;
 }
-
-const BUMP_CHOICES: { label: string; value: BumpTypeWithIsolated; hint?: string }[] = [
-  { label: 'patch', value: 'patch' },
-  { label: 'minor', value: 'minor' },
-  { label: 'major', value: 'major' },
-  { label: 'patch (isolated)', value: 'patch-isolated', hint: 'skips propagation' },
-];
 
 const CASCADE_CHOICES: { label: string; value: BumpType }[] = [
   { label: 'patch', value: 'patch' },
@@ -67,27 +63,40 @@ export async function addCommand(rootDir: string, opts: AddOptions): Promise<voi
       process.exit(1);
     }
 
-    const selected = unwrap(
-      await p.multiselect<string>({
-        message: 'Which packages should be included in this bump file?',
-        options: [...pkgs.values()].map((pkg) => ({
-          label: pkg.name,
-          value: pkg.name,
-          hint: pkg.version,
-        })),
-        required: true,
-      }),
-    );
+    // Detect which packages have changed on this branch
+    const baseBranch = config.baseBranch;
+    const changedFiles = getChangedFiles(rootDir, baseBranch);
+    const changedPackageNames = new Set<string>();
+    for (const file of changedFiles) {
+      for (const [name, pkg] of pkgs) {
+        const pkgRelDir = relative(rootDir, pkg.dir);
+        if (file.startsWith(pkgRelDir + '/')) {
+          changedPackageNames.add(name);
+        }
+      }
+    }
+
+    // Build items for the bump select prompt
+    const bumpSelectItems: BumpSelectItem[] = [...pkgs.values()].map((pkg) => ({
+      name: pkg.name,
+      version: pkg.version,
+      changed: changedPackageNames.has(pkg.name),
+    }));
+
+    const bumpSelectResult = await bumpSelectPrompt(bumpSelectItems);
+    if (typeof bumpSelectResult === 'symbol') {
+      p.cancel('Aborted');
+      process.exit(0);
+    }
+    const bumpSelections = bumpSelectResult;
+
+    if (bumpSelections.length === 0) {
+      p.cancel('No packages selected.');
+      process.exit(0);
+    }
 
     releases = [];
-    for (const name of selected) {
-      const bumpType = unwrap(
-        await p.select<BumpTypeWithIsolated>({
-          message: `Bump type for ${pc.cyan(name)}`,
-          options: BUMP_CHOICES,
-        }),
-      );
-
+    for (const { name, type: bumpType } of bumpSelections) {
       const release: BumpFileRelease = { name, type: bumpType };
 
       // Offer cascade options if the package has dependents and bump is not isolated
