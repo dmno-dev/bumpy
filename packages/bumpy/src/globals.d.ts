@@ -13,3 +13,8 @@ declare const __BUMPY_VERSION__: string;
  * Injected at build time by tsdown, or via bunfig.toml when running from source
  * */
 declare const __BUMPY_WEBSITE_URL__: string;
+
+declare module '*.md' {
+  const content: string;
+  export default content;
+}
