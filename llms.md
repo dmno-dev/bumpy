@@ -349,10 +349,11 @@ Default flow: detects PM → packs tarball (resolves workspace:/catalog: protoco
 
 PR check — reports pending bump files and optionally comments on the PR with the release plan.
 
-| Flag                | Description                                                   |
-| ------------------- | ------------------------------------------------------------- |
-| `--comment`         | Force PR commenting on/off (auto-detected in CI environments) |
-| `--fail-on-missing` | Exit 1 if no bump files found                                 |
+| Flag                | Description                                                           |
+| ------------------- | --------------------------------------------------------------------- |
+| `--comment`         | Force PR commenting on/off (auto-detected in CI environments)         |
+| `--fail-on-missing` | Exit 1 if no bump files found                                         |
+| `--pat-comments`    | Post PR comments using `BUMPY_GH_TOKEN` instead of default `GH_TOKEN` |
 
 Auto-detects PR number from `GITHUB_REF` in GitHub Actions. Also checks `BUMPY_PR_NUMBER` and `PR_NUMBER` env vars.
 
@@ -365,6 +366,7 @@ Release automation — either creates a "Version Packages" PR or auto-publishes 
 | `--auto-publish`  | Version + publish directly instead of creating a PR            |
 | `--tag <tag>`     | npm dist-tag for auto-publish mode                             |
 | `--branch <name>` | Branch name for version PR (default: `bumpy/version-packages`) |
+| `--pat-pr`        | Create/edit the version PR using `BUMPY_GH_TOKEN`              |
 
 Default mode (`version-pr`): creates a branch, runs `bumpy version`, commits, and opens/updates a PR via `gh`. Merging that PR triggers publish.
 

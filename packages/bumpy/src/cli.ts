@@ -105,6 +105,7 @@ async function main() {
           await ciCheckCommand(rootDir, {
             comment: ciFlags.comment !== undefined ? ciFlags.comment === true : undefined,
             failOnMissing: ciFlags['fail-on-missing'] === true,
+            patComments: ciFlags['pat-comments'] === true,
           });
         } else if (subcommand === 'release') {
           const { ciReleaseCommand } = await import('./commands/ci.ts');
@@ -113,6 +114,7 @@ async function main() {
             mode,
             tag: ciFlags.tag as string | undefined,
             branch: ciFlags.branch as string | undefined,
+            patPr: ciFlags['pat-pr'] === true,
           });
         } else if (subcommand === 'setup') {
           const { ciSetupCommand } = await import('./commands/ci-setup.ts');
