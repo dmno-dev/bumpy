@@ -125,9 +125,9 @@ Bumpy includes the release date in every changelog heading by default.
 
 - (Previously listed under Planned)
 
-### Conventional commits bridge
+### Auto-generate from commits
 
-`bumpy generate` scans git history and auto-generates bump files from conventional commits (`feat(scope): ...` → minor, `fix(scope): ...` → patch, `feat!(scope): ...` → major). Scope is mapped to package names automatically. Not a replacement for explicit bump files — a bridge for teams migrating from semantic-release, or a convenience when you want both.
+`bumpy generate` scans commits on the current branch and auto-creates bump files. It works with any commit style — conventional commits get enhanced bump-level detection (`feat` → minor, `fix` → patch, `feat!` → major), while all other commits are mapped to packages via changed file paths (defaulting to `patch`). Not a replacement for explicit bump files — a bridge for teams migrating from semantic-release, or a convenience when you want both.
 
 - [changesets#862](https://github.com/changesets/changesets/issues/862) — conventional commits integration (70 thumbs-up, 21 comments)
 

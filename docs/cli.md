@@ -100,27 +100,29 @@ No flags. No GitHub API needed.
 
 ## `bumpy generate`
 
-Auto-create bump files from conventional commit messages in git history.
+Auto-create bump files from commits on the current branch. Works with any commit style — conventional commits get enhanced bump-level detection, while all other commits are mapped to packages via changed file paths (defaulting to `patch`).
 
 ```bash
 bumpy generate
-bumpy generate --from v1.0.0
 bumpy generate --dry-run
+bumpy generate --from v1.0.0   # override: scan from a specific ref instead of branch base
 ```
 
-| Flag            | Description                                                       |
-| --------------- | ----------------------------------------------------------------- |
-| `--from <ref>`  | Git ref to scan from (default: auto-detect from last version tag) |
-| `--dry-run`     | Preview without creating files                                    |
-| `--name <name>` | Bump file filename                                                |
+| Flag            | Description                                                              |
+| --------------- | ------------------------------------------------------------------------ |
+| `--from <ref>`  | Git ref to scan from (default: branch point from `baseBranch` in config) |
+| `--dry-run`     | Preview without creating files                                           |
+| `--name <name>` | Bump file filename                                                       |
 
-**Commit mapping:**
+**How commits are mapped:**
 
-- `feat:` → minor
-- `fix:`, `perf:`, `refactor:`, `docs:`, `style:`, `test:`, `build:`, `ci:`, `chore:` → patch
-- `feat!:` or `BREAKING CHANGE:` → major
+1. **Conventional commits** (`type(scope): description`) use the commit type for bump level and the scope to resolve to a package name:
+   - `feat:` → minor
+   - `fix:`, `perf:`, `refactor:`, `docs:`, `style:`, `test:`, `build:`, `ci:`, `chore:` → patch
+   - `feat!:` or `BREAKING CHANGE:` → major
+2. **All other commits** (including scopeless conventional commits) are mapped to packages by detecting which files changed in the commit and matching them to package directories. These default to `patch`.
 
-Commit scopes (e.g., `feat(core):`) are mapped to package names automatically.
+When multiple commits affect the same package, the highest bump level wins.
 
 ## `bumpy ci check`
 
