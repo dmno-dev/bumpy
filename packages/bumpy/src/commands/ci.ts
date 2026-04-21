@@ -251,7 +251,8 @@ function pushWithToken(rootDir: string, branch: string, config: BumpyConfig): vo
     const savedHeader = tryRunArgs(['git', 'config', '--local', extraHeaderKey], { cwd: rootDir });
 
     // Collect includeIf entries that point to credential config files
-    const includeIfRaw = tryRunArgs(['git', 'config', '--local', '--get-regexp', '^includeIf\\.gitdir:'], {
+    // git config --get-regexp outputs keys in lowercase, so match accordingly
+    const includeIfRaw = tryRunArgs(['git', 'config', '--local', '--get-regexp', '^includeif\\.gitdir:'], {
       cwd: rootDir,
     });
     const savedIncludeIfs: Array<{ key: string; value: string }> = [];
