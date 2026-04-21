@@ -1,6 +1,6 @@
 {
   "name": "@varlock/bumpy",
-  "version": "0.0.2",
+  "version": "1.0.0",
   "description": "Modern monorepo versioning and changelog tool",
   "keywords": [
     "bump",
