@@ -187,7 +187,7 @@ function printHelp() {
   Commands:
     init                    Initialize .bumpy/ directory
     add                     Create a new bump file
-    generate                Generate bump file from conventional commits
+    generate                Generate bump file from branch commits
     status                  Show pending releases
     check                   Verify changed packages have bump files (for pre-push hooks)
     version                 Apply bump files and bump versions
@@ -205,7 +205,7 @@ function printHelp() {
     --empty                 Create an empty bump file
 
   Generate options:
-    --from <ref>            Git ref to scan from (default: last version tag)
+    --from <ref>            Git ref to scan from (default: branch point from baseBranch)
     --dry-run               Preview without creating a bump file
     --name <name>           Bump file filename
 

@@ -47,11 +47,16 @@ Use `none` in a bump file to suppress a bump on a package that would otherwise b
 
 ### 4. Write a clear summary
 
-Write a concise summary (1-3 sentences) describing **what** changed and **why**. This becomes the CHANGELOG entry. Good summaries:
+Write a concise summary for the CHANGELOG entry. Keep it short — ideally a single sentence, at most two. Good summaries:
 
 - Start with a verb: "Added...", "Fixed...", "Refactored..."
 - Focus on user-facing impact, not implementation details
 - Are specific enough to be useful months later
+- Avoid filler, jargon, or restating the bump level
+- Don't list every file changed — describe the logical change
+
+Bad: "Updated the authentication module to fix an issue where the token refresh mechanism was not properly handling expired refresh tokens, causing silent failures in the auth flow."
+Good: "Fixed token refresh failing silently on expired refresh tokens."
 
 ### 5. Create the bump file
 
