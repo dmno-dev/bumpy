@@ -1,3 +1,4 @@
+import { relative } from 'node:path';
 import { log, colorize } from '../utils/logger.ts';
 import { tryRunArgs } from '../utils/shell.ts';
 import { loadConfig } from '../core/config.ts';
@@ -6,10 +7,11 @@ import { writeBumpFile } from '../core/bump-file.ts';
 import { getBumpyDir } from '../core/config.ts';
 import { ensureDir } from '../utils/fs.ts';
 import { slugify, randomName } from '../utils/names.ts';
+import { getBranchCommits, getFilesChangedInCommit } from '../core/git.ts';
 import type { BumpType, BumpTypeWithNone, BumpyConfig, BumpFileRelease, WorkspacePackage } from '../types.ts';
 
 interface GenerateOptions {
-  from?: string; // git ref to start from (default: auto-detect last version tag)
+  from?: string; // git ref to start from (default: branch base)
   dryRun?: boolean;
   name?: string;
 }
@@ -40,74 +42,95 @@ export async function generateCommand(rootDir: string, opts: GenerateOptions): P
   const config = await loadConfig(rootDir);
   const packages = await discoverPackages(rootDir, config);
 
-  // Determine the starting ref
-  const from = opts.from || findLastVersionTag(rootDir);
-  if (!from) {
-    log.error('Could not detect last version tag. Use --from <ref> to specify.');
-    process.exit(1);
+  // Get commits — either from explicit ref or from branch divergence point
+  let commits: { hash: string; subject: string; body: string }[];
+
+  if (opts.from) {
+    log.step(`Scanning commits from ${colorize(opts.from, 'cyan')}...`);
+    const rawLog = tryRunArgs(['git', 'log', `${opts.from}..HEAD`, '--format=%H%n%s%n%b%n---END---'], { cwd: rootDir });
+    if (!rawLog) {
+      log.info('No commits found since ' + opts.from);
+      return;
+    }
+    commits = parseGitLog(rawLog);
+  } else {
+    log.step(`Scanning commits on this branch (vs ${colorize(config.baseBranch, 'cyan')})...`);
+    commits = getBranchCommits(rootDir, config.baseBranch);
   }
 
-  log.step(`Scanning commits from ${colorize(from, 'cyan')}...`);
-
-  // Get commits since ref
-  const rawLog = tryRunArgs(['git', 'log', `${from}..HEAD`, '--format=%H%n%s%n%b%n---END---'], { cwd: rootDir });
-
-  if (!rawLog) {
-    log.info('No commits found since ' + from);
+  if (commits.length === 0) {
+    log.info('No commits found on this branch.');
     return;
   }
 
-  const commits = parseGitLog(rawLog);
-  const conventional = commits.map(parseConventionalCommit).filter((c): c is ConventionalCommit => c !== null);
+  log.dim(`  Found ${commits.length} commit(s)`);
 
-  if (conventional.length === 0) {
-    log.info('No conventional commits found. Commits must follow the format: type(scope): description');
-    return;
-  }
-
-  log.dim(`  Found ${conventional.length} conventional commit(s)`);
-
-  // Build scope → package name mapping
+  // Build scope → package name mapping for CC resolution
   const scopeMap = buildScopeMap(packages, config);
 
-  // Collect releases
+  // Collect releases from all commits
   const releaseMap = new Map<string, { type: BumpType; messages: string[] }>();
 
-  for (const commit of conventional) {
-    const bump: BumpType = commit.breaking ? 'major' : BUMP_MAP[commit.type] || 'patch';
+  let ccCount = 0;
+  let fileBasedCount = 0;
 
-    // Resolve scope to package name
-    let pkgNames: string[] = [];
-    if (commit.scope) {
-      const resolved = resolveScope(commit.scope, scopeMap, packages);
-      if (resolved.length > 0) {
-        pkgNames = resolved;
-      } else {
-        log.dim(`  Skipping: unknown scope "${commit.scope}" in: ${commit.description}`);
+  for (const commit of commits) {
+    const cc = parseConventionalCommit(commit);
+
+    if (cc) {
+      // Conventional commit — use type/scope for bump level
+      ccCount++;
+      const bump: BumpType = cc.breaking ? 'major' : BUMP_MAP[cc.type] || 'patch';
+
+      let pkgNames: string[] = [];
+      if (cc.scope) {
+        const resolved = resolveScope(cc.scope, scopeMap, packages);
+        if (resolved.length > 0) {
+          pkgNames = resolved;
+        }
+        // If scope didn't resolve, fall through to file-based detection below
+      }
+
+      if (pkgNames.length > 0) {
+        for (const name of pkgNames) {
+          mergeRelease(releaseMap, name, bump, cc.description);
+        }
         continue;
       }
-    } else {
-      // No scope — skip (we're doing scope-based only for now)
-      log.dim(`  Skipping (no scope): ${commit.type}: ${commit.description}`);
-      continue;
-    }
 
-    for (const name of pkgNames) {
-      const existing = releaseMap.get(name);
-      if (existing) {
-        // Upgrade bump if higher
-        if (bumpPriority(bump) > bumpPriority(existing.type)) {
-          existing.type = bump;
+      // CC commit but scope didn't resolve (or no scope) — use file-based detection
+      // with the CC-derived bump level
+      const files = getFilesChangedInCommit(commit.hash, { cwd: rootDir });
+      const touchedPkgs = mapFilesToPackages(files, packages, rootDir);
+
+      if (touchedPkgs.length > 0) {
+        for (const name of touchedPkgs) {
+          mergeRelease(releaseMap, name, bump, cc.description);
         }
-        existing.messages.push(commit.description);
       } else {
-        releaseMap.set(name, { type: bump, messages: [commit.description] });
+        log.dim(`  Skipping CC (no matching packages): ${cc.type}: ${cc.description}`);
+      }
+    } else {
+      // Non-conventional commit — use file paths to detect packages, default to patch
+      const files = getFilesChangedInCommit(commit.hash, { cwd: rootDir });
+      const touchedPkgs = mapFilesToPackages(files, packages, rootDir);
+
+      if (touchedPkgs.length > 0) {
+        fileBasedCount++;
+        for (const name of touchedPkgs) {
+          mergeRelease(releaseMap, name, 'patch', commit.subject);
+        }
+      } else {
+        log.dim(`  Skipping (no matching packages): ${commit.subject}`);
       }
     }
   }
 
+  if (ccCount > 0) log.dim(`  ${ccCount} conventional commit(s)`);
+  if (fileBasedCount > 0) log.dim(`  ${fileBasedCount} commit(s) detected via changed files`);
+
   if (releaseMap.size === 0) {
-    log.info('No package bumps detected from conventional commits.');
+    log.info('No package bumps detected from commits.');
     return;
   }
 
@@ -147,6 +170,38 @@ export async function generateCommand(rootDir: string, opts: GenerateOptions): P
   for (const r of releases) {
     log.dim(`  ${r.name}: ${r.type}`);
   }
+}
+
+/** Merge a bump into the release map, keeping the highest bump level */
+function mergeRelease(
+  releaseMap: Map<string, { type: BumpType; messages: string[] }>,
+  name: string,
+  bump: BumpType,
+  message: string,
+): void {
+  const existing = releaseMap.get(name);
+  if (existing) {
+    if (bumpPriority(bump) > bumpPriority(existing.type)) {
+      existing.type = bump;
+    }
+    existing.messages.push(message);
+  } else {
+    releaseMap.set(name, { type: bump, messages: [message] });
+  }
+}
+
+/** Map file paths to package names based on directory containment */
+function mapFilesToPackages(files: string[], packages: Map<string, WorkspacePackage>, rootDir: string): string[] {
+  const matched = new Set<string>();
+  for (const file of files) {
+    for (const [name, pkg] of packages) {
+      const pkgRelDir = relative(rootDir, pkg.dir);
+      if (file.startsWith(pkgRelDir + '/')) {
+        matched.add(name);
+      }
+    }
+  }
+  return [...matched];
 }
 
 /** Parse raw git log output into individual commits */
@@ -234,13 +289,4 @@ function resolveScope(
 
 function bumpPriority(type: BumpType): number {
   return type === 'major' ? 2 : type === 'minor' ? 1 : 0;
-}
-
-/** Find the most recent version tag in the repo */
-function findLastVersionTag(rootDir: string): string | null {
-  // Look for tags matching common patterns: v1.2.3, pkg@1.2.3, etc.
-  const tag =
-    tryRunArgs(['git', 'describe', '--tags', '--abbrev=0', '--match', 'v*'], { cwd: rootDir }) ||
-    tryRunArgs(['git', 'describe', '--tags', '--abbrev=0', '--match', '*@*'], { cwd: rootDir });
-  return tag || null;
 }
