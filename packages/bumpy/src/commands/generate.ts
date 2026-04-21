@@ -6,7 +6,7 @@ import { writeBumpFile } from '../core/bump-file.ts';
 import { getBumpyDir } from '../core/config.ts';
 import { ensureDir } from '../utils/fs.ts';
 import { slugify, randomName } from '../utils/names.ts';
-import type { BumpType, BumpTypeWithIsolated, BumpyConfig, BumpFileRelease, WorkspacePackage } from '../types.ts';
+import type { BumpType, BumpTypeWithNone, BumpyConfig, BumpFileRelease, WorkspacePackage } from '../types.ts';
 
 interface GenerateOptions {
   from?: string; // git ref to start from (default: auto-detect last version tag)
@@ -116,7 +116,7 @@ export async function generateCommand(rootDir: string, opts: GenerateOptions): P
   const summaryLines: string[] = [];
 
   for (const [name, info] of releaseMap) {
-    releases.push({ name, type: info.type as BumpTypeWithIsolated });
+    releases.push({ name, type: info.type as BumpTypeWithNone });
     for (const msg of info.messages) {
       summaryLines.push(`- ${name}: ${msg}`);
     }

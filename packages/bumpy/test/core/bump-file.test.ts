@@ -21,17 +21,6 @@ Added a new feature to pkg-a
     expect(bf!.summary).toBe('Added a new feature to pkg-a');
   });
 
-  test('parses patch-isolated bump type', () => {
-    const content = `---
-"pkg-a": patch-isolated
----
-
-Internal change
-`;
-    const bf = parseBumpFile(content, 'test-bf');
-    expect(bf!.releases[0]!.type).toBe('patch-isolated');
-  });
-
   test('parses none bump type', () => {
     const content = `---
 "pkg-a": minor

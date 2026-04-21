@@ -12,10 +12,10 @@ import { matchGlob } from '../core/config.ts';
 import { getChangedFiles } from '../core/git.ts';
 import { bumpSelectPrompt } from '../prompts/bump-select.ts';
 import type { BumpSelectItem } from '../prompts/bump-select.ts';
-import type { BumpType, BumpTypeWithIsolated, BumpFileRelease, BumpFileReleaseCascade } from '../types.ts';
+import type { BumpType, BumpTypeWithNone, BumpFileRelease, BumpFileReleaseCascade } from '../types.ts';
 
 interface AddOptions {
-  packages?: string; // "pkg-a:minor,pkg-b:patch-isolated"
+  packages?: string; // "pkg-a:minor,pkg-b:patch"
   message?: string;
   name?: string;
   empty?: boolean;
@@ -99,8 +99,8 @@ export async function addCommand(rootDir: string, opts: AddOptions): Promise<voi
     for (const { name, type: bumpType } of bumpSelections) {
       const release: BumpFileRelease = { name, type: bumpType };
 
-      // Offer cascade options if the package has dependents and bump is not isolated
-      if (!bumpType.endsWith('-isolated')) {
+      // Offer cascade options if the package has dependents
+      {
         const dependents = depGraph.getDependents(name);
         const pkg = pkgs.get(name)!;
         const cascadeTargets = pkg.bumpy?.cascadeTo;
@@ -212,6 +212,6 @@ function parsePackagesFlag(input: string): BumpFileRelease[] {
     if (!name || !type) {
       throw new Error(`Invalid package format: "${entry}". Expected "name:bumpType"`);
     }
-    return { name: name.trim(), type: type.trim() as BumpTypeWithIsolated };
+    return { name: name.trim(), type: type.trim() as BumpTypeWithNone };
   });
 }

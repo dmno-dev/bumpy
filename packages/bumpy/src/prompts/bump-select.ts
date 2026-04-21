@@ -1,8 +1,8 @@
 import * as readline from 'node:readline';
 import pc from 'picocolors';
-import type { BumpTypeWithIsolated } from '../types.ts';
+import type { BumpTypeWithNone } from '../types.ts';
 
-export type BumpLevel = BumpTypeWithIsolated | 'none';
+export type BumpLevel = BumpTypeWithNone | 'none';
 
 const LEVELS: BumpLevel[] = ['none', 'patch', 'minor', 'major'];
 
@@ -14,7 +14,7 @@ export interface BumpSelectItem {
 
 export interface BumpSelectResult {
   name: string;
-  type: BumpTypeWithIsolated;
+  type: BumpTypeWithNone;
 }
 
 /**
@@ -139,7 +139,7 @@ export async function bumpSelectPrompt(items: BumpSelectItem[]): Promise<BumpSel
         const results: BumpSelectResult[] = [];
         for (let i = 0; i < items.length; i++) {
           if (levels[i] !== 'none') {
-            results.push({ name: items[i]!.name, type: levels[i] as BumpTypeWithIsolated });
+            results.push({ name: items[i]!.name, type: levels[i] as BumpTypeWithNone });
           }
         }
         finish(results);

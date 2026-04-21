@@ -183,25 +183,6 @@ describe('assembleReleasePlan', () => {
       expect(plan.warnings[0]).toContain('^0.2.0');
     });
 
-    test('Phase A runs even for patch-isolated bumps (but isolated blocks propagation → error)', () => {
-      const packages = new Map([
-        ['core', makePkg('core', '1.0.0')],
-        ['app', makePkg('app', '1.0.0', { dependencies: { core: '~1.0.0' } })],
-      ]);
-
-      // patch-isolated on core: 1.0.0 → 1.0.1, satisfies ~1.0.0 → no issue
-      const bumpFiles: BumpFile[] = [
-        { id: 'cs1', releases: [{ name: 'core', type: 'patch-isolated' }], summary: 'Internal' },
-      ];
-
-      const graph = new DependencyGraph(packages);
-      const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig());
-
-      expect(plan.releases).toHaveLength(1);
-      expect(plan.releases[0]!.name).toBe('core');
-      expect(plan.releases[0]!.newVersion).toBe('1.0.1');
-    });
-
     test('skips propagation when version still satisfies range', () => {
       const packages = new Map([
         ['core', makePkg('core', '1.0.0')],
@@ -357,23 +338,6 @@ describe('assembleReleasePlan', () => {
       expect(appRelease.isDependencyBump).toBe(true);
     });
 
-    test('proactive propagation skipped for patch-isolated bumps', () => {
-      const packages = new Map([
-        ['core', makePkg('core', '1.0.0')],
-        ['app', makePkg('app', '2.0.0', { dependencies: { core: '^1.0.0' } })],
-      ]);
-
-      const bumpFiles: BumpFile[] = [
-        { id: 'cs1', releases: [{ name: 'core', type: 'patch-isolated' }], summary: 'Internal' },
-      ];
-
-      const graph = new DependencyGraph(packages);
-      const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig({ updateInternalDependencies: 'patch' }));
-
-      expect(plan.releases).toHaveLength(1);
-      expect(plan.releases[0]!.name).toBe('core');
-    });
-
     test('peer dependency minor bump does NOT propagate by default (out-of-range mode, range satisfied)', () => {
       const packages = new Map([
         ['core', makePkg('core', '1.0.0')],
@@ -439,61 +403,6 @@ describe('assembleReleasePlan', () => {
       // devDeps rule is false by default → never propagates
       expect(plan.releases).toHaveLength(1);
       expect(plan.releases[0]!.name).toBe('test-utils');
-    });
-  });
-
-  // ---- patch-isolated behavior ----
-
-  describe('patch-isolated', () => {
-    test('patch-isolated skips Phase C propagation', () => {
-      const packages = new Map([
-        ['core', makePkg('core', '1.0.0')],
-        ['app', makePkg('app', '2.0.0', { dependencies: { core: '^1.0.0' } })],
-      ]);
-
-      const bumpFiles: BumpFile[] = [
-        { id: 'cs1', releases: [{ name: 'core', type: 'patch-isolated' }], summary: 'Internal' },
-      ];
-
-      const graph = new DependencyGraph(packages);
-      const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig());
-
-      expect(plan.releases).toHaveLength(1);
-      expect(plan.releases[0]!.name).toBe('core');
-      expect(plan.releases[0]!.newVersion).toBe('1.0.1');
-    });
-
-    test('non-isolated bump file overrides isolated for same package', () => {
-      const packages = new Map([
-        ['core', makePkg('core', '1.0.0')],
-        ['app', makePkg('app', '2.0.0', { dependencies: { core: '^1.0.0' } })],
-      ]);
-
-      const bumpFiles: BumpFile[] = [
-        { id: 'cs1', releases: [{ name: 'core', type: 'patch-isolated' }], summary: 'Internal' },
-        { id: 'cs2', releases: [{ name: 'core', type: 'patch' }], summary: 'Fix' },
-      ];
-
-      const graph = new DependencyGraph(packages);
-      const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig({ updateInternalDependencies: 'patch' }));
-
-      expect(plan.releases).toHaveLength(2); // core + app (no longer isolated)
-    });
-
-    test('patch-isolated that would break range throws error', () => {
-      const packages = new Map([
-        ['core', makePkg('core', '1.0.0')],
-        ['app', makePkg('app', '1.0.0', { dependencies: { core: '1.0.0' } })], // exact range
-      ]);
-
-      const bumpFiles: BumpFile[] = [
-        { id: 'cs1', releases: [{ name: 'core', type: 'patch-isolated' }], summary: 'Internal' },
-      ];
-
-      const graph = new DependencyGraph(packages);
-      expect(() => assembleReleasePlan(bumpFiles, packages, graph, makeConfig())).toThrow(
-        /patch-isolated.*break.*range/,
-      );
     });
   });
 

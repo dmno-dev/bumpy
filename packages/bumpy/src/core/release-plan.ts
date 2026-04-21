@@ -13,13 +13,11 @@ import {
   DEFAULT_BUMP_RULES,
   bumpLevel,
   maxBump,
-  parseIsolatedBump,
   hasCascade,
 } from '../types.ts';
 
 interface PlannedBump {
   type: BumpType;
-  isolated: boolean;
   /** Explicit 'none' from bump file — suppresses propagation bumps */
   suppressed: boolean;
   isDependencyBump: boolean;
@@ -56,7 +54,7 @@ export function assembleReleasePlan(
   for (const bf of bumpFiles) {
     for (const release of bf.releases) {
       if (!packages.has(release.name)) continue;
-      const { bump, isolated } = parseIsolatedBump(release.type);
+      const bump = release.type;
 
       if (bump === 'none') {
         suppressedPackages.add(release.name);
@@ -66,13 +64,10 @@ export function assembleReleasePlan(
       const existing = planned.get(release.name);
       if (existing) {
         existing.type = maxBump(existing.type, bump);
-        // If ANY bump file is non-isolated, the package is non-isolated
-        if (!isolated) existing.isolated = false;
         existing.bumpFiles.add(bf.id);
       } else {
         planned.set(release.name, {
           type: bump,
-          isolated,
           suppressed: false,
           isDependencyBump: false,
           isCascadeBump: false,
@@ -101,7 +96,6 @@ export function assembleReleasePlan(
       // This prevents propagation from adding this package
       planned.set(name, {
         type: 'patch', // placeholder, won't be used
-        isolated: false,
         suppressed: true,
         isDependencyBump: false,
         isCascadeBump: false,
@@ -155,15 +149,6 @@ export function assembleReleasePlan(
           );
         }
 
-        // Check if isolated would break range
-        if (bump.isolated) {
-          throw new Error(
-            `'patch-isolated' bump for '${pkgName}' would break the range '${dep.versionRange}' ` +
-              `declared by '${dep.name}'. Either widen the range, drop '-isolated', ` +
-              `or explicitly bump '${dep.name}' in the bump file.`,
-          );
-        }
-
         // Warn about ^0.x peer dep propagation
         if (dep.depType === 'peerDependencies' && depBump !== 'patch') {
           // Resolve workspace:^ to ^<version> for checking
@@ -189,13 +174,11 @@ export function assembleReleasePlan(
     // Phase B: Enforce fixed/linked group constraints
     for (const group of config.fixed) {
       let groupBump: BumpType | undefined;
-      let groupIsolated = true;
       for (const nameOrGlob of group) {
         for (const [name, bump] of planned) {
           if (bump.suppressed) continue;
           if (matchGlob(name, nameOrGlob)) {
             groupBump = maxBump(groupBump, bump.type);
-            if (!bump.isolated) groupIsolated = false;
           }
         }
       }
@@ -209,13 +192,11 @@ export function assembleReleasePlan(
             const newType = maxBump(existing.type, groupBump);
             if (newType !== existing.type) {
               existing.type = newType;
-              existing.isolated = groupIsolated;
               changed = true;
             }
           } else {
             planned.set(name, {
               type: groupBump,
-              isolated: groupIsolated,
               suppressed: false,
               isDependencyBump: false,
               isCascadeBump: false,
@@ -257,7 +238,6 @@ export function assembleReleasePlan(
     if (config.updateInternalDependencies !== 'out-of-range') {
       for (const [pkgName, bump] of planned) {
         if (bump.suppressed) continue;
-        if (bump.isolated) continue;
 
         // Check minimum threshold for proactive propagation
         if (config.updateInternalDependencies === 'minor' && bumpLevel(bump.type) < bumpLevel('minor')) {
@@ -317,7 +297,6 @@ export function assembleReleasePlan(
       // Even in out-of-range mode, still apply bump file cascades and cascadeTo
       for (const [pkgName, bump] of planned) {
         if (bump.suppressed) continue;
-        if (bump.isolated) continue;
 
         // Bump-file-level cascade overrides always apply
         const bfOverrides = cascadeOverrides.get(pkgName);
@@ -440,7 +419,6 @@ function applyBump(
   }
   planned.set(name, {
     type,
-    isolated: false,
     suppressed: false,
     isDependencyBump,
     isCascadeBump,
