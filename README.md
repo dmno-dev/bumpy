@@ -50,7 +50,7 @@ All of this is automated via two simple GitHub Actions workflows (see [CI setup]
 - **Flexible package management** — include/exclude any package individually via per-package config, glob patterns, or `privatePackages` setting
 - **Non-interactive CLI** — `bumpy add` works fully non-interactively for CI/CD and AI-assisted development
 - **Aggregated GitHub releases** — optionally create a single consolidated release instead of one per package
-- **Conventional commits bridge** — `bumpy generate` auto-creates bump files from conventional commit messages
+- **Auto-generate from commits** — `bumpy generate` creates bump files from branch commits — works with any commit style, with enhanced detection for conventional commits
 - **Pluggable changelog formatters** — built-in `"default"` and `"github"` formatters, or write your own
 - **Zero runtime dependencies** — dependencies are minimal and bundled at release time
 
@@ -215,11 +215,11 @@ The skill teaches the AI to examine git changes, identify affected packages, cho
 
 ## Why files instead of conventional commits?
 
-Tools like semantic-release infer version bumps from commit messages (`feat:` → minor, `fix:` → patch). This works for simple projects but breaks down in monorepos — a single PR often touches multiple packages with different bump levels, squash merges lose per-commit metadata, and commit messages are a poor place to write user-facing changelog entries. Bump files are explicit, reviewable in the PR diff, and can describe changes in language meant for consumers rather than developers. If you prefer conventional commits, `bumpy generate` can bridge the gap by auto-creating bump files from commit history.
+Tools like semantic-release infer version bumps from commit messages (`feat:` → minor, `fix:` → patch). This works for simple projects but breaks down in monorepos — a single PR often touches multiple packages with different bump levels, squash merges lose per-commit metadata, and commit messages are a poor place to write user-facing changelog entries. Bump files are explicit, reviewable in the PR diff, and can describe changes in language meant for consumers rather than developers. If you prefer commit-based workflows, `bumpy generate` can bridge the gap by auto-creating bump files from your branch commits — it works with any commit style, not just conventional commits.
 
 ## Why not just use changesets?
 
-Bumpy is built as a successor to [@changesets/changesets](https://github.com/changesets/changesets). Changesets is mature and widely adopted, but has stagnated — hundreds of open issues around core design problems that are unlikely to be fixed without a rewrite. See [DIFFERENCES_FROM_CHANGESETS.md](./DIFFERENCES_FROM_CHANGESETS.md) for a detailed comparison with links to specific issues. The biggest pain points bumpy addresses:
+Bumpy is built as a successor to [@changesets/changesets](https://github.com/changesets/changesets). Changesets is mature and widely adopted, but has stagnated — hundreds of open issues around core design problems that are unlikely to be fixed without a rewrite. See [differences from changesets](docs/differences-from-changesets.md) for a detailed comparison with links to specific issues. The biggest pain points bumpy addresses:
 
 - **Sane dependency propagation** — changesets hardcodes aggressive behavior where a minor bump triggers a major bump on all peer dependents. Bumpy uses a [three-phase algorithm](docs/version-propagation.md) with sensible defaults and full configurability.
 - **Workspace protocol resolution** — changesets uses `npm publish` even in pnpm/yarn workspaces, so `workspace:^` and `catalog:` protocols are NOT resolved, resulting in broken published packages.
