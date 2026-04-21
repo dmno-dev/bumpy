@@ -50,6 +50,10 @@ For PRs that intentionally don't need a release (docs, CI, etc.):
 bunx bumpy add --empty --name "docs-update"
 ```
 
+## Keeping bump files up to date
+
+As a PR evolves, make sure its bump file stays in sync. If the scope of changes grows (e.g., a patch becomes a new feature), update the bump level and description to match. Reviewers and AI assistants should treat the bump file as part of the PR — just like tests and docs.
+
 ## Files in this directory
 
 - `_config.json` — bumpy configuration

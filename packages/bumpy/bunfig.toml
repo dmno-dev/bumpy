@@ -3,4 +3,3 @@
 
 [define]
 "__BUMPY_VERSION__" = "'dev'"
-"__BUMPY_WEBSITE_URL__" = "'https://github.com/dmno-dev/bumpy'"
