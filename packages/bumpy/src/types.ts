@@ -70,6 +70,16 @@ export interface BumpyConfig {
   updateInternalDependencies: 'patch' | 'minor' | 'out-of-range';
   dependencyBumpRules: Partial<Record<DepType, DependencyBumpRule | false>>;
   privatePackages: { version: boolean; tag: boolean };
+  /**
+   * Allow per-package custom commands (buildCommand, publishCommand, checkPublished)
+   * defined in package.json "bumpy" fields.
+   * Commands defined in the root config's `packages` map are always trusted.
+   *
+   * true = allow all packages to define custom commands
+   * string[] = allow only matching package names/globs
+   * false = only root-config commands are allowed (default)
+   */
+  allowCustomCommands: boolean | string[];
   packages: Record<string, PackageConfig>;
   publish: PublishConfig;
   /**
@@ -125,6 +135,7 @@ export const DEFAULT_CONFIG: BumpyConfig = {
   updateInternalDependencies: 'out-of-range',
   dependencyBumpRules: {},
   privatePackages: { version: false, tag: false },
+  allowCustomCommands: false,
   packages: {},
   publish: { ...DEFAULT_PUBLISH_CONFIG },
   aggregateRelease: false,

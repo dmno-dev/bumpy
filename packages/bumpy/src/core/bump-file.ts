@@ -4,6 +4,24 @@ import { readText, writeText, listFiles, removeFile } from '../utils/fs.ts';
 import { getBumpyDir } from './config.ts';
 import { tryRunArgs } from '../utils/shell.ts';
 import type { BumpFile, BumpFileRelease, BumpFileReleaseCascade, BumpType, BumpTypeWithNone } from '../types.ts';
+import { log } from '../utils/logger.ts';
+
+const VALID_BUMP_TYPES = new Set<string>(['major', 'minor', 'patch', 'none']);
+
+/**
+ * Reject package names that contain characters which could cause injection
+ * when used in git tags, markdown, URLs, or shell-quoted strings.
+ * Intentionally permissive — we don't enforce npm naming rules because
+ * bumpy may be used with other registries or non-JS packages.
+ */
+function validatePackageName(name: string): boolean {
+  if (!name || name.length > 214) return false;
+  // disallow control chars, HTML/shell metacharacters, whitespace
+  if (/[\u0000-\u001f\u007f<>"'`&;|$(){}[\]\\!#%\s]/.test(name)) return false;
+  // must not start with - (could be interpreted as a CLI flag)
+  if (name.startsWith('-')) return false;
+  return true;
+}
 
 /** Read all bump files from .bumpy/ directory, sorted by git creation order */
 export async function readBumpFiles(rootDir: string): Promise<BumpFile[]> {
@@ -81,12 +99,25 @@ export function parseBumpFile(content: string, id: string): BumpFile | null {
 
   const releases: BumpFileRelease[] = [];
   for (const [name, value] of Object.entries(parsed)) {
+    if (!validatePackageName(name)) {
+      log.warn(`Skipping invalid package name in bump file "${id}": ${name}`);
+      continue;
+    }
+
     if (typeof value === 'string') {
+      if (!VALID_BUMP_TYPES.has(value)) {
+        log.warn(`Skipping unknown bump type "${value}" for ${name} in bump file "${id}"`);
+        continue;
+      }
       // Simple format: "pkg-name": minor
       releases.push({ name, type: value as BumpTypeWithNone });
     } else if (value && typeof value === 'object') {
       // Nested format: "pkg-name": { bump: minor, cascade: { ... } }
       const obj = value as { bump: BumpTypeWithNone; cascade?: Record<string, BumpType> };
+      if (!VALID_BUMP_TYPES.has(obj.bump)) {
+        log.warn(`Skipping unknown bump type "${obj.bump}" for ${name} in bump file "${id}"`);
+        continue;
+      }
       const release: BumpFileReleaseCascade = {
         name,
         type: obj.bump,

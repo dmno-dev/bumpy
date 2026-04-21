@@ -21,6 +21,7 @@ Bumpy is configured via `.bumpy/_config.json`, created by `bumpy init`. Per-pack
 | `publish`                    | `object`                               | see below                        | Publishing pipeline config                                                          |
 | `gitUser`                    | `{ name, email }`                      | bumpy-bot                        | Git identity for CI commits                                                         |
 | `versionPr`                  | `{ title, branch, preamble }`          | see below                        | Customize the version PR                                                            |
+| `allowCustomCommands`        | `boolean \| string[]`                  | `false`                          | Allow per-package custom commands from `package.json` (see below)                   |
 | `packages`                   | `object`                               | `{}`                             | Per-package config overrides (keyed by package name)                                |
 
 ### Dependency bump rules
@@ -87,7 +88,47 @@ Per-package settings can be defined in two places:
 | `dependencyBumpRules` | `object`                   | Per-package override for dependency propagation rules                   |
 | `cascadeTo`           | `object`                   | Explicit cascade targets — glob pattern mapped to `{ trigger, bumpAs }` |
 
+### Custom commands and `allowCustomCommands`
+
+The `publishCommand`, `buildCommand`, and `checkPublished` fields run shell commands during publishing. Because these execute with CI credentials, bumpy distinguishes between two trust levels:
+
+- **Root config** (`.bumpy/_config.json` → `packages`): always trusted — repo admins control this file.
+- **Per-package config** (`package.json` → `"bumpy"`): requires opt-in via `allowCustomCommands` in the root config.
+
+By default, custom commands defined in `package.json` are **ignored** with a warning. To enable them, set `allowCustomCommands` in `.bumpy/_config.json`:
+
+```json
+{
+  "allowCustomCommands": true
+}
+```
+
+Or restrict to specific packages/globs:
+
+```json
+{
+  "allowCustomCommands": ["@myorg/vscode-extension", "@myorg/deploy-*"]
+}
+```
+
+This prevents a contributor from introducing arbitrary shell commands via a package's `package.json` without the root config explicitly allowing it.
+
 ### Example: custom publish for a VSCode extension
+
+In `.bumpy/_config.json` (recommended — no `allowCustomCommands` needed):
+
+```json
+{
+  "packages": {
+    "my-vscode-extension": {
+      "publishCommand": "vsce publish",
+      "skipNpmPublish": true
+    }
+  }
+}
+```
+
+Or in the package's `package.json` (requires `allowCustomCommands`):
 
 ```json
 {
@@ -137,6 +178,7 @@ See the [Changelog Formatters](./changelog-formatters.md) docs for full details 
       "publishCommand": "vsce publish",
       "skipNpmPublish": true
     }
-  }
+  },
+  "allowCustomCommands": ["@myorg/deploy-*"]
 }
 ```

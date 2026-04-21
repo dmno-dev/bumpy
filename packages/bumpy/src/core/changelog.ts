@@ -1,4 +1,5 @@
-import { resolve } from 'node:path';
+import { resolve, relative } from 'node:path';
+import { realpathSync } from 'node:fs';
 import { log } from '../utils/logger.ts';
 import type { BumpFile, PlannedRelease, BumpyConfig } from '../types.ts';
 
@@ -95,9 +96,15 @@ export async function loadFormatter(changelog: BumpyConfig['changelog'], rootDir
     try {
       let modulePath: string;
       if (name.startsWith('.')) {
-        // Relative path — resolve and verify it stays within the project root
+        // Relative path — resolve symlinks and verify it stays within the project root
         modulePath = resolve(rootDir, name);
-        if (!modulePath.startsWith(rootDir + '/')) {
+        try {
+          modulePath = realpathSync(modulePath);
+        } catch {
+          // File doesn't exist yet — use the resolved path as-is
+        }
+        const rel = relative(realpathSync(rootDir), modulePath);
+        if (rel.startsWith('..') || resolve('/', rel) === resolve('/')) {
           throw new Error(`Changelog formatter path "${name}" resolves outside the project root`);
         }
       } else {
