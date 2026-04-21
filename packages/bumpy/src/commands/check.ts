@@ -2,7 +2,7 @@ import { relative } from 'node:path';
 import { log, colorize } from '../utils/logger.ts';
 import { loadConfig } from '../core/config.ts';
 import { discoverWorkspace } from '../core/workspace.ts';
-import { readBumpFiles } from '../core/bump-file.ts';
+import { readBumpFiles, filterBranchBumpFiles } from '../core/bump-file.ts';
 import { getChangedFiles } from '../core/git.ts';
 import type { WorkspacePackage } from '../types.ts';
 
@@ -14,23 +14,33 @@ import type { WorkspacePackage } from '../types.ts';
 export async function checkCommand(rootDir: string): Promise<void> {
   const config = await loadConfig(rootDir);
   const { packages } = await discoverWorkspace(rootDir, config);
-  const bumpFiles = await readBumpFiles(rootDir);
 
-  // Find which packages already have bump files
-  const coveredPackages = new Set<string>();
-  for (const bf of bumpFiles) {
-    for (const release of bf.releases) {
-      coveredPackages.add(release.name);
-    }
-  }
-
-  // Find which packages have changed on this branch vs base
+  // Find which files have changed on this branch vs base
   const baseBranch = config.baseBranch;
   const changedFiles = getChangedFiles(rootDir, baseBranch);
 
   if (changedFiles.length === 0) {
     log.info('No changed files detected.');
     return;
+  }
+
+  // Filter to only bump files added/modified on this branch
+  const allBumpFiles = await readBumpFiles(rootDir);
+  const { branchBumpFiles, branchBumpFileIds } = filterBranchBumpFiles(allBumpFiles, changedFiles);
+
+  // If a bump file was changed but didn't parse (empty bump file), the check passes
+  const hasEmptyBumpFile = branchBumpFileIds.size > branchBumpFiles.length;
+  if (hasEmptyBumpFile) {
+    log.success('Empty bump file found — no releases needed.');
+    return;
+  }
+
+  // Find which packages are covered by bump files on this branch
+  const coveredPackages = new Set<string>();
+  for (const bf of branchBumpFiles) {
+    for (const release of bf.releases) {
+      coveredPackages.add(release.name);
+    }
   }
 
   const changedPackages = findChangedPackages(changedFiles, packages, rootDir);
