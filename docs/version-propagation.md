@@ -163,15 +163,6 @@ Unlike dependency bump rules (configured on the _dependent_), `cascadeTo` is con
 
 These are set directly in bump files for one-off control over a specific release.
 
-**`patch-isolated`** — bumps the package as a patch but skips all Phase C propagation from it (cascades and proactive bumps). If the bump would break a dependent's declared range, bumpy throws an error rather than silently propagating — you'll need to either widen the range, drop the `-isolated` flag, or explicitly bump the dependent in the bump file.
-
-```yaml
----
-'@myorg/utils': patch-isolated
----
-Internal refactor, no API changes.
-```
-
 **`none`** — suppresses a bump on a package that would otherwise be included via propagation. If skipping the bump would leave a dependent's range broken, bumpy throws an error.
 
 ```yaml
@@ -202,4 +193,4 @@ Compare with listing packages directly — these are treated as independent chan
 ---
 ```
 
-> **Note:** `patch-isolated`, `none`, and bump-file-level cascades are not available in the interactive `bumpy add` UI — they are power-user features for bump files and the `--packages` CLI flag.
+> **Note:** `none` and bump-file-level cascades are not available in the interactive `bumpy add` UI — they are power-user features for bump files and the `--packages` CLI flag.

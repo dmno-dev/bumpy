@@ -3,7 +3,7 @@ import yaml from 'js-yaml';
 import { readText, writeText, listFiles, removeFile } from '../utils/fs.ts';
 import { getBumpyDir } from './config.ts';
 import { tryRunArgs } from '../utils/shell.ts';
-import type { BumpFile, BumpFileRelease, BumpFileReleaseCascade, BumpType, BumpTypeWithIsolated } from '../types.ts';
+import type { BumpFile, BumpFileRelease, BumpFileReleaseCascade, BumpType, BumpTypeWithNone } from '../types.ts';
 
 /** Read all bump files from .bumpy/ directory, sorted by git creation order */
 export async function readBumpFiles(rootDir: string): Promise<BumpFile[]> {
@@ -83,10 +83,10 @@ export function parseBumpFile(content: string, id: string): BumpFile | null {
   for (const [name, value] of Object.entries(parsed)) {
     if (typeof value === 'string') {
       // Simple format: "pkg-name": minor
-      releases.push({ name, type: value as BumpTypeWithIsolated });
+      releases.push({ name, type: value as BumpTypeWithNone });
     } else if (value && typeof value === 'object') {
       // Nested format: "pkg-name": { bump: minor, cascade: { ... } }
-      const obj = value as { bump: BumpTypeWithIsolated; cascade?: Record<string, BumpType> };
+      const obj = value as { bump: BumpTypeWithNone; cascade?: Record<string, BumpType> };
       const release: BumpFileReleaseCascade = {
         name,
         type: obj.bump,

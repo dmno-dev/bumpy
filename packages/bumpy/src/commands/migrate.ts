@@ -7,7 +7,7 @@ import { getBumpyDir } from '../core/config.ts';
 import { writeBumpFile } from '../core/bump-file.ts';
 import { p, unwrap } from '../utils/clack.ts';
 import { initCommand } from './init.ts';
-import type { BumpFileRelease, BumpTypeWithIsolated } from '../types.ts';
+import type { BumpFileRelease, BumpTypeWithNone } from '../types.ts';
 
 interface MigrateOptions {
   force?: boolean;
@@ -94,7 +94,6 @@ export async function migrateCommand(rootDir: string, opts: MigrateOptions): Pro
   log.dim('Review .bumpy/_config.json and adjust settings as needed.');
   log.dim('Key differences from changesets:');
   log.dim('  - Out-of-range peer dep bumps match the triggering bump level (not always major)');
-  log.dim("  - Use 'patch-isolated' to skip Phase C propagation");
   log.dim("  - Use 'none' in a bump file to suppress a propagated bump");
   log.dim('  - Per-package config goes in package.json["bumpy"]');
 }
@@ -166,7 +165,7 @@ function parseChangesetFile(content: string): { releases: BumpFileRelease[]; sum
     if (type === 'none') continue;
 
     if (['major', 'minor', 'patch'].includes(type)) {
-      releases.push({ name, type: type as BumpTypeWithIsolated });
+      releases.push({ name, type: type as BumpTypeWithNone });
     }
   }
 
