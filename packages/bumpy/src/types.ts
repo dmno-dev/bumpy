@@ -1,7 +1,7 @@
 // ---- Bump types ----
 
 export type BumpType = 'major' | 'minor' | 'patch';
-export type BumpTypeWithIsolated = BumpType | 'patch-isolated' | 'none';
+export type BumpTypeWithNone = BumpType | 'none';
 
 export const BUMP_LEVELS: Record<BumpType, number> = {
   patch: 0,
@@ -11,16 +11,6 @@ export const BUMP_LEVELS: Record<BumpType, number> = {
 
 export function bumpLevel(type: BumpType): number {
   return BUMP_LEVELS[type];
-}
-
-export function parseIsolatedBump(type: BumpTypeWithIsolated): { bump: BumpType | 'none'; isolated: boolean } {
-  if (type === 'none') {
-    return { bump: 'none', isolated: false };
-  }
-  if (type.endsWith('-isolated')) {
-    return { bump: type.replace('-isolated', '') as BumpType, isolated: true };
-  }
-  return { bump: type as BumpType, isolated: false };
 }
 
 export function maxBump(a: BumpType | undefined, b: BumpType): BumpType {
@@ -155,12 +145,12 @@ export const DEFAULT_CONFIG: BumpyConfig = {
 
 export interface BumpFileReleaseSimple {
   name: string;
-  type: BumpTypeWithIsolated;
+  type: BumpTypeWithNone;
 }
 
 export interface BumpFileReleaseCascade {
   name: string;
-  type: BumpTypeWithIsolated;
+  type: BumpTypeWithNone;
   cascade: Record<string, BumpType>; // glob pattern → bump type
 }
 
