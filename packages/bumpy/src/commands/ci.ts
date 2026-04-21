@@ -435,7 +435,7 @@ function formatReleasePlanComment(
   const lines: string[] = [];
 
   const preamble = [
-    `<a href="${__BUMPY_WEBSITE_URL__}"><img src="${FROG_IMG_BASE}/frog-talking.png" alt="bumpy-frog" width="60" align="left" style="image-rendering: pixelated;" title="Hi! I'm bumpy!" /></a>`,
+    `<a href="https://bumpy.varlock.dev"><img src="${FROG_IMG_BASE}/frog-talking.png" alt="bumpy-frog" width="60" align="left" style="image-rendering: pixelated;" title="Hi! I'm bumpy!" /></a>`,
     '',
     '**The changes in this PR will be included in the next version bump.**',
     '<br clear="left" />',
@@ -495,14 +495,14 @@ function formatReleasePlanComment(
   }
 
   lines.push('---');
-  lines.push(`_This comment is maintained by [bumpy](${__BUMPY_WEBSITE_URL__})._`);
+  lines.push(`_This comment is maintained by [bumpy](https://bumpy.varlock.dev)._`);
   return lines.join('\n');
 }
 
 function formatNoBumpFilesComment(prBranch: string | null, pm: PackageManager): string {
   const runCmd = pmRunCommand(pm);
   const lines = [
-    `<a href="${__BUMPY_WEBSITE_URL__}"><img src="${FROG_IMG_BASE}/frog-neutral.png" alt="bumpy-frog" width="60" align="left" style="image-rendering: pixelated;" title="Hi! I'm bumpy!" /></a>`,
+    `<a href="https://bumpy.varlock.dev"><img src="${FROG_IMG_BASE}/frog-neutral.png" alt="bumpy-frog" width="60" align="left" style="image-rendering: pixelated;" title="Hi! I'm bumpy!" /></a>`,
     '',
     "Merging this PR will not cause a version bump for any packages. If these changes should not result in a new version, you're good to go. **If these changes should result in a version bump, you need to add a bump file.**",
     '<br clear="left" />\n',
@@ -519,7 +519,7 @@ function formatNoBumpFilesComment(prBranch: string | null, pm: PackageManager): 
   }
 
   lines.push('\n---');
-  lines.push(`_This comment is maintained by [bumpy](${__BUMPY_WEBSITE_URL__})._`);
+  lines.push(`_This comment is maintained by [bumpy](https://bumpy.varlock.dev)._`);
   return lines.join('\n');
 }
 
