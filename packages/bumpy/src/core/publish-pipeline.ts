@@ -246,8 +246,7 @@ async function packThenPublish(
 
   // Pack and capture the tarball filename
   const packOutput = await runArgsAsync(packArgs, { cwd: pkg.dir });
-  // Pack commands output the tarball filename on the last line
-  const tarball = parseTarballPath(packOutput, pkg.dir);
+  const tarball = parseTarballPath(packOutput, pkg.dir, packManager);
 
   try {
     // Publish the tarball
@@ -281,14 +280,14 @@ async function npmPublishDirect(
 function getPackArgs(pm: PackageManager): string[] {
   switch (pm) {
     case 'pnpm':
-      return ['pnpm', 'pack'];
+      return ['pnpm', 'pack', '--json'];
     case 'bun':
       return ['bun', 'pm', 'pack'];
     case 'yarn':
       return ['yarn', 'pack'];
     case 'npm':
     default:
-      return ['npm', 'pack'];
+      return ['npm', 'pack', '--json'];
   }
 }
 
@@ -332,20 +331,32 @@ function buildPublishArgs(
 
 /**
  * Parse the tarball path from pack command output.
- * Each PM has different output formats:
- *   npm/pnpm: tarball filename on the last line
- *   bun:      tarball filename mid-output, summary lines after
- *   yarn:     'success Wrote tarball to "/path/to/foo.tgz".'
+ * npm/pnpm use --json for structured output; bun/yarn fall back to regex parsing.
  */
-function parseTarballPath(output: string, cwd: string): string {
-  // Extract any .tgz path — handles both bare filenames and quoted paths (yarn)
+function parseTarballPath(output: string, cwd: string, pm: PackageManager): string {
+  // npm and pnpm support --json which gives us a deterministic filename
+  if (pm === 'npm' || pm === 'pnpm') {
+    try {
+      const parsed = JSON.parse(output);
+      // npm returns an array, pnpm returns an object or array
+      const entry = Array.isArray(parsed) ? parsed[0] : parsed;
+      if (entry?.filename) {
+        return resolve(cwd, entry.filename);
+      }
+    } catch {
+      // JSON parse failed — fall through to regex
+    }
+  }
+
+  // Fallback for bun/yarn or if JSON parsing failed:
+  // extract any .tgz path — handles both bare filenames and quoted paths (yarn)
   const tgzMatch = output.match(/(?:^|["'\s])([^\s"']*\.tgz)/m);
   if (tgzMatch) {
     const tarball = tgzMatch[1]!;
     return tarball.startsWith('/') ? tarball : resolve(cwd, tarball);
   }
 
-  // Fallback: last non-empty line
+  // Last resort: last non-empty line
   const lines = output.trim().split('\n').filter(Boolean);
   const lastLine = lines[lines.length - 1]?.trim() || '';
   return lastLine.startsWith('/') ? lastLine : resolve(cwd, lastLine);

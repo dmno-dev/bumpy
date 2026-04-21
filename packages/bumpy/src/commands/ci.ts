@@ -229,20 +229,28 @@ async function autoPublish(rootDir: string, config: BumpyConfig, tag?: string): 
  * but PR workflows won't be triggered automatically.
  */
 function pushWithToken(rootDir: string, branch: string): void {
+  // Guard against misconfigured versionPr.branch pointing at the base branch
+  const baseBranch = tryRunArgs(['git', 'rev-parse', '--abbrev-ref', 'HEAD'], { cwd: rootDir });
+  if (branch === baseBranch || branch === 'main' || branch === 'master') {
+    throw new Error(`Refusing to force-push to "${branch}" — this looks like a base branch, not a version PR branch`);
+  }
+
   const token = process.env.BUMPY_GH_TOKEN;
   const repo = process.env.GITHUB_REPOSITORY; // e.g. "owner/repo"
   const server = process.env.GITHUB_SERVER_URL || 'https://github.com';
 
   if (token && repo) {
-    const authedUrl = `${server.replace('://', `://x-access-token:${token}@`)}/${repo}.git`;
-    const originalUrl = tryRunArgs(['git', 'remote', 'get-url', 'origin'], { cwd: rootDir });
+    // Use an ephemeral `-c` flag to inject auth so the token never touches .git/config.
+    // GitHub accepts HTTP basic auth with "x-access-token" as the username.
+    const basicAuth = Buffer.from(`x-access-token:${token}`).toString('base64');
+    const extraHeaderKey = `http.${server}/.extraheader`;
+    const authHeader = `Authorization: basic ${basicAuth}`;
 
     // `actions/checkout@v6` persists the default GITHUB_TOKEN in two ways:
     //   1. Direct http.<server>/.extraheader config
     //   2. includeIf.gitdir entries pointing to a credentials config file
     //      that also sets http.<server>/.extraheader
     // Both must be cleared for our custom token to be used.
-    const extraHeaderKey = `http.${server}/.extraheader`;
     const savedHeader = tryRunArgs(['git', 'config', '--local', extraHeaderKey], { cwd: rootDir });
 
     // Collect includeIf entries that point to credential config files
@@ -266,13 +274,12 @@ function pushWithToken(rootDir: string, branch: string): void {
       for (const entry of savedIncludeIfs) {
         tryRunArgs(['git', 'config', '--local', '--unset', entry.key], { cwd: rootDir });
       }
-      runArgs(['git', 'remote', 'set-url', 'origin', authedUrl], { cwd: rootDir });
-      runArgs(['git', 'push', '-u', 'origin', branch, '--force'], { cwd: rootDir });
+      // Pass auth via ephemeral -c flag — never written to .git/config
+      runArgs(['git', '-c', `${extraHeaderKey}=${authHeader}`, 'push', '-u', 'origin', branch, '--force'], {
+        cwd: rootDir,
+      });
     } finally {
-      // Restore original URL, extraheader, and includeIf entries
-      if (originalUrl) {
-        runArgs(['git', 'remote', 'set-url', 'origin', originalUrl], { cwd: rootDir });
-      }
+      // Restore extraheader and includeIf entries cleared above
       if (savedHeader) {
         runArgs(['git', 'config', '--local', extraHeaderKey, savedHeader], { cwd: rootDir });
       }
