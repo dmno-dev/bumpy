@@ -121,7 +121,20 @@ The default `${{ github.token }}` provides the basic permissions needed for both
 
 GitHub's anti-recursion guard prevents PRs created by the default `github.token` from triggering other workflows. This means your regular CI workflows (tests, linting, etc.) won't run automatically on the Version Packages PR — so you can't verify that the version bumps don't break anything before merging.
 
-To fix this, provide a `BUMPY_GH_TOKEN` using either a **fine-grained PAT** or a **GitHub App token**. Bumpy uses this token to push the version branch and create the PR, which allows your CI workflows to trigger normally.
+To fix this, provide a `BUMPY_GH_TOKEN` using either a **fine-grained PAT** or a **GitHub App token**. Bumpy uses this token to push the version branch, which allows your CI workflows to trigger normally.
+
+#### Controlling what the token is used for
+
+By default, `BUMPY_GH_TOKEN` is only used for git push operations. You can opt in to using it for other GitHub API calls:
+
+| Flag             | Command      | Effect                                        |
+| ---------------- | ------------ | --------------------------------------------- |
+| `--pat-pr`       | `ci release` | Create/edit the version PR as the token owner |
+| `--pat-comments` | `ci check`   | Post PR comments as the token owner           |
+
+**When to use these flags:** Use them when `BUMPY_GH_TOKEN` belongs to a dedicated automation account (bot user or GitHub App). The PR and comments will appear from that account.
+
+**When NOT to use these flags:** If you're using a developer's personal PAT, leave these off. PRs and comments will appear from `github-actions[bot]`, which allows the developer to still review and approve the PR.
 
 Run `bumpy ci setup` for interactive guidance, or set it up manually:
 
@@ -162,8 +175,8 @@ A classic npm access token. Create one at [npmjs.com → Access Tokens](https://
 
 ## Environment variables summary
 
-| Variable         | Required          | Used by                  | Description                                       |
-| ---------------- | ----------------- | ------------------------ | ------------------------------------------------- |
-| `GH_TOKEN`       | Yes               | `ci check`, `ci release` | GitHub token for API access                       |
-| `BUMPY_GH_TOKEN` | Recommended       | `ci release`             | PAT or App token so version PRs trigger workflows |
-| `NPM_TOKEN`      | If not using OIDC | `ci release`             | npm access token for publishing                   |
+| Variable         | Required          | Used by                  | Description                                                       |
+| ---------------- | ----------------- | ------------------------ | ----------------------------------------------------------------- |
+| `GH_TOKEN`       | Yes               | `ci check`, `ci release` | GitHub token for API access                                       |
+| `BUMPY_GH_TOKEN` | Recommended       | `ci check`, `ci release` | PAT or App token — used for push, and optionally for PRs/comments |
+| `NPM_TOKEN`      | If not using OIDC | `ci release`             | npm access token for publishing                                   |

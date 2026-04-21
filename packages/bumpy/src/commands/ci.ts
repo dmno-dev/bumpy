@@ -11,6 +11,41 @@ import { detectPackageManager } from '../utils/package-manager.ts';
 import { createHash } from 'node:crypto';
 import type { BumpyConfig, BumpFile, PackageManager, ReleasePlan, PlannedRelease } from '../types.ts';
 
+// ---- PAT-scoped gh helpers ----
+
+/**
+ * Temporarily override GH_TOKEN with BUMPY_GH_TOKEN for a gh CLI call.
+ *
+ * Use `--pat-pr` / `--pat-comments` flags to opt in. This is useful when
+ * BUMPY_GH_TOKEN belongs to a dedicated automation/bot account. If you're
+ * using a developer's personal PAT, it's better to leave these flags off so
+ * that PRs and comments appear from github-actions[bot] — allowing the
+ * developer to still review and approve the PR.
+ */
+function requirePatToken(): string {
+  const token = process.env.BUMPY_GH_TOKEN;
+  if (!token) {
+    throw new Error('BUMPY_GH_TOKEN must be set when using --pat-pr or --pat-comments');
+  }
+  return token;
+}
+
+async function withPatToken<T>(usePat: boolean, fn: () => Promise<T>): Promise<T> {
+  if (!usePat) return fn();
+  const token = requirePatToken();
+  const originalGhToken = process.env.GH_TOKEN;
+  process.env.GH_TOKEN = token;
+  try {
+    return await fn();
+  } finally {
+    if (originalGhToken !== undefined) {
+      process.env.GH_TOKEN = originalGhToken;
+    } else {
+      delete process.env.GH_TOKEN;
+    }
+  }
+}
+
 // ---- Validation helpers ----
 
 /** Validate a git branch name to prevent injection */
@@ -45,6 +80,7 @@ function ensureGitIdentity(rootDir: string, config: BumpyConfig): void {
 interface CheckOptions {
   comment?: boolean; // post a PR comment via gh (default: true in CI)
   failOnMissing?: boolean; // exit 1 if no bump files (default: false)
+  patComments?: boolean; // post PR comments using BUMPY_GH_TOKEN
 }
 
 /**
@@ -84,7 +120,7 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
 
     if (shouldComment && prNumber) {
       const prBranch = detectPrBranch(rootDir);
-      await postOrUpdatePrComment(prNumber, formatNoBumpFilesComment(prBranch, pm), rootDir);
+      await postOrUpdatePrComment(prNumber, formatNoBumpFilesComment(prBranch, pm), rootDir, opts.patComments);
     }
 
     if (opts.failOnMissing) {
@@ -111,7 +147,7 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
   if (shouldComment && prNumber) {
     const prBranch = detectPrBranch(rootDir);
     const comment = formatReleasePlanComment(plan, prBumpFiles, prNumber, prBranch, pm, plan.warnings);
-    await postOrUpdatePrComment(prNumber, comment, rootDir);
+    await postOrUpdatePrComment(prNumber, comment, rootDir, opts.patComments);
   }
 }
 
@@ -121,6 +157,7 @@ interface ReleaseOptions {
   mode: 'auto-publish' | 'version-pr';
   tag?: string; // npm dist-tag for auto-publish
   branch?: string; // branch name for version PR (default: "bumpy/version-packages")
+  patPr?: boolean; // create/edit PR using BUMPY_GH_TOKEN
 }
 
 /**
@@ -153,7 +190,7 @@ export async function ciReleaseCommand(rootDir: string, opts: ReleaseOptions): P
     await autoPublish(rootDir, config, opts.tag);
   } else {
     const packageDirs = new Map([...packages.values()].map((p) => [p.name, p.relativeDir]));
-    await createVersionPr(rootDir, plan, config, packageDirs, opts.branch);
+    await createVersionPr(rootDir, plan, config, packageDirs, opts.branch, opts.patPr);
   }
 }
 
@@ -263,6 +300,7 @@ async function createVersionPr(
   config: BumpyConfig,
   packageDirs: Map<string, string>,
   branchName?: string,
+  patPr?: boolean,
 ): Promise<void> {
   const branch = validateBranchName(branchName || config.versionPr.branch);
   const baseBranch = validateBranchName(
@@ -310,19 +348,30 @@ async function createVersionPr(
   if (existingPr) {
     const validPr = validatePrNumber(existingPr);
     log.step(`Updating existing PR #${validPr}...`);
-    await runArgsAsync(['gh', 'pr', 'edit', validPr, '--title', config.versionPr.title, '--body-file', '-'], {
-      cwd: rootDir,
-      input: prBody,
-    });
+    await withPatToken(!!patPr, () =>
+      runArgsAsync(['gh', 'pr', 'edit', validPr, '--title', config.versionPr.title, '--body-file', '-'], {
+        cwd: rootDir,
+        input: prBody,
+      }),
+    );
     log.success(`Updated PR #${validPr}`);
   } else {
     log.step('Creating version PR...');
     const prTitle = config.versionPr.title;
-    const result = await runArgsAsync(
-      ['gh', 'pr', 'create', '--title', prTitle, '--body-file', '-', '--base', baseBranch, '--head', branch],
-      { cwd: rootDir, input: prBody },
+    const result = await withPatToken(!!patPr, () =>
+      runArgsAsync(
+        ['gh', 'pr', 'create', '--title', prTitle, '--body-file', '-', '--base', baseBranch, '--head', branch],
+        { cwd: rootDir, input: prBody },
+      ),
     );
     log.success(`Created PR: ${result}`);
+    if (!patPr) {
+      // Push again with the custom token now that the PR exists, so that a
+      // `pull_request: synchronize` event is generated and CI workflows trigger.
+      // (The initial push happened before the PR existed, and the PR creation
+      // event from GITHUB_TOKEN doesn't trigger workflows.)
+      pushWithToken(rootDir, branch);
+    }
   }
 
   // Switch back to the base branch
@@ -525,7 +574,7 @@ function formatVersionPrBody(plan: ReleasePlan, preamble: string, packageDirs: M
 
 const COMMENT_MARKER = '<!-- bumpy-release-plan -->';
 
-async function postOrUpdatePrComment(prNumber: string, body: string, rootDir: string): Promise<void> {
+async function postOrUpdatePrComment(prNumber: string, body: string, rootDir: string, usePat = false): Promise<void> {
   const validPr = validatePrNumber(prNumber);
   const markedBody = `${COMMENT_MARKER}\n${body}`;
 
@@ -540,13 +589,17 @@ async function postOrUpdatePrComment(prNumber: string, body: string, rootDir: st
     const commentId = existingComment?.split('\n')[0]?.trim();
 
     if (commentId) {
-      await runArgsAsync(
-        ['gh', 'api', `repos/{owner}/{repo}/issues/comments/${commentId}`, '-X', 'PATCH', '-F', 'body=@-'],
-        { cwd: rootDir, input: markedBody },
+      await withPatToken(usePat, () =>
+        runArgsAsync(
+          ['gh', 'api', `repos/{owner}/{repo}/issues/comments/${commentId}`, '-X', 'PATCH', '-F', 'body=@-'],
+          { cwd: rootDir, input: markedBody },
+        ),
       );
       log.dim('  Updated PR comment');
     } else {
-      await runArgsAsync(['gh', 'pr', 'comment', validPr, '--body-file', '-'], { cwd: rootDir, input: markedBody });
+      await withPatToken(usePat, () =>
+        runArgsAsync(['gh', 'pr', 'comment', validPr, '--body-file', '-'], { cwd: rootDir, input: markedBody }),
+      );
       log.dim('  Posted PR comment');
     }
   } catch (err) {
