@@ -1,5 +1,5 @@
 import { resolve } from 'node:path';
-import { readJson, exists } from '../utils/fs.ts';
+import { readJson, readJsonc, exists } from '../utils/fs.ts';
 import { type BumpyConfig, type PackageConfig, DEFAULT_CONFIG } from '../types.ts';
 
 const BUMPY_DIR = '.bumpy';
@@ -32,7 +32,7 @@ export async function loadConfig(rootDir: string): Promise<BumpyConfig> {
   const configPath = resolve(rootDir, BUMPY_DIR, CONFIG_FILE);
   let userConfig: Partial<BumpyConfig> = {};
   if (await exists(configPath)) {
-    userConfig = await readJson<Partial<BumpyConfig>>(configPath);
+    userConfig = await readJsonc<Partial<BumpyConfig>>(configPath);
   }
   return mergeConfig(DEFAULT_CONFIG, userConfig);
 }
