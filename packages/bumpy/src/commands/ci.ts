@@ -1,5 +1,6 @@
 import { log, colorize } from '../utils/logger.ts';
 import { loadConfig } from '../core/config.ts';
+import { findChangedPackages } from './check.ts';
 import { discoverWorkspace } from '../core/workspace.ts';
 import { DependencyGraph } from '../core/dep-graph.ts';
 import { readBumpFiles, filterBranchBumpFiles } from '../core/bump-file.ts';
@@ -80,7 +81,8 @@ function ensureGitIdentity(rootDir: string, config: BumpyConfig): void {
 
 interface CheckOptions {
   comment?: boolean; // post a PR comment via gh (default: true in CI)
-  failOnMissing?: boolean; // exit 1 if no bump files (default: false)
+  strict?: boolean; // exit 1 if any changed packages are uncovered
+  noFail?: boolean; // never exit 1, warn only
   patComments?: boolean; // post PR comments using BUMPY_GH_TOKEN
 }
 
@@ -108,14 +110,9 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
 
   // Filter to only bump files added/modified in this PR
   const changedFiles = getChangedFiles(rootDir, config.baseBranch);
-  const { branchBumpFiles: prBumpFiles, branchBumpFileIds: prBumpFileIds } = filterBranchBumpFiles(
-    allBumpFiles,
-    changedFiles,
-  );
+  const { branchBumpFiles: prBumpFiles, hasEmptyBumpFile } = filterBranchBumpFiles(allBumpFiles, changedFiles, rootDir);
 
   // An empty bump file signals intentionally no releases needed
-  const hasEmptyBumpFile = prBumpFileIds.size > prBumpFiles.length;
-
   if (hasEmptyBumpFile) {
     log.success('Empty bump file found — no releases needed.');
     if (shouldComment && prNumber) {
@@ -126,17 +123,17 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
   }
 
   if (prBumpFiles.length === 0) {
+    const willFail = !opts.noFail;
     const msg = 'No bump files found in this PR.';
-    log.info(msg);
+    if (willFail) log.error(msg);
+    else log.warn(msg);
 
     if (shouldComment && prNumber) {
       const prBranch = detectPrBranch(rootDir);
       await postOrUpdatePrComment(prNumber, formatNoBumpFilesComment(prBranch, pm), rootDir, opts.patComments);
     }
 
-    if (opts.failOnMissing) {
-      process.exit(1);
-    }
+    if (willFail) process.exit(1);
     return;
   }
 
@@ -159,6 +156,17 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
     const prBranch = detectPrBranch(rootDir);
     const comment = formatReleasePlanComment(plan, prBumpFiles, prNumber, prBranch, pm, plan.warnings);
     await postOrUpdatePrComment(prNumber, comment, rootDir, opts.patComments);
+  }
+
+  // Check for uncovered packages
+  const coveredPackages = new Set(plan.releases.map((r) => r.name));
+  const changedPackages = await findChangedPackages(changedFiles, packages, rootDir, config);
+  const missing = changedPackages.filter((name) => !coveredPackages.has(name));
+  if (missing.length > 0) {
+    const willFail = opts.strict && !opts.noFail;
+    const logFn = willFail ? log.error : log.warn;
+    logFn(`${missing.length} changed package(s) not covered by bump files: ${missing.join(', ')}`);
+    if (willFail) process.exit(1);
   }
 }
 
