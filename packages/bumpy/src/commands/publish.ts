@@ -80,7 +80,7 @@ export async function publishCommand(rootDir: string, opts: PublishCommandOption
 
   // Summary
   if (result.published.length > 0) {
-    log.success(`Published ${result.published.length} package(s)`);
+    log.success(`🐸 Published ${result.published.length} package(s)`);
   }
   if (result.skipped.length > 0) {
     log.dim(`Skipped ${result.skipped.length}: ${result.skipped.map((s) => s.name).join(', ')}`);

@@ -254,7 +254,11 @@ The critical difference: changesets bumps dependents to **major** when a peer de
 
 ### `bumpy init`
 
-Creates `.bumpy/` directory with default `_config.json` and a README.
+Initialize `.bumpy/` directory. Automatically detects and migrates from `.changeset/` if present. Ensures `@varlock/bumpy` is installed as a dev dependency.
+
+| Flag      | Description              |
+| --------- | ------------------------ |
+| `--force` | Skip interactive prompts |
 
 ### `bumpy add`
 
@@ -360,16 +364,6 @@ Release automation — either creates a "Version Packages" PR or auto-publishes 
 Default mode (`version-pr`): creates a branch, runs `bumpy version`, commits, and opens/updates a PR via `gh`. Merging that PR triggers publish.
 
 Auto-publish mode: runs `bumpy version`, commits, pushes, then `bumpy publish` in one step.
-
-### `bumpy migrate`
-
-Migrate from `.changeset/` to `.bumpy/`.
-
-| Flag      | Description                                                |
-| --------- | ---------------------------------------------------------- |
-| `--force` | Skip interactive prompts (don't ask to delete .changeset/) |
-
-Migrates `.changeset/config.json` fields to `.bumpy/_config.json`, copies pending bump files, and prints key differences from changesets.
 
 ## Changelog Customization
 
@@ -663,14 +657,15 @@ Or with a custom title:
 ### Migrating from changesets
 
 ```bash
-bumpy migrate
+bumpy init
 ```
 
-This will:
+If `.changeset/` is detected, `bumpy init` will automatically:
 
-1. Create `.bumpy/` and migrate settings to `_config.json`
-2. Copy pending bump `.md` files
-3. Optionally remove `.changeset/` directory
+1. Rename `.changeset/` to `.bumpy/` (keeping pending bump files)
+2. Convert `config.json` to `_config.json` (migrating compatible fields)
+3. Offer to uninstall `@changesets/cli` and install `@varlock/bumpy`
+4. Warn about changeset references in GitHub workflows
 
 Key behavioral differences after migration:
 
