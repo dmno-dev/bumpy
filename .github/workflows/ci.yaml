@@ -32,7 +32,7 @@ jobs:
 
       # 🐸 This is the important part - checks for missing bump files and posts/updates a PR comment with the release plan
       # (use --pat-comments if PAT belongs to dedicated bot, rather than person)
-      - run: bunx @varlock/bumpy ci check --fail-on-missing --pat-comments
+      - run: bunx @varlock/bumpy ci check --pat-comments
         env:
           GH_TOKEN: ${{ github.token }}
           BUMPY_GH_TOKEN: ${{ secrets.BUMPY_GH_TOKEN }} # <- PAT needed so that release PR will trigger CI

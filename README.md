@@ -1,12 +1,12 @@
 <p align="center">
   <a href="https://bumpy.varlock.dev" target="_blank" rel="noopener noreferrer">
-    <img src="/images/github-readme-banner.png" alt="Bumpy banner">
+    <img src="https://raw.githubusercontent.com/dmno-dev/bumpy/refs/heads/main/images/github-readme-banner.png" alt="Bumpy banner">
   </a>
 </p>
 <br/>
 <p align="center">
   <a href="https://npmjs.com/package/@varlock/bumpy"><img src="https://img.shields.io/npm/v/@varlock/bumpy.svg" alt="npm package"></a>
-  <a href="/LICENSE.md"><img src="https://img.shields.io/npm/l/@varlock/bumpy.svg" alt="license"></a>
+  <a href="https://github.com/dmno-dev/bumpy/blob/main/LICENSE"><img src="https://img.shields.io/npm/l/@varlock/bumpy.svg" alt="license"></a>
   <a href="https://github.com/dmno-dev/bumpy/actions/workflows/ci.yaml"><img src="https://img.shields.io/github/actions/workflow/status/dmno-dev/bumpy/ci.yaml?style=flat&logo=github&label=CI" alt="build status"></a>
   <a href="https://chat.dmno.dev"><img src="https://img.shields.io/badge/chat-discord-5865F2?style=flat&logo=discord" alt="discord chat"></a>
 </p>
@@ -18,7 +18,18 @@ A modern package versioning and changelog generation tool — built for monorepo
 
 ## How It Works
 
-Bumpy uses **bump files** (you may know them as "changesets" if coming from that tool) — small markdown files that declare which packages changed and how (patch/minor/major), along with a description that ends up in changelogs. Developers create these files as part of their PRs. As PRs merge to the base branch, a "release PR" is kept up to date showing what packages will be released and their changelogs — including packages bumped automatically due to dependency relationships. When the release PR is merged, bump files are consumed (deleted), and packages are published with updated versions and changelogs.
+Bumpy uses **bump files** (you may know them as "changesets" if coming from [that tool 🦋](https://github.com/changesets/changesets)) — small markdown files that declare an intent to release packages with a bump level (patch/minor/major), and a description that ends up in changelogs. Developers create these files as part of their PRs, and these files are then used to consolidate changes, generate changelogs, and trigger publishing. Specifically:
+
+- Devs/agents create bump files as part of their PRs (using `bumpy add` or manually)
+- A pre-push git hook can enforce bump files exist for changed packages
+- In CI, a workflow checks PRs for bump files, leaves a comment on the PR detailing changed packages
+- As PRs merge to the base branch, a "release PR" is kept up to date
+  - Shows what packages will be released and their changelogs
+    — Including packages bumped automatically due to dependency relationships
+- When release PR is merged, publishing is triggered
+  - Oending bump files are deleted and packages are published with updated versions and changelogs
+
+All of this is automated via two simple GitHub Actions workflows (see [CI setup](#ci--github-actions) below). You can also run everything locally with `bumpy status`, `bumpy version`, and `bumpy publish`.
 
 ### Example bump file
 
@@ -34,18 +45,10 @@ Added user language preference to the core config.
 Fixed locale fallback logic in utils.
 ```
 
-The typical CI driven workflow is:
-
-1. **`bumpy add`** — developers create bump files as part of their PRs
-2. **`bumpy ci check`** — CI comments on each PR with a release plan preview
-3. **`bumpy ci release`** — on merge to main, CI opens a "Version Packages" PR that bumps versions and updates changelogs. When that PR is merged, it publishes packages.
-
-All of this is automated via two simple GitHub Actions workflows (see [CI setup](#ci--github-actions) below). You can also run everything locally with `bumpy status`, `bumpy version`, and `bumpy publish`.
-
 ## Features
 
 - **All package managers** — npm, pnpm, yarn, and bun workspaces
-- **Smart dependency propagation** — configurable rules for how version bumps cascade through your dependency graph (see [version propagation docs](docs/version-propagation.md))
+- **Smart dependency propagation** — configurable rules for how version bumps cascade through your dependency graph (see [version propagation docs](https://github.com/dmno-dev/bumpy/blob/main/docs/version-propagation.md))
 - **Pack-then-publish** — by default, publishes to npm (resolving `workspace:` and `catalog:` protocols, with OIDC/provenance support). Per-package custom publish commands let you target anything — VSCode extensions, Docker images, JSR, private registries, etc.
 - **Flexible package management** — include/exclude any package individually via per-package config, glob patterns, or `privatePackages` setting
 - **Non-interactive CLI** — `bumpy add` works fully non-interactively for CI/CD and AI-assisted development
@@ -60,24 +63,26 @@ All of this is automated via two simple GitHub Actions workflows (see [CI setup]
 # Install
 bun add -d @varlock/bumpy  # or npm/pnpm/yarn
 
-# Initialize (creates .bumpy/ config directory)
-bumpy init
+# Initialize (creates .bumpy/ directory and config, migrates from changesets if applicable)
+bunx bumpy init
 
 # Create a bump file
-bumpy add
+bunx bumpy add
 
 # Preview the release plan
-bumpy status
+bunx bumpy status
 ```
 
 Then set up CI to automate versioning and publishing (see below).
 
 ## CI / GitHub Actions
 
-No separate action to install — just call `bumpy ci` directly in your workflows. Two commands handle the entire release lifecycle:
+No separate action to rely on — just call `bumpy ci` directly in your workflows. Two commands handle the entire release lifecycle:
 
 - **`bumpy ci check`** — runs on every PR. Computes the release plan from pending bump files and posts/updates a comment on the PR showing what versions would be released. Warns if any changed packages are missing bump files.
 - **`bumpy ci release`** — runs on push to main. If pending bump files exist, it opens (or updates) a "Version Packages" PR that applies all version bumps and changelog updates. If the current push _is_ the Version Packages PR being merged, it publishes the new versions, creates git tags, and creates GitHub releases.
+
+_examples use bun, but works with Node.js_
 
 ### PR check workflow
 
@@ -98,6 +103,7 @@ jobs:
       - run: bunx @varlock/bumpy ci check
         env:
           GH_TOKEN: ${{ github.token }}
+          BUMPY_GH_TOKEN: ${{ secrets.BUMPY_GH_TOKEN }} # additional PAT (optional)
 ```
 
 ### Release workflow
@@ -128,6 +134,7 @@ jobs:
       - run: bunx @varlock/bumpy ci release
         env:
           GH_TOKEN: ${{ github.token }}
+          BUMPY_GH_TOKEN: ${{ secrets.BUMPY_GH_TOKEN }} # additonal PAT, needed to trigger CI checks on release PR
 ```
 
 > **Trusted publishing setup:** Configure each package on [npmjs.com](https://docs.npmjs.com/trusted-publishers/) → Package Settings → Trusted Publishers → GitHub Actions. Specify your org/user, repo, and the workflow filename (`bumpy-release.yml`). No `NPM_TOKEN` secret needed. Requires npm >= 11.5.1 — bumpy will warn if your version is too old.
@@ -157,6 +164,7 @@ jobs:
       - run: bunx @varlock/bumpy ci release
         env:
           GH_TOKEN: ${{ github.token }}
+          BUMPY_GH_TOKEN: ${{ secrets.BUMPY_GH_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 ```
 
@@ -166,7 +174,7 @@ You can also use `bumpy ci release --auto-publish` to version + publish directly
 
 ### Token setup
 
-The default `github.token` works for basic functionality, but GitHub's anti-recursion guard means PRs created by the default token won't trigger other workflows — so your regular CI (tests, linting, etc.) won't run automatically on the Version Packages PR. To fix this, provide a `BUMPY_GH_TOKEN` secret using either a **fine-grained PAT** or a **GitHub App token**. See the [full token setup guide](docs/github-actions.md#token-setup) for details.
+The default `github.token` works for basic functionality, but GitHub's anti-recursion guard means PRs created by the default token won't trigger other workflows — so your regular CI (tests, linting, etc.) won't run automatically on the Version Packages PR. To fix this, provide a `BUMPY_GH_TOKEN` secret using either a **fine-grained PAT** or a **GitHub App token**. See the [full token setup guide](https://github.com/dmno-dev/bumpy/blob/main/docs/github-actions.md#token-setup) for details.
 
 Run `bumpy ci setup` for interactive guidance, or set it up manually:
 
@@ -206,12 +214,11 @@ The skill teaches the AI to examine git changes, identify affected packages, cho
 
 ## Documentation
 
-- [Bump file format](docs/bump-files.md) — syntax, bump levels, cascade control
-- [Configuration reference](docs/configuration.md) — all `.bumpy/_config.json` and per-package options
-- [CLI reference](docs/cli.md) — every command with flags and examples
-- [GitHub Actions setup](docs/github-actions.md) — CI workflows, token setup, trusted publishing
-- [Version propagation](docs/version-propagation.md) — how dependency bumps cascade through your graph
-- [LLM-friendly reference](./llms.md) — single-file reference optimized for AI tools
+- [Bump file format](https://github.com/dmno-dev/bumpy/blob/main/docs/bump-files.md) — syntax, bump levels, cascade control
+- [Configuration reference](https://github.com/dmno-dev/bumpy/blob/main/docs/configuration.md) — all `.bumpy/_config.json` and per-package options
+- [CLI reference](https://github.com/dmno-dev/bumpy/blob/main/docs/cli.md) — every command with flags and examples
+- [GitHub Actions setup](https://github.com/dmno-dev/bumpy/blob/main/docs/github-actions.md) — CI workflows, token setup, trusted publishing
+- [Version propagation](https://github.com/dmno-dev/bumpy/blob/main/docs/version-propagation.md) — how dependency bumps cascade through your graph
 
 ## Why files instead of conventional commits?
 
@@ -219,9 +226,9 @@ Tools like semantic-release infer version bumps from commit messages (`feat:` �
 
 ## Why not just use changesets?
 
-Bumpy is built as a successor to [@changesets/changesets](https://github.com/changesets/changesets). Changesets is mature and widely adopted, but has stagnated — hundreds of open issues around core design problems that are unlikely to be fixed without a rewrite. See [differences from changesets](docs/differences-from-changesets.md) for a detailed comparison with links to specific issues. The biggest pain points bumpy addresses:
+Bumpy is built as a successor to [@changesets/changesets](https://github.com/changesets/changesets). Changesets is mature and widely adopted, but has stagnated — hundreds of open issues around core design problems that are unlikely to be fixed without a rewrite. See [differences from changesets](https://github.com/dmno-dev/bumpy/blob/main/docs/differences-from-changesets.md) for a detailed comparison with links to specific issues. The biggest pain points bumpy addresses:
 
-- **Sane dependency propagation** — changesets hardcodes aggressive behavior where a minor bump triggers a major bump on all peer dependents. Bumpy uses a [three-phase algorithm](docs/version-propagation.md) with sensible defaults and full configurability.
+- **Sane dependency propagation** — changesets hardcodes aggressive behavior where a minor bump triggers a major bump on all peer dependents. Bumpy uses a [three-phase algorithm](https://github.com/dmno-dev/bumpy/blob/main/docs/version-propagation.md) with sensible defaults and full configurability.
 - **Workspace protocol resolution** — changesets uses `npm publish` even in pnpm/yarn workspaces, so `workspace:^` and `catalog:` protocols are NOT resolved, resulting in broken published packages.
 - **Custom publish commands** — changesets is hardcoded to `npm publish`. Bumpy supports per-package custom publish for VSCode extensions, Docker images, JSR, etc.
 - **Flexible package management** — changesets treats all private packages the same. Bumpy lets you include/exclude any package individually.
@@ -231,14 +238,19 @@ Bumpy is built as a successor to [@changesets/changesets](https://github.com/cha
 ## Development
 
 ```bash
-bun install
-bun test
-bun src/cli.ts --help
+bun install        # install deps
+bun test           # run tests
+bun run build      # build CLI
+bunx bumpy --help  # invoke built cli
 ```
 
 ## Roadmap
 
-- Prerelease mode (for now, use [pkg.pr.new](https://github.com/stackblitz-labs/pkg.pr.new) for preview packages)
-- Bun standalone binary for use outside of JS projects
+- Prerelease mode (for now, use [pkg.pr.new](https://github.com/stackblitz-labs/pkg.pr.new) for branch preview packages)
+- Standalone binary for use outside of JS projects
 - Better support for versioning non-JS packages and usage without package.json files
+- Plugin system for different publish targets, and support multiple targets per package
 - Tracking workspace-level / non-publishable changes
+- More frogs 🐸
+
+<!-- note this readme is also used for the bumpy package! -->
