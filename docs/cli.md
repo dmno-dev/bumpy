@@ -4,11 +4,16 @@ All commands can be run via `bunx @varlock/bumpy <command>` or, (or just `bunx b
 
 ## `bumpy init`
 
-Create the `.bumpy/` config directory with default settings.
+Initialize the `.bumpy/` config directory. If `.changeset/` is detected, it automatically migrates — renaming the directory to `.bumpy/`, converting config, keeping pending bump files, and offering to uninstall `@changesets/cli`. Also ensures `@varlock/bumpy` is installed as a dev dependency and warns about changeset references in GitHub workflows.
 
 ```bash
 bumpy init
+bumpy init --force    # skip interactive prompts
 ```
+
+| Flag      | Description              |
+| --------- | ------------------------ |
+| `--force` | Skip interactive prompts |
 
 ## `bumpy add`
 
@@ -171,19 +176,6 @@ Interactive guide to set up `BUMPY_GH_TOKEN` for CI. Walks through creating a fi
 ```bash
 bumpy ci setup
 ```
-
-## `bumpy migrate`
-
-Convert from changesets (`.changeset/`) to bumpy (`.bumpy/`). Migrates config and pending changeset files.
-
-```bash
-bumpy migrate
-bumpy migrate --force
-```
-
-| Flag      | Description               |
-| --------- | ------------------------- |
-| `--force` | Skip cleanup confirmation |
 
 ## `bumpy ai setup`
 

@@ -121,7 +121,7 @@ Bumpy includes the release date in every changelog heading by default.
 
 ### Migration tool
 
-`bumpy migrate` converts `.changeset/` config and pending bump files to `.bumpy/`.
+`bumpy init` detects `.changeset/` and automatically migrates — renaming the directory to `.bumpy/`, converting config, and keeping pending bump files.
 
 - (Previously listed under Planned)
 

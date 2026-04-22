@@ -55,7 +55,7 @@ export async function checkCommand(rootDir: string): Promise<void> {
   const missing = changedPackages.filter((name) => !coveredPackages.has(name));
 
   if (missing.length === 0) {
-    log.success(`All ${changedPackages.length} changed package(s) have bump files.`);
+    log.success(`🐸 All ${changedPackages.length} changed package(s) have bump files.`);
     return;
   }
 
