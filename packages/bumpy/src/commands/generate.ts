@@ -166,7 +166,7 @@ export async function generateCommand(rootDir: string, opts: GenerateOptions): P
   const summary = summaryLines.join('\n');
   await writeBumpFile(rootDir, filename, releases, summary);
 
-  log.success(`Created bump file: .bumpy/${filename}.md`);
+  log.success(`🐸 Created bump file: .bumpy/${filename}.md`);
   for (const r of releases) {
     log.dim(`  ${r.name}: ${r.type}`);
   }

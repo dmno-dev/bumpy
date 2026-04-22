@@ -380,7 +380,7 @@ async function createVersionPr(
         input: prBody,
       }),
     );
-    log.success(`Updated PR #${validPr}`);
+    log.success(`🐸 Updated PR #${validPr}`);
   } else {
     log.step('Creating version PR...');
     const prTitle = config.versionPr.title;
@@ -390,7 +390,7 @@ async function createVersionPr(
         { cwd: rootDir, input: prBody },
       ),
     );
-    log.success(`Created PR: ${result}`);
+    log.success(`🐸 Created PR: ${result}`);
     if (!patPr) {
       // Push again with the custom token now that the PR exists, so that a
       // `pull_request: synchronize` event is generated and CI workflows trigger.

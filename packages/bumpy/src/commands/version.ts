@@ -49,7 +49,7 @@ export async function versionCommand(rootDir: string, opts: VersionOptions = {})
   // Apply the plan
   await applyReleasePlan(plan, packages, rootDir, config);
 
-  log.success(`Updated ${plan.releases.length} package(s)`);
+  log.success(`🐸 Updated ${plan.releases.length} package(s)`);
   log.dim(`  Deleted ${bumpFiles.length} bump file(s)`);
 
   // Update lockfile so it stays in sync with bumped versions
