@@ -159,7 +159,7 @@ function printRelease(r: PlannedRelease, packages: Map<string, WorkspacePackage>
 function getPublishTargets(
   pkg: WorkspacePackage | undefined,
   pkgConfig: Partial<PackageConfig>,
-  config: BumpyConfig,
+  _config: BumpyConfig,
 ): string[] {
   if (!pkg) return [];
   // Private packages with no custom command won't publish
