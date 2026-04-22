@@ -2,6 +2,8 @@
 
 Bumpy is configured via `.bumpy/_config.json`, created by `bumpy init`. Per-package config can also be set in each `package.json` under the `"bumpy"` key.
 
+> **Tip:** The config file supports JSONC — you can use `//` line comments, `/* */` block comments, and trailing commas.
+
 ## Global config (`.bumpy/_config.json`)
 
 | Option                       | Type                                   | Default                          | Description                                                                                      |

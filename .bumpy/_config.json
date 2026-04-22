@@ -1,6 +1,12 @@
 {
+  // we use the local version, but normally you'd use
+  // "$schema": "../node_modules/@varlock/bumpy/config-schema.json",
   "$schema": "../packages/bumpy/config-schema.json",
+
+  // main is already default, but no harm in being explicit
   "baseBranch": "main",
+  // only thank external contributors
   "changelog": ["github", { "internalAuthors": ["theoephraim", "philmillman"] }],
+  // narrows down which files are considered changes
   "changedFilePatterns": ["src/**", "skills/**", "package.json", "tsconfig.json", "tsdown.config.ts"]
 }
