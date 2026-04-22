@@ -1,6 +1,6 @@
 import { readFile, writeFile, readdir, unlink, mkdir, access } from 'node:fs/promises';
 import { join } from 'node:path';
-import { parse as parseJsonc } from 'jsonc-parser';
+import { parseJsonc } from './jsonc.ts';
 
 export async function readJson<T = Record<string, unknown>>(filePath: string): Promise<T> {
   const content = await readFile(filePath, 'utf-8');
