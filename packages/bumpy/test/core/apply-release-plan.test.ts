@@ -230,6 +230,59 @@ describe('applyReleasePlan', () => {
     expect(deps.core).toBe('workspace:^2.0.0');
   });
 
+  test('preserves workspace shorthand (workspace:^, workspace:~, workspace:*)', async () => {
+    const coreDir = await setupPackage('core', '1.0.0');
+    const appDir = await setupPackage('app', '1.0.0', {
+      dependencies: { core: 'workspace:*' },
+      devDependencies: { core: 'workspace:^' },
+      peerDependencies: { core: 'workspace:~' },
+    });
+
+    const packages = new Map<string, WorkspacePackage>();
+    packages.set('core', {
+      name: 'core',
+      version: '1.0.0',
+      dir: coreDir,
+      relativeDir: 'packages/core',
+      packageJson: { name: 'core', version: '1.0.0' },
+      private: false,
+      dependencies: {},
+      devDependencies: {},
+      peerDependencies: {},
+      optionalDependencies: {},
+    });
+    packages.set('app', {
+      name: 'app',
+      version: '1.0.0',
+      dir: appDir,
+      relativeDir: 'packages/app',
+      packageJson: {
+        name: 'app',
+        version: '1.0.0',
+        dependencies: { core: 'workspace:*' },
+        devDependencies: { core: 'workspace:^' },
+        peerDependencies: { core: 'workspace:~' },
+      },
+      private: false,
+      dependencies: { core: 'workspace:*' },
+      devDependencies: { core: 'workspace:^' },
+      peerDependencies: { core: 'workspace:~' },
+      optionalDependencies: {},
+    });
+
+    const coreRelease = makeRelease('core', '2.0.0', { type: 'major', oldVersion: '1.0.0' });
+    const appRelease = makeRelease('app', '1.0.1', { oldVersion: '1.0.0', isDependencyBump: true });
+
+    await ensureDir(resolve(tmpDir, '.bumpy'));
+
+    await applyReleasePlan(makeReleasePlan([coreRelease, appRelease]), packages, tmpDir, makeConfig());
+
+    const appPkg = await readJson<Record<string, unknown>>(resolve(appDir, 'package.json'));
+    expect((appPkg.dependencies as Record<string, string>).core).toBe('workspace:*');
+    expect((appPkg.devDependencies as Record<string, string>).core).toBe('workspace:^');
+    expect((appPkg.peerDependencies as Record<string, string>).core).toBe('workspace:~');
+  });
+
   test('preserves package.json formatting when bumping version', async () => {
     // Write a package.json with custom formatting (inline arrays, tab indent, etc.)
     const pkgDir = resolve(tmpDir, 'packages/pkg-a');

@@ -377,10 +377,11 @@ async function createVersionPr(
   pushWithToken(rootDir, branch, config);
 
   // Create or update PR
-  const prBody = formatVersionPrBody(plan, config.versionPr.preamble, packageDirs);
+  const repo = process.env.GITHUB_REPOSITORY;
 
   if (existingPr) {
     const validPr = validatePrNumber(existingPr);
+    const prBody = formatVersionPrBody(plan, config.versionPr.preamble, packageDirs, repo, validPr);
     log.step(`Updating existing PR #${validPr}...`);
     await withPatToken(!!patPr, () =>
       runArgsAsync(['gh', 'pr', 'edit', validPr, '--title', config.versionPr.title, '--body-file', '-'], {
@@ -392,6 +393,8 @@ async function createVersionPr(
   } else {
     log.step('Creating version PR...');
     const prTitle = config.versionPr.title;
+    // Create PR first without diff links, then update body with correct PR number
+    const prBody = formatVersionPrBody(plan, config.versionPr.preamble, packageDirs, repo, null);
     const result = await withPatToken(!!patPr, () =>
       runArgsAsync(
         ['gh', 'pr', 'create', '--title', prTitle, '--body-file', '-', '--base', baseBranch, '--head', branch],
@@ -399,6 +402,21 @@ async function createVersionPr(
       ),
     );
     log.success(`🐸 Created PR: ${result}`);
+
+    // Update body now that we know the PR number
+    if (repo) {
+      const newPrNumber = result?.match(/\/pull\/(\d+)/)?.[1];
+      if (newPrNumber) {
+        const updatedBody = formatVersionPrBody(plan, config.versionPr.preamble, packageDirs, repo, newPrNumber);
+        await withPatToken(!!patPr, () =>
+          runArgsAsync(['gh', 'pr', 'edit', newPrNumber, '--body-file', '-'], {
+            cwd: rootDir,
+            input: updatedBody,
+          }),
+        );
+      }
+    }
+
     if (!patPr) {
       // Push again with the custom token now that the PR exists, so that a
       // `pull_request: synchronize` event is generated and CI workflows trigger.
@@ -479,7 +497,9 @@ function formatReleasePlanComment(
     const filename = `${bf.id}.md`;
     const parts: string[] = [`\`${filename}\``];
     if (repo) {
-      parts.push(`([view diff](https://github.com/${repo}/pull/${prNumber}/files#diff-.bumpy/${filename}))`);
+      parts.push(
+        `([view diff](https://github.com/${repo}/pull/${prNumber}/changes#diff-${sha256Hex(`.bumpy/${filename}`)}))`,
+      );
       if (prBranch) {
         parts.push(`([edit](https://github.com/${repo}/edit/${prBranch}/.bumpy/${filename}))`);
       }
@@ -542,22 +562,25 @@ function bumpSectionHeader(type: string): string {
 }
 
 /** Build inline diff links for a package's changed files in the PR */
-function buildDiffLinks(pkgDir: string): string {
-  const pkgJsonPath = `${pkgDir}/package.json`;
+function buildDiffLinks(pkgDir: string, changesBaseUrl: string | null): string {
+  if (!changesBaseUrl) return '';
   const changelogPath = `${pkgDir}/CHANGELOG.md`;
   // GitHub anchors diff sections with #diff-<sha256 of file path>
-  const links = [
-    `[package.json](#diff-${sha256Hex(pkgJsonPath)})`,
-    `[CHANGELOG.md](#diff-${sha256Hex(changelogPath)})`,
-  ];
-  return ` <sub>${links.join(' · ')}</sub>`;
+  return ` <sub>[CHANGELOG.md](${changesBaseUrl}#diff-${sha256Hex(changelogPath)})</sub>`;
 }
 
 function sha256Hex(input: string): string {
   return createHash('sha256').update(input).digest('hex');
 }
 
-function formatVersionPrBody(plan: ReleasePlan, preamble: string, packageDirs: Map<string, string>): string {
+function formatVersionPrBody(
+  plan: ReleasePlan,
+  preamble: string,
+  packageDirs: Map<string, string>,
+  repo: string | undefined,
+  prNumber: string | null,
+): string {
+  const changesBaseUrl = repo && prNumber ? `https://github.com/${repo}/pull/${prNumber}/changes` : null;
   const lines: string[] = [];
   lines.push(preamble);
   lines.push('');
@@ -576,7 +599,7 @@ function formatVersionPrBody(plan: ReleasePlan, preamble: string, packageDirs: M
     for (const r of releases) {
       const suffix = r.isDependencyBump ? ' _(dep)_' : r.isCascadeBump ? ' _(cascade)_' : '';
       const pkgDir = packageDirs.get(r.name);
-      const diffLinks = pkgDir ? buildDiffLinks(pkgDir) : '';
+      const diffLinks = pkgDir ? buildDiffLinks(pkgDir, changesBaseUrl) : '';
       lines.push(`#### \`${r.name}\` ${r.oldVersion} → **${r.newVersion}**${suffix}${diffLinks}`);
       lines.push('');
 
@@ -585,7 +608,9 @@ function formatVersionPrBody(plan: ReleasePlan, preamble: string, packageDirs: M
       if (relevantBumpFiles.length > 0) {
         for (const bf of relevantBumpFiles) {
           if (bf.summary) {
-            const bfLink = ` ([bump file](#diff-${sha256Hex(`.bumpy/${bf.id}.md`)}))`;
+            const bfLink = changesBaseUrl
+              ? ` ([bump file](${changesBaseUrl}#diff-${sha256Hex(`.bumpy/${bf.id}.md`)}))`
+              : '';
             const summaryLines = bf.summary.split('\n');
             lines.push(`- ${summaryLines[0]}${bfLink}`);
             for (let i = 1; i < summaryLines.length; i++) {
