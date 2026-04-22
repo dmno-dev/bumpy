@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.0
+
+_2026-04-22_
+
+- [#36](https://github.com/dmno-dev/bumpy/pull/36) [`1625ee8`](https://github.com/dmno-dev/bumpy/commit/1625ee840495f6dac08b7091a871b2acf5d966c2) - Support JSONC in config file — allows // line comments, block comments, and trailing commas in .bumpy/\_config.json
+- [#37](https://github.com/dmno-dev/bumpy/pull/37) [`d5771b2`](https://github.com/dmno-dev/bumpy/commit/d5771b2456b195c78da8dc9925fa589ff74df58e) - Rework `bumpy check` and `bumpy ci check` behavior: default mode now only fails when no bump files exist at all (matching changesets), new `--strict` flag requires every changed package to be covered, and `--no-fail` makes checks advisory-only. Also fix false positive "empty bump file found" when deleted bump files appear in git diff.
+
 ## 1.1.0
 
 _2026-04-22_
