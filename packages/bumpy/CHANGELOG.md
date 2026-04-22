@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.1
+
+_2026-04-22_
+
+- Add `inCurrentBranch` and `publishTargets` fields to `status --json` output
+- [#44](https://github.com/dmno-dev/bumpy/pull/44) - Fix PR diff links to use full absolute URLs with `/changes` path and sha256 anchors. Preserve `workspace:^`, `workspace:~`, and `workspace:*` shorthand ranges during versioning instead of resolving them.
+- [#45](https://github.com/dmno-dev/bumpy/pull/45) - Surface bump file parse errors to users instead of silently ignoring them
+- [#43](https://github.com/dmno-dev/bumpy/pull/43) - Fix frog images getting color-inverted in Gmail dark mode by wrapping in anchor tags. Make commit links opt-in via `includeCommitLink` option in GitHub changelog formatter, and add default list of bot/AI authors to skip "Thanks" attribution for.
+
 ## 1.2.0
 
 _2026-04-22_
