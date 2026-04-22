@@ -24,6 +24,7 @@
   },
   "files": [
     "dist",
+    "config-schema.json",
     ".claude-plugin",
     "skills"
   ],
@@ -43,9 +44,11 @@
     "@clack/prompts": "^1.2.0",
     "@types/bun": "latest",
     "@types/js-yaml": "^4.0.9",
+    "@types/picomatch": "^4.0.3",
     "@types/semver": "^7.7.0",
     "js-yaml": "^4.1.0",
     "picocolors": "^1.1.1",
+    "picomatch": "^4.0.4",
     "semver": "^7.7.2",
     "tsdown": "catalog:"
   }

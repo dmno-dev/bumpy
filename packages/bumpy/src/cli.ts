@@ -64,7 +64,9 @@ async function main() {
       case 'version': {
         const rootDir = await findRoot();
         const { versionCommand } = await import('./commands/version.ts');
-        await versionCommand(rootDir);
+        await versionCommand(rootDir, {
+          commit: flags.commit === true,
+        });
         break;
       }
 
@@ -190,7 +192,7 @@ function printHelp() {
     generate                Generate bump file from branch commits
     status                  Show pending releases
     check                   Verify changed packages have bump files (for pre-push hooks)
-    version                 Apply bump files and bump versions
+    version [--commit]      Apply bump files and bump versions
     publish                 Publish versioned packages
     ci check                PR check — report pending releases, comment on PR
     ci release              Release — create version PR or auto-publish

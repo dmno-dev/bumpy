@@ -9,6 +9,7 @@ import { runArgs, runArgsAsync, tryRunArgs } from '../utils/shell.ts';
 import { randomName } from '../utils/names.ts';
 import { detectPackageManager } from '../utils/package-manager.ts';
 import { createHash } from 'node:crypto';
+import { resolveCommitMessage } from '../core/commit-message.ts';
 import type { BumpyConfig, BumpFile, PackageManager, ReleasePlan, PlannedRelease } from '../types.ts';
 
 // ---- PAT-scoped gh helpers ----
@@ -197,7 +198,7 @@ export async function ciReleaseCommand(rootDir: string, opts: ReleaseOptions): P
   }
 
   if (opts.mode === 'auto-publish') {
-    await autoPublish(rootDir, config, opts.tag);
+    await autoPublish(rootDir, config, plan, opts.tag);
   } else {
     const packageDirs = new Map([...packages.values()].map((p) => [p.name, p.relativeDir]));
     await createVersionPr(rootDir, plan, config, packageDirs, opts.branch, opts.patPr);
@@ -206,7 +207,7 @@ export async function ciReleaseCommand(rootDir: string, opts: ReleaseOptions): P
 
 // ---- auto-publish mode ----
 
-async function autoPublish(rootDir: string, config: BumpyConfig, tag?: string): Promise<void> {
+async function autoPublish(rootDir: string, config: BumpyConfig, plan: ReleasePlan, tag?: string): Promise<void> {
   log.step('Running bumpy version...');
   const { versionCommand } = await import('./version.ts');
   await versionCommand(rootDir);
@@ -216,7 +217,8 @@ async function autoPublish(rootDir: string, config: BumpyConfig, tag?: string): 
   runArgs(['git', 'add', '-A'], { cwd: rootDir });
   const status = tryRunArgs(['git', 'status', '--porcelain'], { cwd: rootDir });
   if (status) {
-    runArgs(['git', 'commit', '-m', 'Version packages'], { cwd: rootDir });
+    const commitMsg = await resolveCommitMessage(config.versionCommitMessage, plan, rootDir);
+    runArgs(['git', 'commit', '-F', '-'], { cwd: rootDir, input: commitMsg });
     runArgs(['git', 'push', '--no-verify'], { cwd: rootDir });
   }
 
@@ -361,7 +363,7 @@ async function createVersionPr(
     return;
   }
 
-  const commitMsg = ['Version packages', '', ...plan.releases.map((r) => `${r.name}@${r.newVersion}`)].join('\n');
+  const commitMsg = await resolveCommitMessage(config.versionCommitMessage, plan, rootDir);
   runArgs(['git', 'commit', '-F', '-'], { cwd: rootDir, input: commitMsg });
 
   pushWithToken(rootDir, branch, config);

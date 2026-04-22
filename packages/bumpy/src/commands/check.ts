@@ -1,10 +1,11 @@
 import { relative } from 'node:path';
+import picomatch from 'picomatch';
 import { log, colorize } from '../utils/logger.ts';
-import { loadConfig } from '../core/config.ts';
+import { loadConfig, loadPackageConfig } from '../core/config.ts';
 import { discoverWorkspace } from '../core/workspace.ts';
 import { readBumpFiles, filterBranchBumpFiles } from '../core/bump-file.ts';
 import { getChangedFiles } from '../core/git.ts';
-import type { WorkspacePackage } from '../types.ts';
+import type { BumpyConfig, WorkspacePackage } from '../types.ts';
 
 /**
  * Local check: detect which packages have changed on this branch
@@ -43,7 +44,7 @@ export async function checkCommand(rootDir: string): Promise<void> {
     }
   }
 
-  const changedPackages = findChangedPackages(changedFiles, packages, rootDir);
+  const changedPackages = await findChangedPackages(changedFiles, packages, rootDir, config);
 
   if (changedPackages.length === 0) {
     log.info('No managed packages have changed.');
@@ -69,18 +70,30 @@ export async function checkCommand(rootDir: string): Promise<void> {
 }
 
 /** Map changed files to the packages they belong to */
-function findChangedPackages(
+async function findChangedPackages(
   changedFiles: string[],
   packages: Map<string, WorkspacePackage>,
   rootDir: string,
-): string[] {
+  config: BumpyConfig,
+): Promise<string[]> {
   const changed = new Set<string>();
+
+  // Build per-package matchers (per-package patterns override root patterns)
+  const matchers = new Map<string, picomatch.Matcher>();
+  for (const [name, pkg] of packages) {
+    const pkgConfig = await loadPackageConfig(pkg.dir, config, name);
+    const patterns = pkgConfig.changedFilePatterns ?? config.changedFilePatterns;
+    matchers.set(name, picomatch(patterns));
+  }
 
   for (const file of changedFiles) {
     for (const [name, pkg] of packages) {
       const pkgRelDir = relative(rootDir, pkg.dir);
       if (file.startsWith(pkgRelDir + '/')) {
-        changed.add(name);
+        const relToPackage = file.slice(pkgRelDir.length + 1);
+        if (matchers.get(name)!(relToPackage)) {
+          changed.add(name);
+        }
       }
     }
   }

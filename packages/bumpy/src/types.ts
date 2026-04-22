@@ -59,10 +59,19 @@ export interface PublishConfig {
 export interface BumpyConfig {
   baseBranch: string;
   access: 'public' | 'restricted';
-  commit: boolean;
-  changelog: string | [string, Record<string, unknown>];
+  /**
+   * Customize the commit message used when versioning.
+   * A string starting with "./" is treated as a path to a module that exports
+   * a function receiving the release plan and returning a message string.
+   * Any other string is used as a static commit message.
+   * Omit to use the default: "Version packages\n\npkg@version..."
+   */
+  versionCommitMessage?: string;
+  changelog: false | string | [string, Record<string, unknown>];
   fixed: string[][];
   linked: string[][];
+  /** Glob patterns to filter which changed files count toward marking a package as changed */
+  changedFilePatterns: string[];
   /** Package names/globs to exclude from version management */
   ignore: string[];
   /** Package names/globs to explicitly include (overrides private + ignore) */
@@ -112,6 +121,8 @@ export interface PackageConfig {
   skipNpmPublish?: boolean;
   /** Command to check if a version is already published. Should output the published version string. */
   checkPublished?: string;
+  /** Glob patterns to filter which changed files count toward marking this package as changed */
+  changedFilePatterns?: string[];
   dependencyBumpRules?: Partial<Record<DepType, DependencyBumpRule | false>>;
   cascadeTo?: Record<string, DependencyBumpRule>;
 }
@@ -126,7 +137,8 @@ export const DEFAULT_PUBLISH_CONFIG: PublishConfig = {
 export const DEFAULT_CONFIG: BumpyConfig = {
   baseBranch: 'main',
   access: 'public',
-  commit: false,
+  versionCommitMessage: undefined,
+  changedFilePatterns: ['**'],
   changelog: 'default',
   fixed: [],
   linked: [],

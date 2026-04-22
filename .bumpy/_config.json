@@ -1,4 +1,6 @@
 {
+  "$schema": "../packages/bumpy/config-schema.json",
   "baseBranch": "main",
-  "changelog": ["github", { "internalAuthors": ["theoephraim", "philmillman"] }]
+  "changelog": ["github", { "internalAuthors": ["theoephraim", "philmillman"] }],
+  "changedFilePatterns": ["src/**", "skills/**", "package.json", "tsconfig.json", "tsdown.config.ts"]
 }

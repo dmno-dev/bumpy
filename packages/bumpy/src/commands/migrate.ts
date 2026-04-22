@@ -111,7 +111,6 @@ async function migrateConfig(changesetConfigPath: string, bumpyDir: string): Pro
   const migrateableFields = [
     'baseBranch',
     'access',
-    'commit',
     'fixed',
     'linked',
     'ignore',
@@ -125,7 +124,7 @@ async function migrateConfig(changesetConfigPath: string, bumpyDir: string): Pro
     }
   }
 
-  // Note: changesets' changelog, ___experimentalUnsafeOptions_WILL_CHANGE_IN_PATCH, etc. are not migrated
+  // Note: changesets' commit, changelog, ___experimentalUnsafeOptions_WILL_CHANGE_IN_PATCH, etc. are not migrated
   // The user should configure these manually
 
   const { writeJson } = await import('../utils/fs.ts');
