@@ -4,19 +4,19 @@
 
 _2026-04-22_
 
-- [#36](https://github.com/dmno-dev/bumpy/pull/36) [`1625ee8`](https://github.com/dmno-dev/bumpy/commit/1625ee840495f6dac08b7091a871b2acf5d966c2) - Support JSONC in config file — allows // line comments, block comments, and trailing commas in .bumpy/\_config.json
-- [#37](https://github.com/dmno-dev/bumpy/pull/37) [`d5771b2`](https://github.com/dmno-dev/bumpy/commit/d5771b2456b195c78da8dc9925fa589ff74df58e) - Rework `bumpy check` and `bumpy ci check` behavior: default mode now only fails when no bump files exist at all (matching changesets), new `--strict` flag requires every changed package to be covered, and `--no-fail` makes checks advisory-only. Also fix false positive "empty bump file found" when deleted bump files appear in git diff.
+- [#36](https://github.com/dmno-dev/bumpy/pull/36) [`43ee7ee`](https://github.com/dmno-dev/bumpy/commit/43ee7eed7e1d80a7b4aafd012b616d93c496a348) - Support JSONC in config file — allows // line comments, block comments, and trailing commas in .bumpy/\_config.json
+- [#37](https://github.com/dmno-dev/bumpy/pull/37) [`9b74ae4`](https://github.com/dmno-dev/bumpy/commit/9b74ae4dfb07a3df5ff14c513b88797007d51e9e) - Rework `bumpy check` and `bumpy ci check` behavior: default mode now only fails when no bump files exist at all (matching changesets), new `--strict` flag requires every changed package to be covered, and `--no-fail` makes checks advisory-only. Also fix false positive "empty bump file found" when deleted bump files appear in git diff.
 
 ## 1.1.0
 
 _2026-04-22_
 
-- [#29](https://github.com/dmno-dev/bumpy/pull/29) [`040386c`](https://github.com/dmno-dev/bumpy/commit/040386c685ef08b66888a2fdf6b9dfaedb4298db) - Generate comprehensive README.md in .bumpy/ during init with auto-detected package manager commands
-- [#30](https://github.com/dmno-dev/bumpy/pull/30) [`acdf57c`](https://github.com/dmno-dev/bumpy/commit/acdf57c2d403f6aef4b15f2876ed171c85bd771e) - Fix check command to only count bump files from current branch, and handle empty bump files correctly in both local and CI check
-- [#32](https://github.com/dmno-dev/bumpy/pull/32) [`6f9bce7`](https://github.com/dmno-dev/bumpy/commit/6f9bce77b518cdc075467b46113f2f6b0e1d6a76) - Fix empty bump files not being deleted during versioning
-- [#33](https://github.com/dmno-dev/bumpy/pull/33) [`d2d73c4`](https://github.com/dmno-dev/bumpy/commit/d2d73c4b91cb12d75635629454a63cc3d5ad4118) - Generate command now detects bumps from all commits, not just conventional commits.
-- [#34](https://github.com/dmno-dev/bumpy/pull/34) [`32c3856`](https://github.com/dmno-dev/bumpy/commit/32c385600b43e1b6f8b414b748031bef8f47e1b5) - Add published JSON schema for config file with editor autocomplete/validation. New config options: `changedFilePatterns` (root + per-package) for filtering which file changes trigger package detection, `commit` object form for custom commit messages, and `changelog: false` to disable changelog generation.
-- [#35](https://github.com/dmno-dev/bumpy/pull/35) [`83814c7`](https://github.com/dmno-dev/bumpy/commit/83814c76bd4ffdc1fd2ce5dfdb6ce281a2174e03) - Merge migrate command into init — `bumpy init` now auto-detects `.changeset/` and handles migration. Added 🐸 emoji to success messages across all commands.
+- [#29](https://github.com/dmno-dev/bumpy/pull/29) [`8a3006f`](https://github.com/dmno-dev/bumpy/commit/8a3006fca143810d71f418a58c65c7a2ee6c0135) - Generate comprehensive README.md in .bumpy/ during init with auto-detected package manager commands
+- [#30](https://github.com/dmno-dev/bumpy/pull/30) [`f53a71d`](https://github.com/dmno-dev/bumpy/commit/f53a71d598176182f1a0b4be24d473467a94150f) - Fix check command to only count bump files from current branch, and handle empty bump files correctly in both local and CI check
+- [#32](https://github.com/dmno-dev/bumpy/pull/32) [`d800783`](https://github.com/dmno-dev/bumpy/commit/d8007837c80afe1ac5cd383050eb5bffbf440e97) - Fix empty bump files not being deleted during versioning
+- [#33](https://github.com/dmno-dev/bumpy/pull/33) [`3b23fcd`](https://github.com/dmno-dev/bumpy/commit/3b23fcd62b366c9ecafb3a10308da9fa45d8c6a0) - Generate command now detects bumps from all commits, not just conventional commits.
+- [#34](https://github.com/dmno-dev/bumpy/pull/34) [`ea14829`](https://github.com/dmno-dev/bumpy/commit/ea14829ccb346e05b6d284ff80c0d76d074f25fb) - Add published JSON schema for config file with editor autocomplete/validation. New config options: `changedFilePatterns` (root + per-package) for filtering which file changes trigger package detection, `commit` object form for custom commit messages, and `changelog: false` to disable changelog generation.
+- [#35](https://github.com/dmno-dev/bumpy/pull/35) [`3415164`](https://github.com/dmno-dev/bumpy/commit/3415164b9388456e130b14ca21f2c90a042055c6) - Merge migrate command into init — `bumpy init` now auto-detects `.changeset/` and handles migration. Added 🐸 emoji to success messages across all commands.
 
 ## 🎉 1.0.0 <img src="https://raw.githubusercontent.com/dmno-dev/bumpy/main/images/frog-party.png" alt="bumpy-frog-party" width="80" style="image-rendering: pixelated;" align="right" />
 
