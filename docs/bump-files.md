@@ -20,6 +20,8 @@ Added user language preference to the core config.
 Fixed locale fallback logic in utils.
 ```
 
+> **Tip:** The description body is optional. If left blank, the bump file still contributes to the release plan (triggering version bumps and dependency propagation), but no entry will appear in the changelog for it.
+
 ### Bump levels
 
 | Level   | When to use                                                                                                                                                        |
