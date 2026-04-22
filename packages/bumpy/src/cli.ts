@@ -32,7 +32,9 @@ async function main() {
       case 'init': {
         const rootDir = await findRoot();
         const { initCommand } = await import('./commands/init.ts');
-        await initCommand(rootDir);
+        await initCommand(rootDir, {
+          force: flags.force === true,
+        });
         break;
       }
 
@@ -77,15 +79,6 @@ async function main() {
           from: flags.from as string | undefined,
           dryRun: flags['dry-run'] === true,
           name: flags.name as string | undefined,
-        });
-        break;
-      }
-
-      case 'migrate': {
-        const rootDir = await findRoot();
-        const { migrateCommand } = await import('./commands/migrate.ts');
-        await migrateCommand(rootDir, {
-          force: flags.force === true,
         });
         break;
       }
@@ -187,7 +180,7 @@ function printHelp() {
   Usage: bumpy <command> [options]
 
   Commands:
-    init                    Initialize .bumpy/ directory
+    init [--force]          Initialize .bumpy/ (migrates from .changeset/ if found)
     add                     Create a new bump file
     generate                Generate bump file from branch commits
     status                  Show pending releases
@@ -197,7 +190,6 @@ function printHelp() {
     ci check                PR check — report pending releases, comment on PR
     ci release              Release — create version PR or auto-publish
     ci setup                Set up a token for triggering CI on version PRs
-    migrate                 Migrate from .changeset/ to .bumpy/
     ai setup                Install AI skill for creating bump files
 
   Add options:

@@ -226,7 +226,7 @@ Bumpy is built as a successor to [@changesets/changesets](https://github.com/cha
 - **Custom publish commands** — changesets is hardcoded to `npm publish`. Bumpy supports per-package custom publish for VSCode extensions, Docker images, JSR, etc.
 - **Flexible package management** — changesets treats all private packages the same. Bumpy lets you include/exclude any package individually.
 - **CI without a separate action** — just `bunx @varlock/bumpy ci check` in any workflow, no bot or action to install.
-- **`bumpy migrate`** — converts `.changeset/` config and pending changeset files to `.bumpy/`.
+- **Automatic migration** — `bumpy init` detects `.changeset/`, renames it to `.bumpy/`, migrates config, keeps pending files, and offers to uninstall `@changesets/cli`.
 
 ## Development
 
