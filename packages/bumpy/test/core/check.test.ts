@@ -49,12 +49,12 @@ describe('filterBranchBumpFiles', () => {
     expect(branchBumpFiles).toHaveLength(2);
   });
 
-  test('hasEmptyBumpFile is false when no rootDir provided', () => {
+  test('emptyBumpFileIds is false when no rootDir provided', () => {
     const all = [makeBumpFile('change-a', [{ name: 'pkg-a', type: 'minor' }])];
     const changed = ['.bumpy/change-a.md', '.bumpy/empty-one.md'];
 
-    const { hasEmptyBumpFile } = filterBranchBumpFiles(all, changed);
-    expect(hasEmptyBumpFile).toBe(false);
+    const { emptyBumpFileIds } = filterBranchBumpFiles(all, changed);
+    expect(emptyBumpFileIds).toHaveLength(0);
   });
 
   describe('with rootDir (empty bump file detection)', () => {
@@ -76,8 +76,8 @@ describe('filterBranchBumpFiles', () => {
       const all = [makeBumpFile('change-a', [{ name: 'pkg-a', type: 'minor' }])];
       const changed = ['.bumpy/change-a.md', '.bumpy/empty-one.md'];
 
-      const { hasEmptyBumpFile } = filterBranchBumpFiles(all, changed, tmpDir);
-      expect(hasEmptyBumpFile).toBe(true);
+      const { emptyBumpFileIds } = filterBranchBumpFiles(all, changed, tmpDir);
+      expect(emptyBumpFileIds).toHaveLength(1);
     });
 
     test('does not detect deleted bump file as empty', async () => {
@@ -85,16 +85,16 @@ describe('filterBranchBumpFiles', () => {
       const all = [makeBumpFile('change-a', [{ name: 'pkg-a', type: 'minor' }])];
       const changed = ['.bumpy/change-a.md', '.bumpy/empty-one.md'];
 
-      const { hasEmptyBumpFile } = filterBranchBumpFiles(all, changed, tmpDir);
-      expect(hasEmptyBumpFile).toBe(false);
+      const { emptyBumpFileIds } = filterBranchBumpFiles(all, changed, tmpDir);
+      expect(emptyBumpFileIds).toHaveLength(0);
     });
 
     test('does not flag non-empty bump files as empty', async () => {
       const all = [makeBumpFile('change-a', [{ name: 'pkg-a', type: 'minor' }])];
       const changed = ['.bumpy/change-a.md'];
 
-      const { hasEmptyBumpFile } = filterBranchBumpFiles(all, changed, tmpDir);
-      expect(hasEmptyBumpFile).toBe(false);
+      const { emptyBumpFileIds } = filterBranchBumpFiles(all, changed, tmpDir);
+      expect(emptyBumpFileIds).toHaveLength(0);
     });
   });
 });
