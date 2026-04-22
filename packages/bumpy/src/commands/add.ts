@@ -38,7 +38,7 @@ export async function addCommand(rootDir: string, opts: AddOptions): Promise<voi
     const filePath = resolve(bumpyDir, `${filename}.md`);
     const { writeText } = await import('../utils/fs.ts');
     await writeText(filePath, '---\n---\n');
-    log.success(`Created empty bump file: .bumpy/${filename}.md`);
+    log.success(`🐸 Created empty bump file: .bumpy/${filename}.md`);
     return;
   }
 
@@ -198,7 +198,7 @@ export async function addCommand(rootDir: string, opts: AddOptions): Promise<voi
   await writeBumpFile(rootDir, filename, releases, summary);
 
   if (opts.packages) {
-    log.success(`Created bump file: .bumpy/${filename}.md`);
+    log.success(`🐸 Created bump file: .bumpy/${filename}.md`);
     for (const r of releases) {
       log.dim(`  ${r.name}: ${r.type}${formatCascade(r)}`);
     }
@@ -207,7 +207,7 @@ export async function addCommand(rootDir: string, opts: AddOptions): Promise<voi
       releases.map((r) => `${pc.cyan(r.name)} ${pc.dim('→')} ${pc.bold(r.type)}${formatCascade(r)}`).join('\n'),
       'Bump file',
     );
-    p.outro(pc.green(`Created .bumpy/${filename}.md`));
+    p.outro(pc.green(`🐸 Created .bumpy/${filename}.md`));
   }
 }
 
