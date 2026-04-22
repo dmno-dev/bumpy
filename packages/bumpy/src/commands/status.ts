@@ -63,7 +63,7 @@ export async function statusCommand(rootDir: string, opts: StatusOptions): Promi
         id: bf.id,
         summary: bf.summary,
         releases: bf.releases.map((r) => ({ name: r.name, type: r.type })),
-        ...(branchBumpFileIds ? { isCurrentBranch: branchBumpFileIds.has(bf.id) } : {}),
+        ...(branchBumpFileIds ? { inCurrentBranch: branchBumpFileIds.has(bf.id) } : {}),
       })),
       releases: releases.map((r) => {
         const pkg = packages.get(r.name);
@@ -79,10 +79,10 @@ export async function statusCommand(rootDir: string, opts: StatusOptions): Promi
           isCascadeBump: r.isCascadeBump,
           ...(branchBumpFileIds
             ? {
-                isCurrentBranch: r.bumpFiles.some((id) => branchBumpFileIds!.has(id)),
+                inCurrentBranch: r.bumpFiles.some((id) => branchBumpFileIds!.has(id)),
               }
             : {}),
-          publishTo: getPublishTargets(pkg, pkgConfig, config),
+          publishTargets: getPublishTargets(pkg, pkgConfig, config),
         };
       }),
       packageNames: releases.map((r) => r.name),
