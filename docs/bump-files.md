@@ -22,12 +22,12 @@ Fixed locale fallback logic in utils.
 
 ### Bump levels
 
-| Level   | When to use                                                                                   |
-| ------- | --------------------------------------------------------------------------------------------- |
-| `major` | Breaking changes                                                                              |
-| `minor` | New features (backwards-compatible)                                                           |
-| `patch` | Bug fixes, minor improvements                                                                 |
-| `none`  | Suppresses a bump — used in cascades to exclude specific packages from propagation (advanced) |
+| Level   | When to use                                                                                                                                                        |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `major` | Breaking changes                                                                                                                                                   |
+| `minor` | New features (backwards-compatible)                                                                                                                                |
+| `patch` | Bug fixes, minor improvements                                                                                                                                      |
+| `none`  | Acknowledges a change without triggering a release — useful for covering packages in `--strict` mode, or in cascades to exclude specific packages from propagation |
 
 ## File naming
 
@@ -86,7 +86,19 @@ For PRs that intentionally don't need a release (docs, CI changes, etc.), create
 bumpy add --empty --name "docs-update"
 ```
 
-This prevents `bumpy ci check` from warning about missing bump files.
+This prevents `bumpy check` and `bumpy ci check` from failing due to missing bump files.
+
+### `none` bump type
+
+If you're using `--strict` mode (which requires every changed package to be covered), use bump type `none` to acknowledge a package changed without triggering a release:
+
+```markdown
+---
+'@myorg/docs-site': none
+---
+```
+
+This covers the package in strict checks without producing a version bump or changelog entry.
 
 ## Cascade control (advanced)
 
