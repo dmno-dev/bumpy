@@ -85,9 +85,9 @@ function updateRange(range: string, newVersion: string): string {
   const prefixMatch = cleanRange.match(/^(\^|~|>=|>|<=|<|=)?/);
   const prefix = prefixMatch?.[1] ?? '^';
 
-  // Handle wildcard ranges
-  if (cleanRange === '*' || cleanRange === '') {
-    return range; // don't touch wildcards
+  // Handle wildcard ranges and workspace shorthand (workspace:^, workspace:~, workspace:*)
+  if (cleanRange === '*' || cleanRange === '' || cleanRange === '^' || cleanRange === '~') {
+    return range; // don't touch wildcards or workspace shorthands
   }
 
   return `${protocol}${prefix}${newVersion}`;
