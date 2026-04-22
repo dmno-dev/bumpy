@@ -139,9 +139,22 @@ Custom changelog formatters with full context (release info, bump files, dates).
 - [changesets#556](https://github.com/changesets/changesets/issues/556) — changelog formatting (11 thumbs-up)
 - [changesets#995](https://github.com/changesets/changesets/issues/995) — getChangelogEntry API (12 thumbs-up)
 
-### CI without a separate action
+### CI without a separate action or bot
 
-`bumpy ci check` and `bumpy ci release` handle PR checks and release automation without needing a separate GitHub Action or bot installation. Just `bunx @varlock/bumpy ci check` in any workflow. No extra repository to trust, audit, or pin — your CI runs the same package you already depend on.
+Changesets requires **two** separate pieces of CI infrastructure beyond the CLI:
+
+1. **[changeset-bot](https://github.com/apps/changeset-bot)** — a GitHub App you must install on your repo that watches PRs and posts "missing changeset" comments
+2. **[changesets/action](https://github.com/changesets/action)** — a GitHub Action (separate repo) that handles creating the version PR and publishing
+
+This means you're trusting and auditing two additional dependencies with write access to your repo. The bot requires GitHub App installation (org admin approval in many orgs), and the action is a separate repository with its own release cadence and issues.
+
+Bumpy replaces all of this with two CLI commands you run directly in standard workflows — `bumpy ci check` (PR comments) and `bumpy ci release` (version PR + publishing). No GitHub App to install, no separate action to trust. Your CI runs the same `@varlock/bumpy` package you already depend on. Works on any CI provider that can run shell commands — not just GitHub Actions.
+
+- [changesets#134](https://github.com/changesets/changesets/issues/134) — requests for GitHub check integration (only available via bot)
+- [changesets#1812](https://github.com/changesets/changesets/issues/1812) — can't filter which PRs the bot watches
+- [changesets#946](https://github.com/changesets/changesets/issues/946) — bot doesn't check for new changes
+- [changesets#1242](https://github.com/changesets/changesets/issues/1242) — bot/action version upgrade issues
+- [changesets#43](https://github.com/changesets/changesets/issues/43) — can't customize bot messages
 
 ### Local bump file verification
 
