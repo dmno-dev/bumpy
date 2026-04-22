@@ -17,7 +17,14 @@ export async function versionCommand(rootDir: string, opts: VersionOptions = {})
   const config = await loadConfig(rootDir);
   const packages = await discoverPackages(rootDir, config);
   const depGraph = new DependencyGraph(packages);
-  const bumpFiles = await readBumpFiles(rootDir);
+  const { bumpFiles, errors: parseErrors } = await readBumpFiles(rootDir);
+
+  if (parseErrors.length > 0) {
+    for (const err of parseErrors) {
+      log.error(err);
+    }
+    throw new Error('Bump file parse errors must be fixed before versioning.');
+  }
 
   if (bumpFiles.length === 0) {
     log.info('No pending bump files.');

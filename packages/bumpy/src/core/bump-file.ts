@@ -5,7 +5,6 @@ import { readText, writeText, listFiles, removeFile } from '../utils/fs.ts';
 import { getBumpyDir } from './config.ts';
 import { tryRunArgs } from '../utils/shell.ts';
 import type { BumpFile, BumpFileRelease, BumpFileReleaseCascade, BumpType, BumpTypeWithNone } from '../types.ts';
-import { log } from '../utils/logger.ts';
 
 const VALID_BUMP_TYPES = new Set<string>(['major', 'minor', 'patch', 'none']);
 
@@ -27,15 +26,22 @@ function validatePackageName(name: string): boolean {
   return true;
 }
 
+export interface ReadBumpFilesResult {
+  bumpFiles: BumpFile[];
+  errors: string[];
+}
+
 /** Read all bump files from .bumpy/ directory, sorted by git creation order */
-export async function readBumpFiles(rootDir: string): Promise<BumpFile[]> {
+export async function readBumpFiles(rootDir: string): Promise<ReadBumpFilesResult> {
   const dir = getBumpyDir(rootDir);
   const files = await listFiles(dir, '.md');
   const bumpFiles: BumpFile[] = [];
+  const errors: string[] = [];
   for (const file of files) {
     if (file === 'README.md') continue;
-    const bf = await parseBumpFileFromPath(resolve(dir, file));
-    if (bf) bumpFiles.push(bf);
+    const result = await parseBumpFileFromPath(resolve(dir, file));
+    if (result.bumpFile) bumpFiles.push(result.bumpFile);
+    errors.push(...result.errors);
   }
 
   // Sort by the commit date when each bump file was first added to git.
@@ -49,7 +55,7 @@ export async function readBumpFiles(rootDir: string): Promise<BumpFile[]> {
     });
   }
 
-  return bumpFiles;
+  return { bumpFiles, errors };
 }
 
 /**
@@ -85,32 +91,52 @@ function getBumpFileCreationOrder(rootDir: string): Map<string, number> {
 }
 
 /** Parse a single bump file from disk */
-export async function parseBumpFileFromPath(filePath: string): Promise<BumpFile | null> {
+export async function parseBumpFileFromPath(filePath: string): Promise<BumpFileParseResult> {
   const content = await readText(filePath);
   return parseBumpFile(content, fileToId(filePath));
 }
 
+export interface BumpFileParseResult {
+  bumpFile: BumpFile | null;
+  errors: string[];
+}
+
 /** Parse bump file content (for testing) */
-export function parseBumpFile(content: string, id: string): BumpFile | null {
+export function parseBumpFile(content: string, id: string): BumpFileParseResult {
+  const errors: string[] = [];
   const match = content.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
-  if (!match) return null;
+  if (!match) {
+    errors.push(`Bump file "${id}" has no valid frontmatter (expected --- delimiters)`);
+    return { bumpFile: null, errors };
+  }
 
   const frontmatter = match[1]!;
   const summary = match[2]!.trim();
 
-  const parsed = yaml.load(frontmatter) as Record<string, unknown>;
-  if (!parsed || typeof parsed !== 'object') return null;
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = yaml.load(frontmatter) as Record<string, unknown>;
+  } catch (e) {
+    errors.push(`Bump file "${id}" has invalid YAML: ${e instanceof Error ? e.message : e}`);
+    return { bumpFile: null, errors };
+  }
+  if (!parsed || typeof parsed !== 'object') {
+    errors.push(`Bump file "${id}" has empty or invalid frontmatter`);
+    return { bumpFile: null, errors };
+  }
 
   const releases: BumpFileRelease[] = [];
   for (const [name, value] of Object.entries(parsed)) {
     if (!validatePackageName(name)) {
-      log.warn(`Skipping invalid package name in bump file "${id}": ${name}`);
+      errors.push(`Invalid package name "${name}" in bump file "${id}"`);
       continue;
     }
 
     if (typeof value === 'string') {
       if (!VALID_BUMP_TYPES.has(value)) {
-        log.warn(`Skipping unknown bump type "${value}" for ${name} in bump file "${id}"`);
+        errors.push(
+          `Unknown bump type "${value}" for "${name}" in bump file "${id}" (expected: major, minor, patch, or none)`,
+        );
         continue;
       }
       // Simple format: "pkg-name": minor
@@ -119,7 +145,9 @@ export function parseBumpFile(content: string, id: string): BumpFile | null {
       // Nested format: "pkg-name": { bump: minor, cascade: { ... } }
       const obj = value as { bump: BumpTypeWithNone; cascade?: Record<string, BumpType> };
       if (!VALID_BUMP_TYPES.has(obj.bump)) {
-        log.warn(`Skipping unknown bump type "${obj.bump}" for ${name} in bump file "${id}"`);
+        errors.push(
+          `Unknown bump type "${obj.bump}" for "${name}" in bump file "${id}" (expected: major, minor, patch, or none)`,
+        );
         continue;
       }
       const release: BumpFileReleaseCascade = {
@@ -128,11 +156,18 @@ export function parseBumpFile(content: string, id: string): BumpFile | null {
         cascade: obj.cascade || {},
       };
       releases.push(release);
+    } else {
+      errors.push(`Invalid value for "${name}" in bump file "${id}" — expected a bump type string or object`);
     }
   }
 
-  if (releases.length === 0) return null;
-  return { id, releases, summary };
+  if (releases.length === 0 && errors.length === 0) {
+    // Truly empty frontmatter with no errors — this is the "intentionally empty" case
+    return { bumpFile: null, errors };
+  }
+
+  const bumpFile = releases.length > 0 ? { id, releases, summary } : null;
+  return { bumpFile, errors };
 }
 
 /** Write a bump file */
@@ -190,25 +225,35 @@ export function extractBumpFileIdsFromChangedFiles(changedFiles: string[]): Set<
  * Filter bump files to only those added/modified on the current branch.
  * Also detects empty bump files (no releases) that still exist on disk,
  * which signal intentionally no releases needed.
+ *
+ * When `parseErrors` is provided, a file that exists on disk but didn't parse
+ * is only treated as an "empty bump file" if it produced no parse errors —
+ * otherwise it's a broken file, not an intentionally empty one.
  */
 export function filterBranchBumpFiles(
   allBumpFiles: BumpFile[],
   changedFiles: string[],
   rootDir?: string,
+  parseErrors: string[] = [],
 ): { branchBumpFiles: BumpFile[]; branchBumpFileIds: Set<string>; hasEmptyBumpFile: boolean } {
   const branchBumpFileIds = extractBumpFileIdsFromChangedFiles(changedFiles);
   const branchBumpFiles = allBumpFiles.filter((bf) => branchBumpFileIds.has(bf.id));
 
   // Check if any changed bump file IDs that didn't parse still exist on disk (= empty bump file).
   // Deleted bump files (from other branches) should not count.
+  // Files that produced parse errors are broken, not intentionally empty.
   let hasEmptyBumpFile = false;
   if (rootDir) {
     const parsedIds = new Set(branchBumpFiles.map((bf) => bf.id));
     const bumpyDir = getBumpyDir(rootDir);
     for (const id of branchBumpFileIds) {
       if (!parsedIds.has(id) && existsSync(resolve(bumpyDir, `${id}.md`))) {
-        hasEmptyBumpFile = true;
-        break;
+        // Check if this file produced parse errors — if so, it's broken, not empty
+        const hasErrors = parseErrors.some((e) => e.includes(`"${id}"`));
+        if (!hasErrors) {
+          hasEmptyBumpFile = true;
+          break;
+        }
       }
     }
   }

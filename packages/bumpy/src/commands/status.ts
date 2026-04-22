@@ -23,7 +23,13 @@ export async function statusCommand(rootDir: string, opts: StatusOptions): Promi
   const config = await loadConfig(rootDir);
   const packages = await discoverPackages(rootDir, config);
   const depGraph = new DependencyGraph(packages);
-  const bumpFiles = await readBumpFiles(rootDir);
+  const { bumpFiles, errors: parseErrors } = await readBumpFiles(rootDir);
+
+  if (parseErrors.length > 0) {
+    for (const err of parseErrors) {
+      log.error(err);
+    }
+  }
 
   if (bumpFiles.length === 0) {
     if (opts.json) {
