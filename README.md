@@ -77,7 +77,7 @@ Then set up CI to automate versioning and publishing (see below).
 
 ## CI / GitHub Actions
 
-No separate action to rely on — just call `bumpy ci` directly in your workflows. Two commands handle the entire release lifecycle:
+No GitHub App to install, no separate action to rely on — just call `bumpy ci` directly in your workflows. Two commands handle the entire release lifecycle:
 
 - **`bumpy ci check`** — runs on every PR. Computes the release plan from pending bump files and posts/updates a comment on the PR showing what versions would be released. Warns if any changed packages are missing bump files.
 - **`bumpy ci release`** — runs on push to main. If pending bump files exist, it opens (or updates) a "Version Packages" PR that applies all version bumps and changelog updates. If the current push _is_ the Version Packages PR being merged, it publishes the new versions, creates git tags, and creates GitHub releases.
@@ -232,7 +232,7 @@ Bumpy is built as a successor to [@changesets/changesets](https://github.com/cha
 - **Workspace protocol resolution** — changesets uses `npm publish` even in pnpm/yarn workspaces, so `workspace:^` and `catalog:` protocols are NOT resolved, resulting in broken published packages.
 - **Custom publish commands** — changesets is hardcoded to `npm publish`. Bumpy supports per-package custom publish for VSCode extensions, Docker images, JSR, etc.
 - **Flexible package management** — changesets treats all private packages the same. Bumpy lets you include/exclude any package individually.
-- **CI without a separate action** — just `bunx @varlock/bumpy ci check` in any workflow, no bot or action to install.
+- **CI without a separate action or bot** — changesets requires installing a [GitHub App](https://github.com/apps/changeset-bot) _and_ using a [separate GitHub Action](https://github.com/changesets/action). Bumpy replaces both with two CLI commands (`bumpy ci check` + `bumpy ci release`) that run directly in your workflows — no extra repos to trust, no app installation requiring org admin approval.
 - **Automatic migration** — `bumpy init` detects `.changeset/`, renames it to `.bumpy/`, migrates config, keeps pending files, and offers to uninstall `@changesets/cli`.
 
 ## Development
