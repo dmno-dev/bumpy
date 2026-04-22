@@ -25,7 +25,7 @@ No options are available for the default formatter.
 
 ### `github`
 
-Enhanced formatter that adds PR links, commit links, and contributor attribution. Requires the `gh` CLI to be installed and authenticated.
+Enhanced formatter that adds PR links and contributor attribution. Optionally includes commit links. Requires the `gh` CLI to be installed and authenticated.
 
 Enable in your `.bumpy/_config.json` using `"changelog": "github",`
 
@@ -44,8 +44,8 @@ Or with options using a tuple format:
 
 _2026-04-19_
 
-- [#42](https://github.com/myorg/myrepo/pull/42) [`abc1234`](https://github.com/myorg/myrepo/commit/abc1234) Thanks [@contributor](https://github.com/contributor)! - Added support for custom themes
-- [#43](https://github.com/myorg/myrepo/pull/43) [`def5678`](https://github.com/myorg/myrepo/commit/def5678) - Fixed a bug with config loading
+- [#42](https://github.com/myorg/myrepo/pull/42) Thanks [@contributor](https://github.com/contributor)! - Added support for custom themes
+- [#43](https://github.com/myorg/myrepo/pull/43) - Fixed a bug with config loading
 ```
 
 #### Options
@@ -53,6 +53,7 @@ _2026-04-19_
 | Option              | Type       | Default | Description                                                       |
 | ------------------- | ---------- | ------- | ----------------------------------------------------------------- |
 | `repo`              | `string`   | —       | `"owner/repo"` slug. Auto-detected from `gh` CLI if not provided. |
+| `includeCommitLink` | `boolean`  | `false` | Whether to include commit hash links in changelog entries.        |
 | `thankContributors` | `boolean`  | `true`  | Whether to include "Thanks @user" messages for contributors.      |
 | `internalAuthors`   | `string[]` | `[]`    | GitHub usernames (without `@`) to skip "Thanks" messages for.     |
 
