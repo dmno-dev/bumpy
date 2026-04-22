@@ -87,19 +87,22 @@ Mixed changes
     expect(noFrontmatter.errors[0]).toContain('no valid frontmatter');
   });
 
-  test('returns errors for empty frontmatter', () => {
-    const emptyFrontmatter = parseBumpFile('---\n\n---\n', 'empty');
-    expect(emptyFrontmatter.bumpFile).toBeNull();
-    expect(emptyFrontmatter.errors).toHaveLength(1);
-    expect(emptyFrontmatter.errors[0]).toContain('empty or invalid frontmatter');
-  });
-
-  test('returns no errors for intentionally empty bump file', () => {
-    // ---\n---\n doesn't match frontmatter regex — treated as no frontmatter
+  test('returns no errors for intentionally empty bump file (no newline)', () => {
     const result = parseBumpFile('---\n---\n', 'empty');
     expect(result.bumpFile).toBeNull();
-    expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]).toContain('no valid frontmatter');
+    expect(result.errors).toHaveLength(0);
+  });
+
+  test('returns no errors for intentionally empty bump file (with newline)', () => {
+    const result = parseBumpFile('---\n\n---\n', 'empty');
+    expect(result.bumpFile).toBeNull();
+    expect(result.errors).toHaveLength(0);
+  });
+
+  test('returns no errors for intentionally empty bump file (with whitespace)', () => {
+    const result = parseBumpFile('---\n  \n---\n', 'empty');
+    expect(result.bumpFile).toBeNull();
+    expect(result.errors).toHaveLength(0);
   });
 
   test('returns errors for invalid bump types', () => {

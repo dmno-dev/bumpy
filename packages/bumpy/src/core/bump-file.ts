@@ -104,7 +104,7 @@ export interface BumpFileParseResult {
 /** Parse bump file content (for testing) */
 export function parseBumpFile(content: string, id: string): BumpFileParseResult {
   const errors: string[] = [];
-  const match = content.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
+  const match = content.match(/^---\n([\s\S]*?)\n?---\n?([\s\S]*)$/);
   if (!match) {
     errors.push(`Bump file "${id}" has no valid frontmatter (expected --- delimiters)`);
     return { bumpFile: null, errors };
@@ -112,6 +112,11 @@ export function parseBumpFile(content: string, id: string): BumpFileParseResult 
 
   const frontmatter = match[1]!;
   const summary = match[2]!.trim();
+
+  // Empty frontmatter is intentional — signals no releases needed
+  if (!frontmatter.trim()) {
+    return { bumpFile: null, errors };
+  }
 
   let parsed: Record<string, unknown>;
   try {
