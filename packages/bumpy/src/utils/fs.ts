@@ -1,9 +1,15 @@
 import { readFile, writeFile, readdir, unlink, mkdir, access } from 'node:fs/promises';
 import { join } from 'node:path';
+import { parseJsonc } from './jsonc.ts';
 
 export async function readJson<T = Record<string, unknown>>(filePath: string): Promise<T> {
   const content = await readFile(filePath, 'utf-8');
   return JSON.parse(content) as T;
+}
+
+export async function readJsonc<T = Record<string, unknown>>(filePath: string): Promise<T> {
+  const content = await readFile(filePath, 'utf-8');
+  return parseJsonc(content) as T;
 }
 
 export async function writeJson(filePath: string, data: unknown, indent = 2): Promise<void> {

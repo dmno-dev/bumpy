@@ -1,0 +1,10 @@
+{
+  // use the project's TS version rather than the VSCode's built-in one
+  "typescript.tsdk": "./node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true,
+  "files.associations": {
+    // package.json needs to be "json" rather than "json with comments" so that the "version lens" plugin works
+    "package.json": "json",
+    "**/.bumpy/_config.json": "jsonc"
+  }
+}
