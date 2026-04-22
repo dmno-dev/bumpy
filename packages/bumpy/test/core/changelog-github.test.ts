@@ -51,10 +51,23 @@ describe('createGithubFormatter', () => {
     expect(result).toContain('https://github.com/dmno-dev/bumpy/pull/42');
   });
 
-  test('includes commit link when bump file has commit metadata', async () => {
+  test('excludes commit link by default', async () => {
     addMockRule({ match: /^git log/, response: '' });
 
     const formatter = createGithubFormatter({ repo: 'dmno-dev/bumpy' });
+    const release = makeRelease('pkg-a', '1.0.1', { bumpFiles: ['cs1'] });
+    const bumpFiles = [makeBumpFile('cs1', [{ name: 'pkg-a', type: 'patch' }], 'commit: abc1234567890\nFixed it')];
+
+    const result = await formatter({ release, bumpFiles, date: '2026-04-14' });
+
+    expect(result).not.toContain('[`abc1234`]');
+    expect(result).not.toContain('/commit/abc1234567890');
+  });
+
+  test('includes commit link when includeCommitLink is true', async () => {
+    addMockRule({ match: /^git log/, response: '' });
+
+    const formatter = createGithubFormatter({ repo: 'dmno-dev/bumpy', includeCommitLink: true });
     const release = makeRelease('pkg-a', '1.0.1', { bumpFiles: ['cs1'] });
     const bumpFiles = [makeBumpFile('cs1', [{ name: 'pkg-a', type: 'patch' }], 'commit: abc1234567890\nFixed it')];
 
@@ -167,7 +180,7 @@ describe('createGithubFormatter', () => {
     const result = await formatter({ release, bumpFiles, date: '2026-04-14' });
 
     expect(result).toContain('[#99]');
-    expect(result).toContain('[`deadbee`]');
+    expect(result).not.toContain('[`deadbee`]');
     expect(result).toContain('Thanks [@contributor]');
   });
 

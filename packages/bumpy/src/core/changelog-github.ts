@@ -1,9 +1,26 @@
 import { tryRunArgs } from '../utils/shell.ts';
 import type { ChangelogContext, ChangelogFormatter } from './changelog.ts';
 
+/** Authors filtered from "Thanks" attribution by default (e.g. bots) */
+/** Authors filtered from "Thanks" attribution by default (e.g. AI/automation bots) */
+const DEFAULT_INTERNAL_AUTHORS = [
+  'copilot',
+  'app/copilot-swe-agent',
+  'claude',
+  'dependabot',
+  'dependabot[bot]',
+  'app/dependabot',
+  'renovate[bot]',
+  'app/renovate',
+  'github-actions[bot]',
+  'snyk-bot',
+];
+
 export interface GithubChangelogOptions {
   /** "owner/repo" — auto-detected from gh CLI if not provided */
   repo?: string;
+  /** Whether to include commit hash links in changelog entries (default: false) */
+  includeCommitLink?: boolean;
   /** Whether to include "Thanks @user" messages for contributors (default: true) */
   thankContributors?: boolean;
   /** GitHub usernames (without @) to skip "Thanks" messages for (e.g. internal team members) */
@@ -12,7 +29,7 @@ export interface GithubChangelogOptions {
 
 /**
  * GitHub-enhanced changelog formatter.
- * Adds PR links, commit links, and contributor attribution when git/gh info is available.
+ * Adds PR links, contributor attribution, and optionally commit links when git/gh info is available.
  *
  * Usage in config:
  *   "changelog": "github"
@@ -21,8 +38,11 @@ export interface GithubChangelogOptions {
  *   "changelog": ["github", { "internalAuthors": ["theoephraim"] }]
  */
 export function createGithubFormatter(options: GithubChangelogOptions = {}): ChangelogFormatter {
+  const includeCommitLink = options.includeCommitLink ?? false;
   const thankContributors = options.thankContributors ?? true;
-  const internalAuthorsSet = new Set((options.internalAuthors ?? []).map((a) => a.toLowerCase()));
+  const internalAuthorsSet = new Set(
+    [...DEFAULT_INTERNAL_AUTHORS, ...(options.internalAuthors ?? [])].map((a) => a.toLowerCase()),
+  );
 
   return async (ctx: ChangelogContext) => {
     const { release, bumpFiles, date } = ctx;
@@ -51,7 +71,14 @@ export function createGithubFormatter(options: GithubChangelogOptions = {}): Cha
         const firstLine = linkifyIssueRefs(summaryLines[0]!, serverUrl, repoSlug);
 
         // Build the prefix: PR link, commit link, thanks
-        const prefix = formatPrefix(gitInfo, serverUrl, repoSlug, thankContributors, internalAuthorsSet);
+        const prefix = formatPrefix(
+          gitInfo,
+          serverUrl,
+          repoSlug,
+          includeCommitLink,
+          thankContributors,
+          internalAuthorsSet,
+        );
 
         lines.push(`-${prefix ? ` ${prefix} -` : ''} ${firstLine}`);
 
@@ -243,6 +270,7 @@ function formatPrefix(
   info: BumpFileGitInfo,
   serverUrl: string,
   repo: string | undefined,
+  includeCommitLink: boolean,
   thankContributors: boolean,
   internalAuthors: Set<string>,
 ): string {
@@ -252,7 +280,7 @@ function formatPrefix(
     parts.push(`[#${info.prNumber}](${info.prUrl})`);
   }
 
-  if (info.commitHash && repo) {
+  if (includeCommitLink && info.commitHash && repo) {
     const short = info.commitHash.slice(0, 7);
     parts.push(`[\`${short}\`](${serverUrl}/${repo}/commit/${info.commitHash})`);
   }

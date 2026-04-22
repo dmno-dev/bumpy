@@ -535,8 +535,10 @@ function formatNoBumpFilesComment(prBranch: string | null, pm: PackageManager): 
 
 function bumpSectionHeader(type: string): string {
   // I think pixelated css gets stripped but may as well leave it
-  const frog = `<img src="${FROG_IMG_BASE}/frog-${type}.png" alt="${type}" width="52" style="image-rendering: pixelated;" align="right" />`;
-  return `### ${frog} ${type.charAt(0).toUpperCase() + type.slice(1)} releases`;
+  // wrapping in <a> prevents Gmail dark mode from inverting the image
+  const label = `${type.charAt(0).toUpperCase() + type.slice(1)} releases`;
+  const frog = `<a href="https://bumpy.varlock.dev" title="${label}"><img src="${FROG_IMG_BASE}/frog-${type}.png" alt="${type}" width="52" style="image-rendering: pixelated;" align="right" /></a>`;
+  return `### ${frog} ${label}`;
 }
 
 /** Build inline diff links for a package's changed files in the PR */
