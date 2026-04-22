@@ -37,6 +37,7 @@
   },
   "scripts": {
     "build": "tsdown",
+    "prepack": "cp ../../README.md .",
     "check": "bun run tsc --noEmit",
     "test": "bun test"
   },

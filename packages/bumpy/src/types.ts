@@ -158,7 +158,7 @@ export const DEFAULT_CONFIG: BumpyConfig = {
     preamble: [
       `<a href="https://bumpy.varlock.dev"><img src="https://raw.githubusercontent.com/dmno-dev/bumpy/main/images/frog-talking.png" alt="bumpy-frog" width="60" align="left" style="image-rendering: pixelated;" title="Hi! I'm bumpy!" /></a>`,
       '',
-      `This PR was created and will be kept in sync by [bumpy](https://bumpy.varlock.dev) based on your .bumpy bump files. Merge it when you are ready to release the packages listed below:`,
+      `This PR was created and will be kept in sync by [bumpy](https://bumpy.varlock.dev) based on your bump files (in \`.bumpy/\`). Merge it when you are ready to release the packages listed below:`,
       '<br clear="left" />',
     ].join('\n'),
   },
