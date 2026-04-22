@@ -2,9 +2,10 @@ import { log, colorize } from '../utils/logger.ts';
 import { loadConfig } from '../core/config.ts';
 import { discoverPackages } from '../core/workspace.ts';
 import { DependencyGraph } from '../core/dep-graph.ts';
-import { readBumpFiles } from '../core/bump-file.ts';
+import { readBumpFiles, filterBranchBumpFiles } from '../core/bump-file.ts';
 import { assembleReleasePlan } from '../core/release-plan.ts';
-import type { PlannedRelease, WorkspacePackage } from '../types.ts';
+import { getCurrentBranch, getChangedFiles } from '../core/git.ts';
+import type { BumpyConfig, PackageConfig, PlannedRelease, WorkspacePackage } from '../types.ts';
 
 interface StatusOptions {
   json?: boolean;
@@ -35,6 +36,15 @@ export async function statusCommand(rootDir: string, opts: StatusOptions): Promi
 
   const plan = assembleReleasePlan(bumpFiles, packages, depGraph, config);
 
+  // Determine which bump files belong to the current branch (if not on base branch)
+  let branchBumpFileIds: Set<string> | undefined;
+  const currentBranch = getCurrentBranch({ cwd: rootDir });
+  if (currentBranch && currentBranch !== config.baseBranch) {
+    const changedFiles = getChangedFiles(rootDir, config.baseBranch);
+    const result = filterBranchBumpFiles(bumpFiles, changedFiles, rootDir);
+    branchBumpFileIds = result.branchBumpFileIds;
+  }
+
   // Apply filters
   let releases = plan.releases;
   if (opts.bumpType) {
@@ -53,17 +63,28 @@ export async function statusCommand(rootDir: string, opts: StatusOptions): Promi
         id: bf.id,
         summary: bf.summary,
         releases: bf.releases.map((r) => ({ name: r.name, type: r.type })),
+        ...(branchBumpFileIds ? { inCurrentBranch: branchBumpFileIds.has(bf.id) } : {}),
       })),
-      releases: releases.map((r) => ({
-        name: r.name,
-        type: r.type,
-        oldVersion: r.oldVersion,
-        newVersion: r.newVersion,
-        dir: packages.get(r.name)?.relativeDir,
-        bumpFiles: r.bumpFiles,
-        isDependencyBump: r.isDependencyBump,
-        isCascadeBump: r.isCascadeBump,
-      })),
+      releases: releases.map((r) => {
+        const pkg = packages.get(r.name);
+        const pkgConfig = pkg?.bumpy || {};
+        return {
+          name: r.name,
+          type: r.type,
+          oldVersion: r.oldVersion,
+          newVersion: r.newVersion,
+          dir: pkg?.relativeDir,
+          bumpFiles: r.bumpFiles,
+          isDependencyBump: r.isDependencyBump,
+          isCascadeBump: r.isCascadeBump,
+          ...(branchBumpFileIds
+            ? {
+                inCurrentBranch: r.bumpFiles.some((id) => branchBumpFileIds!.has(id)),
+              }
+            : {}),
+          publishTargets: getPublishTargets(pkg, pkgConfig, config),
+        };
+      }),
       packageNames: releases.map((r) => r.name),
     };
     console.log(JSON.stringify(jsonOutput, null, 2));
@@ -132,4 +153,23 @@ function printRelease(r: PlannedRelease, packages: Map<string, WorkspacePackage>
       ? colorize(' ← cascade', 'dim')
       : '';
   console.log(`  ${r.name}: ${r.oldVersion} → ${colorize(r.newVersion, 'cyan')}${suffix}${dir}`);
+}
+
+/** Determine which publish targets a package will use */
+function getPublishTargets(
+  pkg: WorkspacePackage | undefined,
+  pkgConfig: Partial<PackageConfig>,
+  _config: BumpyConfig,
+): string[] {
+  if (!pkg) return [];
+  // Private packages with no custom command won't publish
+  if (pkg.private && !pkgConfig.publishCommand) return [];
+  const targets: string[] = [];
+  if (pkgConfig.publishCommand) {
+    targets.push('custom');
+  }
+  if (!pkgConfig.publishCommand && !pkgConfig.skipNpmPublish) {
+    targets.push('npm');
+  }
+  return targets;
 }
