@@ -95,13 +95,22 @@ bumpy publish --filter "@myorg/*"
 
 ## `bumpy check`
 
-Verify that all changed packages on the current branch have corresponding bump files. Designed for pre-push hooks — compares your branch to the base branch, maps changed files to packages, and exits non-zero if any are missing.
+Verify that changed packages on the current branch have corresponding bump files. Designed for pre-push hooks — compares your branch to the base branch, maps changed files to packages.
+
+By default, exits non-zero only if **no** bump files exist at all (matching changesets behavior). Use `--strict` to require every changed package to be covered.
 
 ```bash
 bumpy check
+bumpy check --strict
+bumpy check --no-fail
 ```
 
-No flags. No GitHub API needed.
+| Flag        | Description                                                |
+| ----------- | ---------------------------------------------------------- |
+| `--strict`  | Fail if any changed package is not covered by a bump file  |
+| `--no-fail` | Warn only, never exit non-zero (useful for advisory hooks) |
+
+No GitHub API needed.
 
 ## `bumpy generate`
 
@@ -135,14 +144,16 @@ CI command for PR checks. Computes the release plan from bump files changed in t
 
 ```bash
 bumpy ci check
-bumpy ci check --fail-on-missing
+bumpy ci check --strict
+bumpy ci check --no-fail
 ```
 
-| Flag                | Description                                                      |
-| ------------------- | ---------------------------------------------------------------- |
-| `--comment`         | Force PR comment on or off (default: auto-detect CI environment) |
-| `--fail-on-missing` | Exit 1 if changed packages have no bump files                    |
-| `--pat-comments`    | Post PR comments using `BUMPY_GH_TOKEN` instead of `GH_TOKEN`    |
+| Flag             | Description                                                      |
+| ---------------- | ---------------------------------------------------------------- |
+| `--comment`      | Force PR comment on or off (default: auto-detect CI environment) |
+| `--strict`       | Fail if any changed package is not covered by a bump file        |
+| `--no-fail`      | Warn only, never exit non-zero                                   |
+| `--pat-comments` | Post PR comments using `BUMPY_GH_TOKEN` instead of `GH_TOKEN`    |
 
 Requires `GH_TOKEN` environment variable. The `--pat-comments` flag requires `BUMPY_GH_TOKEN` — use it when the token belongs to a dedicated automation account (bot user). If you're using a developer's personal PAT, leave this off so comments appear from `github-actions[bot]`.
 
