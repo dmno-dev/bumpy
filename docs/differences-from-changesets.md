@@ -145,7 +145,7 @@ Custom changelog formatters with full context (release info, bump files, dates).
 
 ### Local bump file verification
 
-`bumpy check` verifies that all changed packages on the current branch have corresponding bump files. Designed for pre-push hooks — compares your branch to the base branch, maps changed files to packages, and exits non-zero if any are missing. No GitHub API needed.
+`bumpy check` verifies that changed packages on the current branch have corresponding bump files. Designed for pre-push hooks — compares your branch to the base branch, maps changed files to packages. By default it only fails if no bump files exist at all (matching changesets behavior). Use `--strict` to require every changed package to be covered, or `--no-fail` for advisory-only mode. No GitHub API needed.
 
 Changesets has no built-in equivalent — users rely on the CI bot comment to catch missing bump files after pushing.
 

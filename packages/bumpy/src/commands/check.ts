@@ -1,18 +1,27 @@
 import { relative } from 'node:path';
 import picomatch from 'picomatch';
 import { log, colorize } from '../utils/logger.ts';
-import { loadConfig, loadPackageConfig } from '../core/config.ts';
+import { loadConfig, loadPackageConfig, getBumpyDir } from '../core/config.ts';
 import { discoverWorkspace } from '../core/workspace.ts';
 import { readBumpFiles, filterBranchBumpFiles } from '../core/bump-file.ts';
 import { getChangedFiles } from '../core/git.ts';
 import type { BumpyConfig, WorkspacePackage } from '../types.ts';
 
+interface CheckOptions {
+  strict?: boolean;
+  noFail?: boolean;
+}
+
 /**
  * Local check: detect which packages have changed on this branch
  * and verify they have corresponding bump files.
  * Designed for pre-push hooks — no GitHub API needed.
+ *
+ * Default: at least one bump file must exist, uncovered packages are warned.
+ * --strict: every changed package must be covered.
+ * --no-fail: warn only, never exit 1.
  */
-export async function checkCommand(rootDir: string): Promise<void> {
+export async function checkCommand(rootDir: string, opts: CheckOptions = {}): Promise<void> {
   const config = await loadConfig(rootDir);
   const { packages } = await discoverWorkspace(rootDir, config);
 
@@ -27,10 +36,9 @@ export async function checkCommand(rootDir: string): Promise<void> {
 
   // Filter to only bump files added/modified on this branch
   const allBumpFiles = await readBumpFiles(rootDir);
-  const { branchBumpFiles, branchBumpFileIds } = filterBranchBumpFiles(allBumpFiles, changedFiles);
+  const { branchBumpFiles, hasEmptyBumpFile } = filterBranchBumpFiles(allBumpFiles, changedFiles, rootDir);
 
-  // If a bump file was changed but didn't parse (empty bump file), the check passes
-  const hasEmptyBumpFile = branchBumpFileIds.size > branchBumpFiles.length;
+  // If an empty bump file exists on this branch, the check passes
   if (hasEmptyBumpFile) {
     log.success('Empty bump file found — no releases needed.');
     return;
@@ -51,6 +59,20 @@ export async function checkCommand(rootDir: string): Promise<void> {
     return;
   }
 
+  // No bump files at all — fail by default
+  const willFailNoBump = !opts.noFail;
+  if (branchBumpFiles.length === 0) {
+    (willFailNoBump ? log.error : log.warn)(`${changedPackages.length} changed package(s) missing bump files:\n`);
+    for (const name of changedPackages) {
+      console.log(`  ${colorize(name, 'yellow')}`);
+    }
+    console.log();
+    log.dim('Run `bumpy add` to create a bump file, or `bumpy add --empty` if no release is needed.');
+    log.dim('To adjust which files trigger change detection, set `changedFilePatterns` in .bumpy/_config.json.');
+    if (willFailNoBump) process.exit(1);
+    return;
+  }
+
   // Check which changed packages are missing bump files
   const missing = changedPackages.filter((name) => !coveredPackages.has(name));
 
@@ -59,18 +81,35 @@ export async function checkCommand(rootDir: string): Promise<void> {
     return;
   }
 
-  // Report missing
-  log.warn(`${missing.length} changed package(s) missing bump files:\n`);
+  // Some packages uncovered — warn by default, fail with --strict
+  const willFailUncovered = opts.strict && !opts.noFail;
+  (willFailUncovered ? log.error : log.warn)(`${missing.length} changed package(s) missing bump files:\n`);
   for (const name of missing) {
     console.log(`  ${colorize(name, 'yellow')}`);
   }
+
+  if (branchBumpFiles.length > 0) {
+    console.log();
+    log.dim(`Existing bump files on this branch:`);
+    for (const bf of branchBumpFiles) {
+      log.dim(`  ${getBumpyDir(rootDir)}/${bf.id}.md`);
+    }
+  }
+
   console.log();
-  log.dim('Run `bumpy add` to create a bump file, or `bumpy add --empty` if no release is needed.');
-  process.exit(1);
+  if (opts.strict) {
+    log.dim(
+      "Run `bumpy add` to create a bump file. Use bump type `none` for packages that changed but don't need a release.",
+    );
+  } else {
+    log.dim('Run `bumpy add` to create a bump file, or `bumpy add --empty` if no release is needed.');
+  }
+  log.dim('To adjust which files trigger change detection, set `changedFilePatterns` in .bumpy/_config.json.');
+  if (willFailUncovered) process.exit(1);
 }
 
 /** Map changed files to the packages they belong to */
-async function findChangedPackages(
+export async function findChangedPackages(
   changedFiles: string[],
   packages: Map<string, WorkspacePackage>,
   rootDir: string,

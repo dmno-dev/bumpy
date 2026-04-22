@@ -86,7 +86,10 @@ async function main() {
       case 'check': {
         const rootDir = await findRoot();
         const { checkCommand } = await import('./commands/check.ts');
-        await checkCommand(rootDir);
+        await checkCommand(rootDir, {
+          strict: flags.strict === true,
+          noFail: flags['no-fail'] === true,
+        });
         break;
       }
 
@@ -99,7 +102,8 @@ async function main() {
           const { ciCheckCommand } = await import('./commands/ci.ts');
           await ciCheckCommand(rootDir, {
             comment: ciFlags.comment !== undefined ? ciFlags.comment === true : undefined,
-            failOnMissing: ciFlags['fail-on-missing'] === true,
+            strict: ciFlags.strict === true,
+            noFail: ciFlags['no-fail'] === true,
             patComments: ciFlags['pat-comments'] === true,
           });
         } else if (subcommand === 'release') {
@@ -185,6 +189,8 @@ function printHelp() {
     generate                Generate bump file from branch commits
     status                  Show pending releases
     check                   Verify changed packages have bump files (for pre-push hooks)
+      --strict                Fail if any changed package is uncovered (default: only fail if no bump files at all)
+      --no-fail               Warn only, never exit 1
     version [--commit]      Apply bump files and bump versions
     publish                 Publish versioned packages
     ci check                PR check — report pending releases, comment on PR
@@ -218,7 +224,8 @@ function printHelp() {
 
   CI check options:
     --comment               Force PR comment on/off (auto-detected in CI)
-    --fail-on-missing       Exit 1 if no bump files found
+    --strict                Fail if any changed package is uncovered (default: only fail if no bump files at all)
+    --no-fail               Warn only, never exit 1
 
   CI release options:
     --auto-publish          Version + publish directly (default: create version PR)

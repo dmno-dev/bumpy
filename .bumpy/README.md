@@ -26,7 +26,7 @@ bunx bumpy add --packages "package-name:minor,other-package:patch" --message "De
 
 ### By hand
 
-Create a `.md` file in this directory with YAML frontmatter mapping package names to bump levels (`major`, `minor`, or `patch`), and a markdown body for the changelog entry:
+Create a `.md` file in this directory with YAML frontmatter mapping package names to bump levels (`major`, `minor`, `patch`, or `none`), and a markdown body for the changelog entry:
 
 ```markdown
 ---

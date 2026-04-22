@@ -1,4 +1,5 @@
 import { resolve } from 'node:path';
+import { existsSync } from 'node:fs';
 import yaml from 'js-yaml';
 import { readText, writeText, listFiles, removeFile } from '../utils/fs.ts';
 import { getBumpyDir } from './config.ts';
@@ -187,14 +188,30 @@ export function extractBumpFileIdsFromChangedFiles(changedFiles: string[]): Set<
 
 /**
  * Filter bump files to only those added/modified on the current branch.
- * Returns the filtered bump files and whether any changed bump file was
- * empty (has no releases — signals intentionally no releases needed).
+ * Also detects empty bump files (no releases) that still exist on disk,
+ * which signal intentionally no releases needed.
  */
 export function filterBranchBumpFiles(
   allBumpFiles: BumpFile[],
   changedFiles: string[],
-): { branchBumpFiles: BumpFile[]; branchBumpFileIds: Set<string> } {
+  rootDir?: string,
+): { branchBumpFiles: BumpFile[]; branchBumpFileIds: Set<string>; hasEmptyBumpFile: boolean } {
   const branchBumpFileIds = extractBumpFileIdsFromChangedFiles(changedFiles);
   const branchBumpFiles = allBumpFiles.filter((bf) => branchBumpFileIds.has(bf.id));
-  return { branchBumpFiles, branchBumpFileIds };
+
+  // Check if any changed bump file IDs that didn't parse still exist on disk (= empty bump file).
+  // Deleted bump files (from other branches) should not count.
+  let hasEmptyBumpFile = false;
+  if (rootDir) {
+    const parsedIds = new Set(branchBumpFiles.map((bf) => bf.id));
+    const bumpyDir = getBumpyDir(rootDir);
+    for (const id of branchBumpFileIds) {
+      if (!parsedIds.has(id) && existsSync(resolve(bumpyDir, `${id}.md`))) {
+        hasEmptyBumpFile = true;
+        break;
+      }
+    }
+  }
+
+  return { branchBumpFiles, branchBumpFileIds, hasEmptyBumpFile };
 }
