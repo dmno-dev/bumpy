@@ -7,8 +7,13 @@ import { assembleReleasePlan } from '../core/release-plan.ts';
 import { applyReleasePlan } from '../core/apply-release-plan.ts';
 import { runArgs, tryRunArgs } from '../utils/shell.ts';
 import { detectWorkspaces } from '../utils/package-manager.ts';
+import { resolveCommitMessage } from '../core/commit-message.ts';
 
-export async function versionCommand(rootDir: string): Promise<void> {
+interface VersionOptions {
+  commit?: boolean;
+}
+
+export async function versionCommand(rootDir: string, opts: VersionOptions = {}): Promise<void> {
   const config = await loadConfig(rootDir);
   const packages = await discoverPackages(rootDir, config);
   const depGraph = new DependencyGraph(packages);
@@ -51,7 +56,7 @@ export async function versionCommand(rootDir: string): Promise<void> {
   await updateLockfile(rootDir);
 
   // Optionally commit
-  if (config.commit) {
+  if (opts.commit) {
     try {
       // Stage version changes, changelogs, deleted bump files, and lockfile
       runArgs(['git', 'add', '-A', '.bumpy/'], { cwd: rootDir });
@@ -64,7 +69,7 @@ export async function versionCommand(rootDir: string): Promise<void> {
       for (const lockfile of ['bun.lock', 'bun.lockb', 'pnpm-lock.yaml', 'yarn.lock', 'package-lock.json']) {
         tryRunArgs(['git', 'add', '--', lockfile], { cwd: rootDir });
       }
-      const msg = ['Version packages', '', ...plan.releases.map((r) => `${r.name}@${r.newVersion}`)].join('\n');
+      const msg = await resolveCommitMessage(config.versionCommitMessage, plan, rootDir);
       runArgs(['git', 'commit', '-F', '-'], { cwd: rootDir, input: msg });
       log.success('Created git commit');
     } catch (e) {

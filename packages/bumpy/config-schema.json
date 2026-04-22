@@ -1,0 +1,327 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/dmno-dev/bumpy/main/packages/bumpy/config-schema.json",
+  "title": "Bumpy Configuration",
+  "description": "Configuration for @varlock/bumpy — monorepo versioning and changelog tool",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Path or URL to the JSON schema"
+    },
+    "baseBranch": {
+      "type": "string",
+      "description": "Branch used for release comparisons",
+      "default": "main"
+    },
+    "access": {
+      "type": "string",
+      "enum": ["public", "restricted"],
+      "description": "Default npm publish access level",
+      "default": "public"
+    },
+    "versionCommitMessage": {
+      "type": "string",
+      "description": "Customize the commit message used when versioning. A plain string is used as-is. A path starting with \"./\" or \"../\" is loaded as a module that exports a function receiving the release plan and returning a message string."
+    },
+    "changelog": {
+      "description": "Changelog formatter — \"default\", \"github\", or path to a custom formatter. Can also be a tuple of [formatter, options]. Set to false to disable changelog generation.",
+      "default": "default",
+      "oneOf": [
+        { "type": "boolean", "const": false },
+        { "type": "string" },
+        {
+          "type": "array",
+          "items": [{ "type": "string" }, { "type": "object" }],
+          "minItems": 2,
+          "maxItems": 2
+        }
+      ]
+    },
+    "changedFilePatterns": {
+      "type": "array",
+      "description": "Glob patterns to filter which changed files count toward marking a package as changed. Can be overridden per-package.",
+      "items": { "type": "string" },
+      "default": ["**"]
+    },
+    "fixed": {
+      "type": "array",
+      "description": "Package groups that always bump together to the same version. Each element is an array of package name globs.",
+      "items": {
+        "type": "array",
+        "items": { "type": "string" }
+      },
+      "default": []
+    },
+    "linked": {
+      "type": "array",
+      "description": "Package groups that share the highest bump level. Each element is an array of package name globs.",
+      "items": {
+        "type": "array",
+        "items": { "type": "string" }
+      },
+      "default": []
+    },
+    "ignore": {
+      "type": "array",
+      "description": "Package name globs to exclude from versioning",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "include": {
+      "type": "array",
+      "description": "Package name globs to explicitly include (overrides ignore and privatePackages)",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "updateInternalDependencies": {
+      "type": "string",
+      "enum": ["patch", "minor", "out-of-range"],
+      "description": "When to update internal dependency version ranges",
+      "default": "out-of-range"
+    },
+    "dependencyBumpRules": {
+      "type": "object",
+      "description": "Controls how bumps propagate through dependency types",
+      "properties": {
+        "dependencies": { "$ref": "#/$defs/dependencyBumpRule" },
+        "devDependencies": { "$ref": "#/$defs/dependencyBumpRule" },
+        "peerDependencies": { "$ref": "#/$defs/dependencyBumpRule" },
+        "optionalDependencies": { "$ref": "#/$defs/dependencyBumpRule" }
+      },
+      "additionalProperties": false
+    },
+    "privatePackages": {
+      "type": "object",
+      "description": "Whether to version and/or create git tags for private packages",
+      "properties": {
+        "version": {
+          "type": "boolean",
+          "description": "Whether to version private packages",
+          "default": false
+        },
+        "tag": {
+          "type": "boolean",
+          "description": "Whether to create git tags for private packages",
+          "default": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "allowCustomCommands": {
+      "description": "Allow per-package custom commands (buildCommand, publishCommand, checkPublished) defined in package.json \"bumpy\" fields. true = allow all, string[] = allow matching package name globs, false = only root-config commands allowed.",
+      "default": false,
+      "oneOf": [
+        { "type": "boolean" },
+        {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      ]
+    },
+    "packages": {
+      "type": "object",
+      "description": "Per-package config overrides, keyed by package name or glob pattern",
+      "additionalProperties": { "$ref": "#/$defs/packageConfig" }
+    },
+    "publish": {
+      "type": "object",
+      "description": "Publishing pipeline configuration",
+      "properties": {
+        "packManager": {
+          "type": "string",
+          "enum": ["auto", "npm", "pnpm", "bun", "yarn"],
+          "description": "Package manager to use for packing. \"auto\" detects from lockfile.",
+          "default": "auto"
+        },
+        "publishManager": {
+          "type": "string",
+          "enum": ["npm", "pnpm", "bun", "yarn"],
+          "description": "Command to use for publishing. npm supports OIDC/provenance.",
+          "default": "npm"
+        },
+        "publishArgs": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Extra args appended to the publish command (e.g., \"--provenance\")",
+          "default": []
+        },
+        "protocolResolution": {
+          "type": "string",
+          "enum": ["pack", "in-place", "none"],
+          "description": "How to handle workspace:/catalog: protocol resolution. \"pack\" = use PM's pack to build a clean tarball, \"in-place\" = rewrite package.json before publish, \"none\" = don't resolve.",
+          "default": "pack"
+        }
+      },
+      "additionalProperties": false
+    },
+    "aggregateRelease": {
+      "description": "GitHub release creation (requires gh CLI). false = individual release per package, true = single aggregated release, or an object with enabled and optional title (supports {{date}}).",
+      "default": false,
+      "oneOf": [
+        { "type": "boolean" },
+        {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Whether to create an aggregated release"
+            },
+            "title": {
+              "type": "string",
+              "description": "Custom title for the aggregated release (supports {{date}})"
+            }
+          },
+          "required": ["enabled"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "gitUser": {
+      "type": "object",
+      "description": "Git identity used for CI commits",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Git user name",
+          "default": "bumpy-bot"
+        },
+        "email": {
+          "type": "string",
+          "description": "Git user email",
+          "default": "276066384+bumpy-bot@users.noreply.github.com"
+        }
+      },
+      "additionalProperties": false
+    },
+    "versionPr": {
+      "type": "object",
+      "description": "Customize the version PR created by bumpy ci release",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "PR title",
+          "default": "🐸 Versioned release"
+        },
+        "branch": {
+          "type": "string",
+          "description": "Branch name for the version PR",
+          "default": "bumpy/version-packages"
+        },
+        "preamble": {
+          "type": "string",
+          "description": "HTML/markdown content prepended to the PR body"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "bumpType": {
+      "type": "string",
+      "enum": ["major", "minor", "patch"]
+    },
+    "dependencyBumpRule": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "trigger": {
+              "$ref": "#/$defs/bumpType",
+              "description": "Minimum bump level that triggers propagation"
+            },
+            "bumpAs": {
+              "description": "What level to bump the dependent (\"match\" mirrors the triggering level)",
+              "oneOf": [{ "$ref": "#/$defs/bumpType" }, { "type": "string", "const": "match" }]
+            }
+          },
+          "required": ["trigger", "bumpAs"],
+          "additionalProperties": false
+        },
+        {
+          "type": "boolean",
+          "const": false,
+          "description": "Set to false to disable propagation for this dependency type"
+        }
+      ]
+    },
+    "packageConfig": {
+      "type": "object",
+      "description": "Per-package configuration",
+      "properties": {
+        "managed": {
+          "type": "boolean",
+          "description": "Explicitly opt this package in or out of version management"
+        },
+        "access": {
+          "type": "string",
+          "enum": ["public", "restricted"],
+          "description": "Override the global access level"
+        },
+        "publishCommand": {
+          "description": "Custom command(s) to publish this package (replaces npm publish)",
+          "oneOf": [
+            { "type": "string" },
+            {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          ]
+        },
+        "buildCommand": {
+          "type": "string",
+          "description": "Command to run before publishing"
+        },
+        "registry": {
+          "type": "string",
+          "description": "Custom npm registry URL"
+        },
+        "skipNpmPublish": {
+          "type": "boolean",
+          "description": "Don't publish to npm (still creates git tags)"
+        },
+        "checkPublished": {
+          "type": "string",
+          "description": "Custom command that outputs the currently published version"
+        },
+        "changedFilePatterns": {
+          "type": "array",
+          "description": "Glob patterns to filter which changed files count toward marking this package as changed (overrides root setting)",
+          "items": { "type": "string" }
+        },
+        "dependencyBumpRules": {
+          "type": "object",
+          "description": "Per-package override for dependency propagation rules",
+          "properties": {
+            "dependencies": { "$ref": "#/$defs/dependencyBumpRule" },
+            "devDependencies": { "$ref": "#/$defs/dependencyBumpRule" },
+            "peerDependencies": { "$ref": "#/$defs/dependencyBumpRule" },
+            "optionalDependencies": { "$ref": "#/$defs/dependencyBumpRule" }
+          },
+          "additionalProperties": false
+        },
+        "cascadeTo": {
+          "type": "object",
+          "description": "Explicit cascade targets — glob pattern mapped to { trigger, bumpAs }",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "trigger": {
+                "$ref": "#/$defs/bumpType",
+                "description": "Minimum bump level that triggers the cascade"
+              },
+              "bumpAs": {
+                "description": "What level to bump the target",
+                "oneOf": [{ "$ref": "#/$defs/bumpType" }, { "type": "string", "const": "match" }]
+              }
+            },
+            "required": ["trigger", "bumpAs"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

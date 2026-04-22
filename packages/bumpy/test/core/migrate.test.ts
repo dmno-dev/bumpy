@@ -46,7 +46,6 @@ describe('migrate command', () => {
     const config = await readJson<Record<string, unknown>>(resolve(tmpDir, '.bumpy/_config.json'));
     expect(config.baseBranch).toBe('develop');
     expect(config.access).toBe('restricted');
-    expect(config.commit).toBe(true);
     expect(config.ignore).toEqual(['@test/internal']);
     expect(config.fixed).toEqual([['@test/core', '@test/types']]);
 
