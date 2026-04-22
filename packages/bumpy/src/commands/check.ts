@@ -35,7 +35,13 @@ export async function checkCommand(rootDir: string, opts: CheckOptions = {}): Pr
   }
 
   // Filter to only bump files added/modified on this branch
-  const allBumpFiles = await readBumpFiles(rootDir);
+  const { bumpFiles: allBumpFiles, errors: parseErrors } = await readBumpFiles(rootDir);
+  if (parseErrors.length > 0) {
+    for (const err of parseErrors) {
+      log.error(err);
+    }
+    process.exit(1);
+  }
   const { branchBumpFiles, hasEmptyBumpFile } = filterBranchBumpFiles(allBumpFiles, changedFiles, rootDir);
 
   // If an empty bump file exists on this branch, the check passes

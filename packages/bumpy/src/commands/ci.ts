@@ -94,7 +94,7 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
   const config = await loadConfig(rootDir);
   const { packages } = await discoverWorkspace(rootDir, config);
   const depGraph = new DependencyGraph(packages);
-  const allBumpFiles = await readBumpFiles(rootDir);
+  const { bumpFiles: allBumpFiles, errors: parseErrors } = await readBumpFiles(rootDir);
 
   // Skip on the version PR branch — it has no bump files by design
   const prBranchName = detectPrBranch(rootDir);
@@ -110,27 +110,48 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
 
   // Filter to only bump files added/modified in this PR
   const changedFiles = getChangedFiles(rootDir, config.baseBranch);
-  const { branchBumpFiles: prBumpFiles, hasEmptyBumpFile } = filterBranchBumpFiles(allBumpFiles, changedFiles, rootDir);
+  const { branchBumpFiles: prBumpFiles, hasEmptyBumpFile } = filterBranchBumpFiles(
+    allBumpFiles,
+    changedFiles,
+    rootDir,
+    parseErrors,
+  );
 
-  // An empty bump file signals intentionally no releases needed
-  if (hasEmptyBumpFile) {
-    log.success('Empty bump file found — no releases needed.');
-    if (shouldComment && prNumber) {
-      const prBranch = detectPrBranch(rootDir);
-      await postOrUpdatePrComment(prNumber, formatNoBumpFilesComment(prBranch, pm), rootDir, opts.patComments);
+  // Surface any parse errors
+  if (parseErrors.length > 0) {
+    for (const err of parseErrors) {
+      log.error(err);
     }
-    return;
   }
 
   if (prBumpFiles.length === 0) {
-    const willFail = !opts.noFail;
-    const msg = 'No bump files found in this PR.';
+    // An empty bump file signals intentionally no releases needed
+    if (hasEmptyBumpFile && parseErrors.length === 0) {
+      log.success('Empty bump file found — no releases needed.');
+      if (shouldComment && prNumber) {
+        await postOrUpdatePrComment(prNumber, formatEmptyBumpFileComment(), rootDir, opts.patComments);
+      }
+      return;
+    }
+
+    const willFail = !opts.noFail || parseErrors.length > 0;
+    const msg =
+      parseErrors.length > 0
+        ? 'Bump file(s) found but failed to parse — see errors above.'
+        : 'No bump files found in this PR.';
     if (willFail) log.error(msg);
     else log.warn(msg);
 
     if (shouldComment && prNumber) {
       const prBranch = detectPrBranch(rootDir);
-      await postOrUpdatePrComment(prNumber, formatNoBumpFilesComment(prBranch, pm), rootDir, opts.patComments);
+      await postOrUpdatePrComment(
+        prNumber,
+        parseErrors.length > 0
+          ? formatBumpFileErrorsComment(parseErrors, prBranch, pm)
+          : formatNoBumpFilesComment(prBranch, pm),
+        rootDir,
+        opts.patComments,
+      );
     }
 
     if (willFail) process.exit(1);
@@ -154,8 +175,13 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
   // Comment on PR
   if (shouldComment && prNumber) {
     const prBranch = detectPrBranch(rootDir);
-    const comment = formatReleasePlanComment(plan, prBumpFiles, prNumber, prBranch, pm, plan.warnings);
+    const comment = formatReleasePlanComment(plan, prBumpFiles, prNumber, prBranch, pm, plan.warnings, parseErrors);
     await postOrUpdatePrComment(prNumber, comment, rootDir, opts.patComments);
+  }
+
+  // Fail if there were parse errors (even if some files parsed successfully)
+  if (parseErrors.length > 0 && !opts.noFail) {
+    process.exit(1);
   }
 
   // Check for uncovered packages
@@ -188,7 +214,14 @@ export async function ciReleaseCommand(rootDir: string, opts: ReleaseOptions): P
   ensureGitIdentity(rootDir, config);
   const { packages } = await discoverWorkspace(rootDir, config);
   const depGraph = new DependencyGraph(packages);
-  const bumpFiles = await readBumpFiles(rootDir);
+  const { bumpFiles, errors: releaseParseErrors } = await readBumpFiles(rootDir);
+
+  if (releaseParseErrors.length > 0) {
+    for (const err of releaseParseErrors) {
+      log.error(err);
+    }
+    throw new Error('Bump file parse errors must be fixed before releasing.');
+  }
 
   if (bumpFiles.length === 0) {
     // No bump files — check if there are unpublished packages to publish
@@ -458,6 +491,7 @@ function formatReleasePlanComment(
   prBranch: string | null,
   pm: PackageManager,
   warnings: string[] = [],
+  parseErrors: string[] = [],
 ): string {
   const repo = process.env.GITHUB_REPOSITORY;
   const lines: string[] = [];
@@ -508,6 +542,15 @@ function formatReleasePlanComment(
   }
   lines.push('');
 
+  if (parseErrors.length > 0) {
+    lines.push('#### Errors');
+    lines.push('');
+    for (const e of parseErrors) {
+      lines.push(`> :x: ${e}`);
+    }
+    lines.push('');
+  }
+
   if (warnings.length > 0) {
     lines.push('#### Warnings');
     lines.push('');
@@ -526,6 +569,46 @@ function formatReleasePlanComment(
 
   lines.push('---');
   lines.push(`_This comment is maintained by [bumpy](https://bumpy.varlock.dev)._`);
+  return lines.join('\n');
+}
+
+function formatBumpFileErrorsComment(errors: string[], prBranch: string | null, pm: PackageManager): string {
+  const runCmd = pmRunCommand(pm);
+  const lines = [
+    `<a href="https://bumpy.varlock.dev"><img src="${FROG_IMG_BASE}/frog-neutral.png" alt="bumpy-frog" width="60" align="left" style="image-rendering: pixelated;" title="Hi! I'm bumpy!" /></a>`,
+    '',
+    '**This PR has bump file(s) with errors that need to be fixed.**',
+    '<br clear="left" />\n',
+    '#### Errors',
+    '',
+    ...errors.map((e) => `> :x: ${e}`),
+    '',
+    'Please fix the errors above or recreate the bump file:\n',
+    '```bash',
+    `${runCmd} add`,
+    '```',
+  ];
+
+  const addLink = buildAddBumpFileLink(prBranch);
+  if (addLink) {
+    lines.push('');
+    lines.push(`Or [click here to add a bump file](${addLink}) directly on GitHub.`);
+  }
+
+  lines.push('\n---');
+  lines.push(`_This comment is maintained by [bumpy](https://bumpy.varlock.dev)._`);
+  return lines.join('\n');
+}
+
+function formatEmptyBumpFileComment(): string {
+  const lines = [
+    `<a href="https://bumpy.varlock.dev"><img src="${FROG_IMG_BASE}/frog-neutral.png" alt="bumpy-frog" width="60" align="left" style="image-rendering: pixelated;" title="Hi! I'm bumpy!" /></a>`,
+    '',
+    '**This PR includes an empty bump file — no version bump is needed.** :white_check_mark:',
+    '<br clear="left" />',
+    '\n---',
+    `_This comment is maintained by [bumpy](https://bumpy.varlock.dev)._`,
+  ];
   return lines.join('\n');
 }
 

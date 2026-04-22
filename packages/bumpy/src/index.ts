@@ -3,6 +3,7 @@ export { loadConfig, findRoot, getBumpyDir, matchGlob } from './core/config.ts';
 export { discoverPackages } from './core/workspace.ts';
 export { DependencyGraph } from './core/dep-graph.ts';
 export { readBumpFiles, parseBumpFile, writeBumpFile } from './core/bump-file.ts';
+export type { BumpFileParseResult, ReadBumpFilesResult } from './core/bump-file.ts';
 export { assembleReleasePlan } from './core/release-plan.ts';
 export { applyReleasePlan } from './core/apply-release-plan.ts';
 export { generateChangelogEntry, loadFormatter, defaultFormatter, prependToChangelog } from './core/changelog.ts';
