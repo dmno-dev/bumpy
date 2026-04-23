@@ -23,9 +23,11 @@ describe('defaultFormatter', () => {
     const result = await defaultFormatter({ release, bumpFiles, date: '2026-04-14' });
 
     expect(result).toContain('## 1.1.0');
-    expect(result).toContain('_2026-04-14_');
+    expect(result).toContain('<sub>2026-04-14</sub>');
     expect(result).toContain('- Added new feature');
-    expect(result).toContain('- Fixed a bug');
+    expect(result).toContain('- *(patch)* Fixed a bug');
+    // Minor (matching release type, no tag) should come before patch
+    expect(result.indexOf('Added new feature')).toBeLessThan(result.indexOf('Fixed a bug'));
   });
 
   test('formats dependency bump with no bump files', async () => {
@@ -115,7 +117,7 @@ describe('generateChangelogEntry', () => {
 
     const result = await generateChangelogEntry(release, [], undefined, '2020-01-01');
 
-    expect(result).toContain('_2020-01-01_');
+    expect(result).toContain('<sub>2020-01-01</sub>');
   });
 });
 

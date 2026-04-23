@@ -1,7 +1,8 @@
 import { resolve, relative } from 'node:path';
 import { realpathSync } from 'node:fs';
 import { log } from '../utils/logger.ts';
-import type { BumpFile, PlannedRelease, BumpyConfig } from '../types.ts';
+import type { BumpFile, BumpType, PlannedRelease, BumpyConfig } from '../types.ts';
+import { BUMP_LEVELS } from '../types.ts';
 
 // ---- Formatter interface ----
 
@@ -19,35 +20,52 @@ export interface ChangelogContext {
  */
 export type ChangelogFormatter = (ctx: ChangelogContext) => string | Promise<string>;
 
+// ---- Bump type helpers ----
+
+/** Get the bump type a bump file applies to a specific package */
+export function getBumpTypeForPackage(bf: BumpFile, packageName: string): BumpType {
+  const rel = bf.releases.find((r) => r.name === packageName);
+  return rel?.type === 'none' ? 'patch' : (rel?.type ?? 'patch');
+}
+
+/** Sort bump files by bump type for a specific package (major → minor → patch) */
+export function sortBumpFilesByType(bumpFiles: BumpFile[], packageName: string): BumpFile[] {
+  return [...bumpFiles].sort((a, b) => {
+    const aLevel = BUMP_LEVELS[getBumpTypeForPackage(a, packageName)];
+    const bLevel = BUMP_LEVELS[getBumpTypeForPackage(b, packageName)];
+    return bLevel - aLevel;
+  });
+}
+
 // ---- Built-in formatters ----
 
-/** Default formatter — version heading, date, bullet points */
+/** Default formatter — version heading with date, bullet points sorted by bump type */
 export const defaultFormatter: ChangelogFormatter = (ctx) => {
   const { release, bumpFiles, date } = ctx;
   const lines: string[] = [];
   lines.push(`## ${release.newVersion}`);
-  lines.push('');
-  lines.push(`_${date}_`);
+  lines.push(`<sub>${date}</sub>`);
   lines.push('');
 
   const relevantBumpFiles = bumpFiles.filter((bf) => release.bumpFiles.includes(bf.id));
+  const sorted = sortBumpFilesByType(relevantBumpFiles, release.name);
 
-  if (relevantBumpFiles.length > 0) {
-    for (const bf of relevantBumpFiles) {
-      if (bf.summary) {
-        const summaryLines = bf.summary.split('\n');
-        lines.push(`- ${summaryLines[0]}`);
-        for (let i = 1; i < summaryLines.length; i++) {
-          if (summaryLines[i]!.trim()) {
-            lines.push(`  ${summaryLines[i]}`);
-          }
-        }
+  for (const bf of sorted) {
+    if (!bf.summary) continue;
+    const type = getBumpTypeForPackage(bf, release.name);
+    const tag = type !== release.type ? `*(${type})* ` : '';
+    const summaryLines = bf.summary.split('\n');
+    lines.push(`- ${tag}${summaryLines[0]}`);
+    for (let i = 1; i < summaryLines.length; i++) {
+      if (summaryLines[i]!.trim()) {
+        lines.push(`  ${summaryLines[i]}`);
       }
     }
   }
 
-  if (release.isDependencyBump && relevantBumpFiles.length === 0) {
-    lines.push('- Updated dependencies');
+  if (release.isDependencyBump) {
+    const tag = release.type !== 'patch' ? `*(patch)* ` : '';
+    lines.push(`- ${tag}Updated dependencies`);
   }
 
   if (release.isCascadeBump && !release.isDependencyBump && relevantBumpFiles.length === 0) {
@@ -153,7 +171,7 @@ export function prependToChangelog(existingContent: string, newEntry: string): s
     // Find the first ## after the # header
     const afterTitle = existingContent.indexOf('\n##');
     if (afterTitle !== -1) {
-      return existingContent.slice(0, afterTitle + 1) + '\n' + newEntry + existingContent.slice(afterTitle + 1);
+      return existingContent.slice(0, afterTitle + 1) + '\n' + newEntry + '\n' + existingContent.slice(afterTitle + 1);
     }
     // No existing entries, append after the title
     return existingContent.trimEnd() + '\n\n' + newEntry;
