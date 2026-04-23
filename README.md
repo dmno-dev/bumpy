@@ -10,6 +10,8 @@
   <a href="https://github.com/dmno-dev/bumpy/actions/workflows/ci.yaml"><img src="https://img.shields.io/github/actions/workflow/status/dmno-dev/bumpy/ci.yaml?style=flat&logo=github&label=CI" alt="build status"></a>
   <a href="https://chat.dmno.dev"><img src="https://img.shields.io/badge/chat-discord-5865F2?style=flat&logo=discord" alt="discord chat"></a>
 </p>
+
+<p align="center"><i>Brought to you by <a href="https://varlock.dev">Varlock</a> — unified config & secrets toolkit 🧙‍♂️🔐</i></p>
 <br/>
 
 # @varlock/bumpy 🐸
@@ -252,5 +254,14 @@ bunx bumpy --help  # invoke built cli
 - Plugin system for different publish targets, and support multiple targets per package
 - Tracking workspace-level / non-publishable changes
 - More frogs 🐸
+
+---
+
+<p align="center">
+  <a href="https://varlock.dev" target="_blank" rel="noopener noreferrer">
+    <img src="https://raw.githubusercontent.com/dmno-dev/bumpy/refs/heads/main/images/github-readme-footer.jpg" alt="Bumpy was created by Varlock" width="600">
+  </a>
+</p>
+<p align="center"><b>Bumpy is a creation of the team behind <a href="https://varlock.dev">Varlock</a></b> — unified config & secrets toolkit</p>
 
 <!-- note this readme is also used for the bumpy package! -->
