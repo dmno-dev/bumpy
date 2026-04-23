@@ -1,5 +1,6 @@
 import { tryRunArgs } from '../utils/shell.ts';
 import type { ChangelogContext, ChangelogFormatter } from './changelog.ts';
+import { getBumpTypeForPackage, sortBumpFilesByType } from './changelog.ts';
 
 /** Authors filtered from "Thanks" attribution by default (e.g. bots) */
 /** Authors filtered from "Thanks" attribution by default (e.g. AI/automation bots) */
@@ -51,48 +52,53 @@ export function createGithubFormatter(options: GithubChangelogOptions = {}): Cha
 
     const lines: string[] = [];
     lines.push(`## ${release.newVersion}`);
-    lines.push('');
-    lines.push(`_${date}_`);
+    lines.push(`<sub>${date}</sub>`);
     lines.push('');
 
     const relevantBumpFiles = bumpFiles.filter((bf) => release.bumpFiles.includes(bf.id));
+    const sorted = sortBumpFilesByType(relevantBumpFiles, release.name);
 
-    if (relevantBumpFiles.length > 0) {
-      for (const bf of relevantBumpFiles) {
-        if (!bf.summary) continue;
+    for (const bf of sorted) {
+      if (!bf.summary) continue;
 
-        // Extract metadata overrides from summary (pr, commit, author lines)
-        const { cleanSummary, overrides } = extractSummaryMeta(bf.summary);
+      const type = getBumpTypeForPackage(bf, release.name);
+      const tag = type !== release.type ? ` *(${type})*` : '';
 
-        // Look up git/PR info, with overrides taking precedence
-        const gitInfo = resolveBumpFileInfo(bf.id, repoSlug, serverUrl, overrides);
+      // Extract metadata overrides from summary (pr, commit, author lines)
+      const { cleanSummary, overrides } = extractSummaryMeta(bf.summary);
 
-        const summaryLines = cleanSummary.split('\n');
-        const firstLine = linkifyIssueRefs(summaryLines[0]!, serverUrl, repoSlug);
+      // Look up git/PR info, with overrides taking precedence
+      const gitInfo = resolveBumpFileInfo(bf.id, repoSlug, serverUrl, overrides);
 
-        // Build the prefix: PR link, commit link, thanks
-        const prefix = formatPrefix(
-          gitInfo,
-          serverUrl,
-          repoSlug,
-          includeCommitLink,
-          thankContributors,
-          internalAuthorsSet,
-        );
+      const summaryLines = cleanSummary.split('\n');
+      const firstLine = linkifyIssueRefs(summaryLines[0]!, serverUrl, repoSlug);
 
-        lines.push(`-${prefix ? ` ${prefix} -` : ''} ${firstLine}`);
+      // Build the prefix: PR link, commit link, thanks
+      const { links, thanks } = formatPrefix(
+        gitInfo,
+        serverUrl,
+        repoSlug,
+        includeCommitLink,
+        thankContributors,
+        internalAuthorsSet,
+      );
 
-        // Include continuation lines
-        for (let i = 1; i < summaryLines.length; i++) {
-          if (summaryLines[i]!.trim()) {
-            lines.push(`  ${linkifyIssueRefs(summaryLines[i]!, serverUrl, repoSlug)}`);
-          }
+      // Assemble: links, tag, thanks, then summary
+      const parts = [links, tag, thanks].filter(Boolean);
+      const hasMeta = parts.length > 0;
+      lines.push(`- ${parts.join(' ')}${hasMeta ? ' - ' : ''}${firstLine}`);
+
+      // Include continuation lines
+      for (let i = 1; i < summaryLines.length; i++) {
+        if (summaryLines[i]!.trim()) {
+          lines.push(`  ${linkifyIssueRefs(summaryLines[i]!, serverUrl, repoSlug)}`);
         }
       }
     }
 
-    if (release.isDependencyBump && relevantBumpFiles.length === 0) {
-      lines.push('- Updated dependencies');
+    if (release.isDependencyBump) {
+      const depTag = release.type !== 'patch' ? ` *(patch)* -` : '';
+      lines.push(`-${depTag} Updated dependencies`);
     }
 
     if (release.isCascadeBump && !release.isDependencyBump && relevantBumpFiles.length === 0) {
@@ -263,8 +269,8 @@ function findBumpFileCommitInfo(bumpFileId: string, repo?: string): BumpFileGitI
 // ---- Formatting helpers ----
 
 /**
- * Build the prefix portion of a changelog line: PR link, commit link, thanks.
- * Matches the format used by @changesets/changelog-github.
+ * Build the prefix portions of a changelog line, split into links and thanks
+ * so the bump type tag can be inserted between them.
  */
 function formatPrefix(
   info: BumpFileGitInfo,
@@ -273,23 +279,24 @@ function formatPrefix(
   includeCommitLink: boolean,
   thankContributors: boolean,
   internalAuthors: Set<string>,
-): string {
-  const parts: string[] = [];
+): { links: string; thanks: string } {
+  const linkParts: string[] = [];
 
   if (info.prNumber && info.prUrl) {
-    parts.push(`[#${info.prNumber}](${info.prUrl})`);
+    linkParts.push(`[#${info.prNumber}](${info.prUrl})`);
   }
 
   if (includeCommitLink && info.commitHash && repo) {
     const short = info.commitHash.slice(0, 7);
-    parts.push(`[\`${short}\`](${serverUrl}/${repo}/commit/${info.commitHash})`);
+    linkParts.push(`[\`${short}\`](${serverUrl}/${repo}/commit/${info.commitHash})`);
   }
 
+  let thanks = '';
   if (thankContributors && info.author && !internalAuthors.has(info.author.toLowerCase())) {
-    parts.push(`Thanks [@${info.author}](${serverUrl}/${info.author})!`);
+    thanks = `Thanks [@${info.author}](${serverUrl}/${info.author})!`;
   }
 
-  return parts.join(' ');
+  return { links: linkParts.join(' '), thanks };
 }
 
 /**

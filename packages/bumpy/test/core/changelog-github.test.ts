@@ -26,7 +26,7 @@ describe('createGithubFormatter', () => {
     const result = await formatter({ release, bumpFiles, date: '2026-04-14' });
 
     expect(result).toContain('## 1.1.0');
-    expect(result).toContain('_2026-04-14_');
+    expect(result).toContain('<sub>2026-04-14</sub>');
     expect(result).toContain('Added feature X');
   });
 
