@@ -110,7 +110,7 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
 
   // Filter to only bump files added/modified in this PR
   const changedFiles = getChangedFiles(rootDir, config.baseBranch);
-  const { branchBumpFiles: prBumpFiles, hasEmptyBumpFile } = filterBranchBumpFiles(
+  const { branchBumpFiles: prBumpFiles, emptyBumpFileIds } = filterBranchBumpFiles(
     allBumpFiles,
     changedFiles,
     rootDir,
@@ -126,10 +126,16 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
 
   if (prBumpFiles.length === 0) {
     // An empty bump file signals intentionally no releases needed
-    if (hasEmptyBumpFile && parseErrors.length === 0) {
+    if (emptyBumpFileIds.length > 0 && parseErrors.length === 0) {
       log.success('Empty bump file found — no releases needed.');
       if (shouldComment && prNumber) {
-        await postOrUpdatePrComment(prNumber, formatEmptyBumpFileComment(), rootDir, opts.patComments);
+        const prBranch = detectPrBranch(rootDir);
+        await postOrUpdatePrComment(
+          prNumber,
+          formatEmptyBumpFileComment(emptyBumpFileIds, prNumber, prBranch),
+          rootDir,
+          opts.patComments,
+        );
       }
       return;
     }
@@ -175,7 +181,16 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
   // Comment on PR
   if (shouldComment && prNumber) {
     const prBranch = detectPrBranch(rootDir);
-    const comment = formatReleasePlanComment(plan, prBumpFiles, prNumber, prBranch, pm, plan.warnings, parseErrors);
+    const comment = formatReleasePlanComment(
+      plan,
+      prBumpFiles,
+      prNumber,
+      prBranch,
+      pm,
+      plan.warnings,
+      parseErrors,
+      emptyBumpFileIds,
+    );
     await postOrUpdatePrComment(prNumber, comment, rootDir, opts.patComments);
   }
 
@@ -492,6 +507,7 @@ function formatReleasePlanComment(
   pm: PackageManager,
   warnings: string[] = [],
   parseErrors: string[] = [],
+  emptyBumpFileIds: string[] = [],
 ): string {
   const repo = process.env.GITHUB_REPOSITORY;
   const lines: string[] = [];
@@ -530,6 +546,19 @@ function formatReleasePlanComment(
   for (const bf of bumpFiles) {
     const filename = `${bf.id}.md`;
     const parts: string[] = [`\`${filename}\``];
+    if (repo) {
+      parts.push(
+        `([view diff](https://github.com/${repo}/pull/${prNumber}/changes#diff-${sha256Hex(`.bumpy/${filename}`)}))`,
+      );
+      if (prBranch) {
+        parts.push(`([edit](https://github.com/${repo}/edit/${prBranch}/.bumpy/${filename}))`);
+      }
+    }
+    lines.push(`- ${parts.join(' ')}`);
+  }
+  for (const id of emptyBumpFileIds) {
+    const filename = `${id}.md`;
+    const parts: string[] = [`\`${filename}\` _(empty — no release)_`];
     if (repo) {
       parts.push(
         `([view diff](https://github.com/${repo}/pull/${prNumber}/changes#diff-${sha256Hex(`.bumpy/${filename}`)}))`,
@@ -600,15 +629,32 @@ function formatBumpFileErrorsComment(errors: string[], prBranch: string | null, 
   return lines.join('\n');
 }
 
-function formatEmptyBumpFileComment(): string {
+function formatEmptyBumpFileComment(emptyBumpFileIds: string[], prNumber: string, prBranch: string | null): string {
+  const repo = process.env.GITHUB_REPOSITORY;
   const lines = [
     `<a href="https://bumpy.varlock.dev"><img src="${FROG_IMG_BASE}/frog-neutral.png" alt="bumpy-frog" width="60" align="left" style="image-rendering: pixelated;" title="Hi! I'm bumpy!" /></a>`,
     '',
     '**This PR includes an empty bump file — no version bump is needed.** :white_check_mark:',
     '<br clear="left" />',
-    '\n---',
-    `_This comment is maintained by [bumpy](https://bumpy.varlock.dev)._`,
+    '',
   ];
+
+  for (const id of emptyBumpFileIds) {
+    const filename = `${id}.md`;
+    const parts: string[] = [`\`${filename}\``];
+    if (repo) {
+      parts.push(
+        `([view diff](https://github.com/${repo}/pull/${prNumber}/changes#diff-${sha256Hex(`.bumpy/${filename}`)}))`,
+      );
+      if (prBranch) {
+        parts.push(`([edit](https://github.com/${repo}/edit/${prBranch}/.bumpy/${filename}))`);
+      }
+    }
+    lines.push(`- ${parts.join(' ')}`);
+  }
+
+  lines.push('\n---');
+  lines.push(`_This comment is maintained by [bumpy](https://bumpy.varlock.dev)._`);
   return lines.join('\n');
 }
 

@@ -42,10 +42,10 @@ export async function checkCommand(rootDir: string, opts: CheckOptions = {}): Pr
     }
     process.exit(1);
   }
-  const { branchBumpFiles, hasEmptyBumpFile } = filterBranchBumpFiles(allBumpFiles, changedFiles, rootDir);
+  const { branchBumpFiles, emptyBumpFileIds } = filterBranchBumpFiles(allBumpFiles, changedFiles, rootDir);
 
   // If an empty bump file exists on this branch, the check passes
-  if (hasEmptyBumpFile) {
+  if (emptyBumpFileIds.length > 0) {
     log.success('Empty bump file found — no releases needed.');
     return;
   }

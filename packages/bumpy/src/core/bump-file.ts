@@ -240,14 +240,14 @@ export function filterBranchBumpFiles(
   changedFiles: string[],
   rootDir?: string,
   parseErrors: string[] = [],
-): { branchBumpFiles: BumpFile[]; branchBumpFileIds: Set<string>; hasEmptyBumpFile: boolean } {
+): { branchBumpFiles: BumpFile[]; branchBumpFileIds: Set<string>; emptyBumpFileIds: string[] } {
   const branchBumpFileIds = extractBumpFileIdsFromChangedFiles(changedFiles);
   const branchBumpFiles = allBumpFiles.filter((bf) => branchBumpFileIds.has(bf.id));
 
-  // Check if any changed bump file IDs that didn't parse still exist on disk (= empty bump file).
+  // Find changed bump file IDs that didn't parse but still exist on disk (= empty bump file).
   // Deleted bump files (from other branches) should not count.
   // Files that produced parse errors are broken, not intentionally empty.
-  let hasEmptyBumpFile = false;
+  const emptyBumpFileIds: string[] = [];
   if (rootDir) {
     const parsedIds = new Set(branchBumpFiles.map((bf) => bf.id));
     const bumpyDir = getBumpyDir(rootDir);
@@ -256,12 +256,11 @@ export function filterBranchBumpFiles(
         // Check if this file produced parse errors — if so, it's broken, not empty
         const hasErrors = parseErrors.some((e) => e.includes(`"${id}"`));
         if (!hasErrors) {
-          hasEmptyBumpFile = true;
-          break;
+          emptyBumpFileIds.push(id);
         }
       }
     }
   }
 
-  return { branchBumpFiles, branchBumpFileIds, hasEmptyBumpFile };
+  return { branchBumpFiles, branchBumpFileIds, emptyBumpFileIds };
 }
