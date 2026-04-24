@@ -233,7 +233,7 @@ function printHelp() {
     --branch <name>         Branch name for version PR (default: bumpy/version-packages)
 
   AI setup options:
-    --target <tool>         Target AI tool: opencode, cursor, codex
+    --target <tool>         Target AI tool: claude, opencode, cursor, codex
 
   ${colorize('https://bumpy.varlock.dev', 'dim')}
 `);

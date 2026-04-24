@@ -1,6 +1,6 @@
 # CLI Reference
 
-All commands can be run via `bunx @varlock/bumpy <command>` or, (or just `bunx bumpy` if installed locally). Alternatively, you can invoke it via a package.json script (e.g., `bun run bumpy <command>`).
+All commands can be run via `bunx @varlock/bumpy <command>` (or just `bunx bumpy` if installed locally). Alternatively, you can invoke it via a package.json script (e.g., `bun run bumpy <command>`).
 
 ## `bumpy init`
 

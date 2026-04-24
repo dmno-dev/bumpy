@@ -5,6 +5,7 @@ import { DependencyGraph } from '../core/dep-graph.ts';
 import { pushWithTags, hasUncommittedChanges } from '../core/git.ts';
 import { publishPackages } from '../core/publish-pipeline.ts';
 import { createIndividualReleases, createAggregateRelease } from '../core/github-release.ts';
+import { loadFormatter } from '../core/changelog.ts';
 import { detectWorkspaces } from '../utils/package-manager.ts';
 import type { BumpyConfig, PackageConfig, ReleasePlan, PlannedRelease, WorkspacePackage } from '../types.ts';
 
@@ -108,14 +109,19 @@ export async function publishCommand(rootDir: string, opts: PublishCommandOption
     const isAggregate = aggConfig === true || (typeof aggConfig === 'object' && aggConfig.enabled);
     const aggTitle = typeof aggConfig === 'object' ? aggConfig.title : undefined;
 
+    // Load the changelog formatter so GitHub release bodies match CHANGELOG.md
+    const formatter = config.changelog !== false ? await loadFormatter(config.changelog, rootDir) : undefined;
+
     if (isAggregate) {
       await createAggregateRelease(publishedReleases, releasePlan.bumpFiles, rootDir, {
         dryRun: opts.dryRun,
         title: aggTitle,
+        formatter,
       });
     } else {
       await createIndividualReleases(publishedReleases, releasePlan.bumpFiles, rootDir, {
         dryRun: opts.dryRun,
+        formatter,
       });
     }
   }
