@@ -1,3 +1,0 @@
----
-'@varlock/bumpy': patch
----
