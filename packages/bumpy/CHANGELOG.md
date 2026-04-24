@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.2
+
+<sub>2026-04-24</sub>
+
+- [#46](https://github.com/dmno-dev/bumpy/pull/46) - Improve empty bump file handling — show file links and list alongside valid bump files
+- [#49](https://github.com/dmno-dev/bumpy/pull/49) - Use distinct frog image variants for different PR comment contexts and add Varlock links to README.
+
 ## 1.2.1
 
 _2026-04-22_
