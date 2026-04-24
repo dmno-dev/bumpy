@@ -513,7 +513,7 @@ function formatReleasePlanComment(
   const lines: string[] = [];
 
   const preamble = [
-    `<a href="https://bumpy.varlock.dev"><img src="${FROG_IMG_BASE}/frog-talking.png" alt="bumpy-frog" width="60" align="left" style="image-rendering: pixelated;" title="Hi! I'm bumpy!" /></a>`,
+    `<a href="https://bumpy.varlock.dev"><img src="${FROG_IMG_BASE}/frog-clipboard.png" alt="bumpy-frog" width="60" align="left" style="image-rendering: pixelated;" title="Hi! I'm bumpy!" /></a>`,
     '',
     '**The changes in this PR will be included in the next version bump.**',
     '<br clear="left" />',
@@ -604,7 +604,7 @@ function formatReleasePlanComment(
 function formatBumpFileErrorsComment(errors: string[], prBranch: string | null, pm: PackageManager): string {
   const runCmd = pmRunCommand(pm);
   const lines = [
-    `<a href="https://bumpy.varlock.dev"><img src="${FROG_IMG_BASE}/frog-neutral.png" alt="bumpy-frog" width="60" align="left" style="image-rendering: pixelated;" title="Hi! I'm bumpy!" /></a>`,
+    `<a href="https://bumpy.varlock.dev"><img src="${FROG_IMG_BASE}/frog-error.png" alt="bumpy-frog" width="60" align="left" style="image-rendering: pixelated;" title="Hi! I'm bumpy!" /></a>`,
     '',
     '**This PR has bump file(s) with errors that need to be fixed.**',
     '<br clear="left" />\n',
@@ -661,7 +661,7 @@ function formatEmptyBumpFileComment(emptyBumpFileIds: string[], prNumber: string
 function formatNoBumpFilesComment(prBranch: string | null, pm: PackageManager): string {
   const runCmd = pmRunCommand(pm);
   const lines = [
-    `<a href="https://bumpy.varlock.dev"><img src="${FROG_IMG_BASE}/frog-neutral.png" alt="bumpy-frog" width="60" align="left" style="image-rendering: pixelated;" title="Hi! I'm bumpy!" /></a>`,
+    `<a href="https://bumpy.varlock.dev"><img src="${FROG_IMG_BASE}/frog-warning.png" alt="bumpy-frog" width="60" align="left" style="image-rendering: pixelated;" title="Hi! I'm bumpy!" /></a>`,
     '',
     "Merging this PR will not cause a version bump for any packages. If these changes should not result in a new version, you're good to go. **If these changes should result in a version bump, you need to add a bump file.**",
     '<br clear="left" />\n',
