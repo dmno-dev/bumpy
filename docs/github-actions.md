@@ -123,18 +123,9 @@ GitHub's anti-recursion guard prevents PRs created by the default `github.token`
 
 To fix this, provide a `BUMPY_GH_TOKEN` using either a **fine-grained PAT** or a **GitHub App token**. Bumpy uses this token to push the version branch, which allows your CI workflows to trigger normally.
 
-#### Controlling what the token is used for
+When `BUMPY_GH_TOKEN` is set, bumpy automatically uses it for git push operations and for creating/editing the version PR. PR comments always use the default `GH_TOKEN` so they appear from `github-actions[bot]`.
 
-By default, `BUMPY_GH_TOKEN` is only used for git push operations. You can opt in to using it for other GitHub API calls:
-
-| Flag             | Command      | Effect                                        |
-| ---------------- | ------------ | --------------------------------------------- |
-| `--pat-pr`       | `ci release` | Create/edit the version PR as the token owner |
-| `--pat-comments` | `ci check`   | Post PR comments as the token owner           |
-
-**When to use these flags:** Use them when `BUMPY_GH_TOKEN` belongs to a dedicated automation account (bot user or GitHub App). The PR and comments will appear from that account.
-
-**When NOT to use these flags:** If you're using a developer's personal PAT, leave these off. PRs and comments will appear from `github-actions[bot]`, which allows the developer to still review and approve the PR.
+> **Note:** If you're using a developer's personal PAT, the version PR will be authored by that developer. Consider using a dedicated bot account or GitHub App so the developer can still review and approve the PR.
 
 Run `bumpy ci setup` for interactive guidance, or set it up manually:
 
