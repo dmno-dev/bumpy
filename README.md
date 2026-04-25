@@ -104,7 +104,6 @@ jobs:
       - run: bunx @varlock/bumpy ci check
         env:
           GH_TOKEN: ${{ github.token }}
-          BUMPY_GH_TOKEN: ${{ secrets.BUMPY_GH_TOKEN }} # additional PAT (optional)
 ```
 
 ### Release workflow
@@ -135,7 +134,7 @@ jobs:
       - run: bunx @varlock/bumpy ci release
         env:
           GH_TOKEN: ${{ github.token }}
-          BUMPY_GH_TOKEN: ${{ secrets.BUMPY_GH_TOKEN }} # additional PAT, needed to trigger CI checks on release PR
+          BUMPY_GH_TOKEN: ${{ secrets.BUMPY_GH_TOKEN }} # PAT so that version PR triggers CI
 ```
 
 > **Trusted publishing setup:** Configure each package on [npmjs.com](https://docs.npmjs.com/trusted-publishers/) → Package Settings → Trusted Publishers → GitHub Actions. Specify your org/user, repo, and the workflow filename (`bumpy-release.yml`). No `NPM_TOKEN` secret needed. Requires npm >= 11.5.1 - bumpy will warn if your version is too old.

@@ -148,14 +148,13 @@ bumpy ci check --strict
 bumpy ci check --no-fail
 ```
 
-| Flag             | Description                                                      |
-| ---------------- | ---------------------------------------------------------------- |
-| `--comment`      | Force PR comment on or off (default: auto-detect CI environment) |
-| `--strict`       | Fail if any changed package is not covered by a bump file        |
-| `--no-fail`      | Warn only, never exit non-zero                                   |
-| `--pat-comments` | Post PR comments using `BUMPY_GH_TOKEN` instead of `GH_TOKEN`    |
+| Flag        | Description                                                      |
+| ----------- | ---------------------------------------------------------------- |
+| `--comment` | Force PR comment on or off (default: auto-detect CI environment) |
+| `--strict`  | Fail if any changed package is not covered by a bump file        |
+| `--no-fail` | Warn only, never exit non-zero                                   |
 
-Requires `GH_TOKEN` environment variable. The `--pat-comments` flag requires `BUMPY_GH_TOKEN` — use it when the token belongs to a dedicated automation account (bot user). If you're using a developer's personal PAT, leave this off so comments appear from `github-actions[bot]`.
+Requires `GH_TOKEN` environment variable (automatically available in GitHub Actions).
 
 ## `bumpy ci release`
 
@@ -176,9 +175,8 @@ bumpy ci release --auto-publish --tag beta
 | `--auto-publish`  | Version + publish directly instead of creating a PR        |
 | `--tag <tag>`     | npm dist-tag (for `--auto-publish`)                        |
 | `--branch <name>` | Version PR branch name (default: `bumpy/version-packages`) |
-| `--pat-pr`        | Create/edit the version PR using `BUMPY_GH_TOKEN`          |
 
-Requires `GH_TOKEN`. Optionally uses `BUMPY_GH_TOKEN` to push the version branch so PR workflows trigger (see [GitHub Actions setup](github-actions.md#token-setup)). The `--pat-pr` flag additionally uses `BUMPY_GH_TOKEN` to create/edit the PR itself — use it when the token belongs to a dedicated automation account (bot user). If you're using a developer's personal PAT, leave this off so the PR is authored by `github-actions[bot]` and the developer can still approve it.
+Requires `GH_TOKEN`. When `BUMPY_GH_TOKEN` is set, it is automatically used to push the version branch and create/edit the PR so that PR workflows trigger (see [GitHub Actions setup](github-actions.md#token-setup)).
 
 ## `bumpy ci setup`
 

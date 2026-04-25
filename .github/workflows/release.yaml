@@ -29,8 +29,7 @@ jobs:
       # -------------------------------
 
       # 🐸 This is the important part - creates/updates release PR when PRs merge to main, publishes packages when release PR is merged
-      # (use --pat-pr if PAT belongs to dedicated bot, rather than person)
-      - run: bunx @varlock/bumpy ci release --pat-pr
+      - run: bunx @varlock/bumpy ci release
         env:
           GH_TOKEN: ${{ github.token }}
-          BUMPY_GH_TOKEN: ${{ secrets.BUMPY_GH_TOKEN }} # <- PAT needed so that release PR will trigger CI
+          BUMPY_GH_TOKEN: ${{ secrets.BUMPY_GH_TOKEN }} # <- PAT so that version PR triggers CI
