@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.3.0
+
+<sub>2026-04-25</sub>
+
+- [#51](https://github.com/dmno-dev/bumpy/pull/51) - Remove --pat-pr and --pat-comments flags; BUMPY_GH_TOKEN is now auto-detected for PR operations and comments always use the default token (fixes fork PR support)
+- [#50](https://github.com/dmno-dev/bumpy/pull/50) _(patch)_ - Fix typos in docs/README, add claude to CLI help AI setup targets, and use changelog formatter for GitHub release bodies.
+
 ## 1.2.2
 
 <sub>2026-04-24</sub>
