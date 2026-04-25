@@ -12,6 +12,8 @@ export interface ChangelogContext {
   bumpFiles: BumpFile[];
   /** ISO date string (YYYY-MM-DD) */
   date: string;
+  /** Where this entry will be used — formatters can customize output per target (default: 'changelog') */
+  target?: 'changelog' | 'github-release';
 }
 
 /**
@@ -159,8 +161,9 @@ export async function generateChangelogEntry(
   bumpFiles: BumpFile[],
   formatter: ChangelogFormatter = defaultFormatter,
   date: string = new Date().toISOString().split('T')[0]!,
+  target: ChangelogContext['target'] = 'changelog',
 ): Promise<string> {
-  return formatter({ release, bumpFiles, date });
+  return formatter({ release, bumpFiles, date, target });
 }
 
 /** Prepend a new entry to an existing CHANGELOG.md content */

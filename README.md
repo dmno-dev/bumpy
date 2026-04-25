@@ -28,7 +28,7 @@ Bumpy uses **bump files** (you may know them as "changesets" if coming from [tha
   - Shows what packages will be released and their changelogs
     - Including packages bumped automatically due to dependency relationships
 - When release PR is merged, publishing is triggered
-  - Oending bump files are deleted and packages are published with updated versions and changelogs
+  - Pending bump files are deleted and packages are published with updated versions and changelogs
 
 All of this is automated via two simple GitHub Actions workflows (see [CI setup](#ci--github-actions) below). You can also run everything locally with `bumpy status`, `bumpy version`, and `bumpy publish`.
 
@@ -135,7 +135,7 @@ jobs:
       - run: bunx @varlock/bumpy ci release
         env:
           GH_TOKEN: ${{ github.token }}
-          BUMPY_GH_TOKEN: ${{ secrets.BUMPY_GH_TOKEN }} # additonal PAT, needed to trigger CI checks on release PR
+          BUMPY_GH_TOKEN: ${{ secrets.BUMPY_GH_TOKEN }} # additional PAT, needed to trigger CI checks on release PR
 ```
 
 > **Trusted publishing setup:** Configure each package on [npmjs.com](https://docs.npmjs.com/trusted-publishers/) → Package Settings → Trusted Publishers → GitHub Actions. Specify your org/user, repo, and the workflow filename (`bumpy-release.yml`). No `NPM_TOKEN` secret needed. Requires npm >= 11.5.1 - bumpy will warn if your version is too old.
@@ -240,7 +240,7 @@ Bumpy is built as a successor to [@changesets/changesets](https://github.com/cha
 
 ```bash
 bun install        # install deps
-bun test           # run tests
+bun run test       # run tests
 bun run build      # build CLI
 bunx bumpy --help  # invoke built cli
 ```

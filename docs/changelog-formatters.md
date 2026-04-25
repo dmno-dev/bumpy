@@ -8,7 +8,7 @@ There are several built-in formatters, or you can provide a custom function.
 
 ### `default`
 
-Simple markdown formatter. Produces a version heading, date, and bullet points from bump file summaries. _This is the default -- no settting required to enable_.
+Simple markdown formatter. Produces a version heading, date, and bullet points from bump file summaries. _This is the default -- no setting required to enable_.
 
 **Example output:**
 
@@ -98,10 +98,19 @@ interface ChangelogContext {
   bumpFiles: BumpFile[];
   /** ISO date string (YYYY-MM-DD) */
   date: string;
+  /** Where this entry will be used (default: 'changelog') */
+  target?: 'changelog' | 'github-release';
 }
 
 type ChangelogFormatter = (ctx: ChangelogContext) => string | Promise<string>;
 ```
+
+The `target` field tells your formatter where the output will be used:
+
+- `'changelog'` — writing to a `CHANGELOG.md` file (default)
+- `'github-release'` — creating a GitHub release body
+
+This lets you customize the output per context. For example, you might include full PR links in GitHub releases but keep changelog entries shorter, or omit the date sub-heading for GitHub releases since the release already has a timestamp.
 
 ### Example: custom formatter
 
@@ -109,12 +118,16 @@ type ChangelogFormatter = (ctx: ChangelogContext) => string | Promise<string>;
 import type { ChangelogFormatter } from '@varlock/bumpy';
 
 const formatter: ChangelogFormatter = (ctx) => {
-  const { release, bumpFiles, date } = ctx;
+  const { release, bumpFiles, date, target } = ctx;
   const lines: string[] = [];
   lines.push(`## ${release.newVersion}`);
   lines.push('');
-  lines.push(`_${date}_`);
-  lines.push('');
+
+  // Only include the date in changelog files — GitHub releases already show a date
+  if (target !== 'github-release') {
+    lines.push(`_${date}_`);
+    lines.push('');
+  }
 
   const relevantBumpFiles = bumpFiles.filter((bf) => release.bumpFiles.includes(bf.id));
 
