@@ -95,7 +95,7 @@ bumpy publish --filter "@myorg/*"
 
 ## `bumpy check`
 
-Verify that changed packages on the current branch have corresponding bump files. Designed for pre-push hooks — compares your branch to the base branch, maps changed files to packages.
+Verify that changed packages on the current branch have corresponding bump files. Compares your branch to the base branch, maps changed files to packages, and checks for matching bump files.
 
 By default, exits non-zero only if **no** bump files exist at all (matching changesets behavior). Use `--strict` to require every changed package to be covered.
 
@@ -103,12 +103,27 @@ By default, exits non-zero only if **no** bump files exist at all (matching chan
 bumpy check
 bumpy check --strict
 bumpy check --no-fail
+bumpy check --hook pre-commit
+bumpy check --hook pre-push
 ```
 
-| Flag        | Description                                                |
-| ----------- | ---------------------------------------------------------- |
-| `--strict`  | Fail if any changed package is not covered by a bump file  |
-| `--no-fail` | Warn only, never exit non-zero (useful for advisory hooks) |
+| Flag                | Description                                                |
+| ------------------- | ---------------------------------------------------------- |
+| `--strict`          | Fail if any changed package is not covered by a bump file  |
+| `--no-fail`         | Warn only, never exit non-zero (useful for advisory hooks) |
+| `--hook pre-commit` | Only count staged + committed bump files                   |
+| `--hook pre-push`   | Only count committed bump files                            |
+
+### Hook context
+
+By default (no `--hook` flag), bumpy detects all bump files — including untracked and staged files that haven't been committed yet. This is convenient when running `bumpy check` manually.
+
+When used as a git hook, `--hook` controls which bump files count:
+
+- **`--hook pre-commit`** — staged and committed bump files count. Untracked bump files are warned about (they won't be included in the commit).
+- **`--hook pre-push`** — only committed bump files count. Staged and untracked bump files are warned about (they won't be included in the push).
+
+The output also annotates bump files with their git status (`staged`, `untracked`) so you can see at a glance what's been committed.
 
 No GitHub API needed.
 

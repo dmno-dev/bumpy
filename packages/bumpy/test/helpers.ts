@@ -6,7 +6,15 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import type { WorkspacePackage, PlannedRelease, BumpType, BumpyConfig, BumpFile, ReleasePlan } from '../src/types.ts';
+import type {
+  WorkspacePackage,
+  PlannedRelease,
+  BumpType,
+  BumpTypeWithNone,
+  BumpyConfig,
+  BumpFile,
+  ReleasePlan,
+} from '../src/types.ts';
 import { DEFAULT_CONFIG } from '../src/types.ts';
 
 // ---- Factory functions ----
@@ -62,7 +70,7 @@ export function makeRelease(
 /** Create a BumpFile for testing */
 export function makeBumpFile(
   id: string,
-  releases: { name: string; type: BumpType }[],
+  releases: { name: string; type: BumpTypeWithNone }[],
   summary = 'Test change',
 ): BumpFile {
   return { id, releases, summary };

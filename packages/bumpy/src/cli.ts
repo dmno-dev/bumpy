@@ -86,9 +86,15 @@ async function main() {
       case 'check': {
         const rootDir = await findRoot();
         const { checkCommand } = await import('./commands/check.ts');
+        const hookValue = flags.hook as string | undefined;
+        if (hookValue && hookValue !== 'pre-commit' && hookValue !== 'pre-push') {
+          log.error(`Invalid --hook value "${hookValue}". Expected "pre-commit" or "pre-push".`);
+          process.exit(1);
+        }
         await checkCommand(rootDir, {
           strict: flags.strict === true,
           noFail: flags['no-fail'] === true,
+          hook: hookValue as 'pre-commit' | 'pre-push' | undefined,
         });
         break;
       }
@@ -186,9 +192,10 @@ function printHelp() {
     add                     Create a new bump file
     generate                Generate bump file from branch commits
     status                  Show pending releases
-    check                   Verify changed packages have bump files (for pre-push hooks)
+    check                   Verify changed packages have bump files (for git hooks)
       --strict                Fail if any changed package is uncovered (default: only fail if no bump files at all)
       --no-fail               Warn only, never exit 1
+      --hook <context>        Hook context: "pre-commit" or "pre-push" (controls which bump files count)
     version [--commit]      Apply bump files and bump versions
     publish                 Publish versioned packages
     ci check                PR check — report pending releases, comment on PR

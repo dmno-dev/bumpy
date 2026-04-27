@@ -43,7 +43,7 @@ For each affected package, choose the appropriate bump level:
 | **minor** | New features: added exports, new options, new functionality                             |
 | **patch** | Bug fixes, internal refactors, documentation, dependency updates                        |
 
-Use `none` in a bump file to suppress a bump on a package that would otherwise be included via propagation. If skipping would leave a broken range, bumpy throws an error.
+Use `none` in a bump file to acknowledge a change without triggering a direct bump. Cascading bumps from other packages can still apply normally.
 
 ### 4. Write a clear summary
 

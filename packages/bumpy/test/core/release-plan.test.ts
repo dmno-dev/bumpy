@@ -408,8 +408,8 @@ describe('assembleReleasePlan', () => {
 
   // ---- none behavior ----
 
-  describe('none suppression', () => {
-    test('none suppresses bump when range is satisfied', () => {
+  describe('none bump type', () => {
+    test('none skips direct bump but allows cascade bumps', () => {
       const packages = new Map([
         ['core', makePkg('core', '1.0.0')],
         ['plugin', makePkg('plugin', '1.0.0', { dependencies: { core: '^1.0.0' } })],
@@ -429,12 +429,40 @@ describe('assembleReleasePlan', () => {
       const graph = new DependencyGraph(packages);
       const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig({ updateInternalDependencies: 'patch' }));
 
-      // Plugin should NOT be in releases because it's suppressed
+      // Plugin SHOULD be in releases — none doesn't suppress cascading bumps
+      expect(plan.releases).toHaveLength(2);
+      expect(plan.releases.find((r) => r.name === 'core')!.type).toBe('minor');
+      const pluginRelease = plan.releases.find((r) => r.name === 'plugin')!;
+      expect(pluginRelease.type).toBe('patch');
+      expect(pluginRelease.isDependencyBump).toBe(true);
+    });
+
+    test('none skips direct bump when no cascade applies', () => {
+      const packages = new Map([
+        ['core', makePkg('core', '1.0.0')],
+        ['plugin', makePkg('plugin', '1.0.0', { dependencies: { core: '^1.0.0' } })],
+      ]);
+
+      const bumpFiles: BumpFile[] = [
+        {
+          id: 'cs1',
+          releases: [
+            { name: 'core', type: 'patch' },
+            { name: 'plugin', type: 'none' },
+          ],
+          summary: 'Fix',
+        },
+      ];
+
+      const graph = new DependencyGraph(packages);
+      // out-of-range mode: patch on core doesn't break ^1.0.0, so no cascade
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig());
+
       expect(plan.releases).toHaveLength(1);
       expect(plan.releases[0]!.name).toBe('core');
     });
 
-    test('none that would break range throws error', () => {
+    test('none does not block out-of-range cascade', () => {
       const packages = new Map([
         ['core', makePkg('core', '1.0.0')],
         ['plugin', makePkg('plugin', '1.0.0', { dependencies: { core: '^1.0.0' } })],
@@ -452,9 +480,11 @@ describe('assembleReleasePlan', () => {
       ];
 
       const graph = new DependencyGraph(packages);
-      expect(() => assembleReleasePlan(bumpFiles, packages, graph, makeConfig())).toThrow(
-        /Cannot suppress.*plugin.*none/,
-      );
+      // core bumps to 2.0.0, breaking ^1.0.0 — plugin gets cascade bump
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig());
+
+      expect(plan.releases).toHaveLength(2);
+      expect(plan.releases.find((r) => r.name === 'plugin')!.type).toBe('patch');
     });
   });
 
@@ -720,7 +750,7 @@ describe('assembleReleasePlan', () => {
   // ---- none edge cases ----
 
   describe('none edge cases', () => {
-    test('none on a package not otherwise in the plan is a no-op', () => {
+    test('none on an unrelated package is a no-op', () => {
       const packages = new Map([
         ['core', makePkg('core', '1.0.0')],
         ['unrelated', makePkg('unrelated', '1.0.0')],

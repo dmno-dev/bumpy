@@ -24,12 +24,12 @@ Fixed locale fallback logic in utils.
 
 ### Bump levels
 
-| Level   | When to use                                                                                                                                                        |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `major` | Breaking changes                                                                                                                                                   |
-| `minor` | New features (backwards-compatible)                                                                                                                                |
-| `patch` | Bug fixes, minor improvements                                                                                                                                      |
-| `none`  | Acknowledges a change without triggering a release — useful for covering packages in `--strict` mode, or in cascades to exclude specific packages from propagation |
+| Level   | When to use                                                                                                                                                    |
+| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `major` | Breaking changes                                                                                                                                               |
+| `minor` | New features (backwards-compatible)                                                                                                                            |
+| `patch` | Bug fixes, minor improvements                                                                                                                                  |
+| `none`  | Acknowledges a change without triggering a direct bump — useful for covering packages in `--strict` mode. Cascading bumps from other packages can still apply. |
 
 ## File naming
 
@@ -92,7 +92,7 @@ This prevents `bumpy check` and `bumpy ci check` from failing due to missing bum
 
 ### `none` bump type
 
-If you're using `--strict` mode (which requires every changed package to be covered), use bump type `none` to acknowledge a package changed without triggering a release:
+Use bump type `none` to acknowledge that a package changed without triggering a direct version bump. This is useful when a package has internal-only changes (tests, config, etc.) that don't warrant a release on their own:
 
 ```markdown
 ---
@@ -100,7 +100,7 @@ If you're using `--strict` mode (which requires every changed package to be cove
 ---
 ```
 
-This covers the package in strict checks without producing a version bump or changelog entry.
+This covers the package in `bumpy check` (including `--strict` mode) without producing a version bump or changelog entry. However, if another package's bump cascades to this package (e.g., via dependency propagation), the cascade will still apply normally.
 
 ## Cascade control (advanced)
 
