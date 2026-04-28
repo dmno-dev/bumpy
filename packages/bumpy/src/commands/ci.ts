@@ -129,6 +129,13 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
       return;
     }
 
+    // Check if any managed packages actually changed — if not, no bump file is needed
+    const changedPackages = await findChangedPackages(changedFiles, packages, rootDir, config);
+    if (changedPackages.length === 0 && parseErrors.length === 0) {
+      log.info('No managed packages have changed — no bump files needed.');
+      return;
+    }
+
     const willFail = !opts.noFail || parseErrors.length > 0;
     const msg =
       parseErrors.length > 0
@@ -188,7 +195,13 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
   }
 
   // Check for uncovered packages
+  // Include both released packages and those explicitly listed in bump files (e.g. with 'none')
   const coveredPackages = new Set(plan.releases.map((r) => r.name));
+  for (const bf of prBumpFiles) {
+    for (const release of bf.releases) {
+      coveredPackages.add(release.name);
+    }
+  }
   const changedPackages = await findChangedPackages(changedFiles, packages, rootDir, config);
   const missing = changedPackages.filter((name) => !coveredPackages.has(name));
   if (missing.length > 0) {
