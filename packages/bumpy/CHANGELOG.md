@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.1
+
+<sub>2026-04-28</sub>
+
+- [#55](https://github.com/dmno-dev/bumpy/pull/55) - Fixed CI check to skip gracefully when no managed packages changed, and count none entries as covered in strict mode.
+
 ## 1.4.0
 
 <sub>2026-04-28</sub>
