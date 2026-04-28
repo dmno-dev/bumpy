@@ -91,6 +91,27 @@ export function getFilesChangedInCommit(hash: string, opts?: { cwd?: string }): 
   return result.split('\n').filter(Boolean);
 }
 
+/** Get the git status of files in a directory (staged, unstaged, untracked) */
+export function getFileStatuses(
+  dir: string,
+  opts?: { cwd?: string },
+): Map<string, 'committed' | 'staged' | 'untracked'> {
+  const statuses = new Map<string, 'committed' | 'staged' | 'untracked'>();
+  const result = tryRunArgs(['git', 'status', '--porcelain', '--', dir], opts);
+  if (!result) return statuses;
+  for (const line of result.split('\n')) {
+    if (!line.trim()) continue;
+    const indexStatus = line[0]!;
+    const file = line.slice(3);
+    if (indexStatus === '?') {
+      statuses.set(file, 'untracked');
+    } else {
+      statuses.set(file, 'staged');
+    }
+  }
+  return statuses;
+}
+
 /** Get all tags matching a pattern */
 export function listTags(pattern: string, opts?: { cwd?: string }): string[] {
   const result = tryRunArgs(['git', 'tag', '-l', pattern], opts);

@@ -158,7 +158,7 @@ Bumpy replaces all of this with two CLI commands you run directly in standard wo
 
 ### Local bump file verification
 
-`bumpy check` verifies that changed packages on the current branch have corresponding bump files. Designed for pre-push hooks — compares your branch to the base branch, maps changed files to packages. By default it only fails if no bump files exist at all (matching changesets behavior). Use `--strict` to require every changed package to be covered, or `--no-fail` for advisory-only mode. No GitHub API needed.
+`bumpy check` verifies that changed packages on the current branch have corresponding bump files. Compares your branch to the base branch, maps changed files to packages. By default it only fails if no bump files exist at all (matching changesets behavior). Use `--strict` to require every changed package to be covered, `--no-fail` for advisory-only mode, or `--hook pre-commit`/`--hook pre-push` to control which bump files count based on their git status. No GitHub API needed.
 
 Changesets has no built-in equivalent — users rely on the CI bot comment to catch missing bump files after pushing.
 

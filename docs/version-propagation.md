@@ -163,7 +163,7 @@ Unlike dependency bump rules (configured on the _dependent_), `cascadeTo` is con
 
 These are set directly in bump files for one-off control over a specific release.
 
-**`none`** — suppresses a bump on a package that would otherwise be included via propagation. If skipping the bump would leave a dependent's range broken, bumpy throws an error.
+**`none`** — acknowledges a change without triggering a direct bump. Unlike a real bump type, `none` doesn't add the package to the release plan on its own. However, cascading bumps from other packages (e.g., out-of-range or proactive propagation) can still bump it normally.
 
 ```yaml
 ---

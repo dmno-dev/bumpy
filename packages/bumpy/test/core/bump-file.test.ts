@@ -28,7 +28,7 @@ Added a new feature to pkg-a
 "pkg-b": none
 ---
 
-Feature in pkg-a, suppress bump on pkg-b
+Feature in pkg-a, no bump needed for pkg-b
 `;
     const { bumpFile: bf, errors } = parseBumpFile(content, 'test-bf');
     expect(errors).toHaveLength(0);

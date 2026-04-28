@@ -27,7 +27,7 @@ export type ChangelogFormatter = (ctx: ChangelogContext) => string | Promise<str
 /** Get the bump type a bump file applies to a specific package */
 export function getBumpTypeForPackage(bf: BumpFile, packageName: string): BumpType {
   const rel = bf.releases.find((r) => r.name === packageName);
-  return rel?.type === 'none' ? 'patch' : (rel?.type ?? 'patch');
+  return rel?.type === 'none' || !rel?.type ? 'patch' : rel.type;
 }
 
 /** Sort bump files by bump type for a specific package (major → minor → patch) */
