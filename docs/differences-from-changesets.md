@@ -1,6 +1,6 @@
 # Differences from Changesets
 
-Bumpy is built as a modern successor to [@changesets/changesets](https://github.com/changesets/changesets). This document tracks the pain points, missing features, and design problems in changesets that bumpy addresses (or plans to address), with links back to the relevant GitHub issues.
+Bumpy is built as a modern successor to [changesets](https://github.com/changesets/changesets). This document tracks the pain points, missing features, and design problems in changesets that bumpy addresses (or plans to address), with links back to the relevant GitHub issues.
 
 ---
 

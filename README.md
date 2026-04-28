@@ -226,7 +226,7 @@ Tools like semantic-release infer version bumps from commit messages (`feat:` â†
 
 ## Why not just use changesets?
 
-Bumpy is built as a successor to [@changesets/changesets](https://github.com/changesets/changesets). Changesets is mature and widely adopted, but has stagnated - hundreds of open issues around core design problems that are unlikely to be fixed without a rewrite. See [differences from changesets](https://github.com/dmno-dev/bumpy/blob/main/docs/differences-from-changesets.md) for a detailed comparison with links to specific issues. The biggest pain points bumpy addresses:
+Bumpy is built as a successor to [changesets](https://github.com/changesets/changesets). Changesets is mature and widely adopted, but has stagnated - hundreds of open issues around core design problems that are unlikely to be fixed without a rewrite. See [differences from changesets](https://github.com/dmno-dev/bumpy/blob/main/docs/differences-from-changesets.md) for a detailed comparison with links to specific issues. The biggest pain points bumpy addresses:
 
 - **Sane dependency propagation** - changesets hardcodes aggressive behavior where a minor bump triggers a major bump on all peer dependents. Bumpy uses a [three-phase algorithm](https://github.com/dmno-dev/bumpy/blob/main/docs/version-propagation.md) with sensible defaults and full configurability.
 - **Workspace protocol resolution** - changesets uses `npm publish` even in pnpm/yarn workspaces, so `workspace:^` and `catalog:` protocols are NOT resolved, resulting in broken published packages.
