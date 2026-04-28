@@ -46,6 +46,7 @@ async function main() {
           message: flags.message as string | undefined,
           name: flags.name as string | undefined,
           empty: flags.empty === true,
+          none: flags.none === true,
         });
         break;
       }
@@ -190,6 +191,8 @@ function printHelp() {
   Commands:
     init [--force]          Initialize .bumpy/ (migrates from .changeset/ if found)
     add                     Create a new bump file
+      --none                  Set all changed packages to "none" (acknowledge without bumping)
+      --empty                 Create an empty bump file (no releases needed)
     generate                Generate bump file from branch commits
     status                  Show pending releases
     check                   Verify changed packages have bump files (for git hooks)

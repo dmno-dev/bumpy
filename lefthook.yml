@@ -12,4 +12,4 @@ pre-commit:
 pre-push:
   jobs:
     - name: bumpy-check
-      run: bunx @varlock/bumpy check
+      run: bunx @varlock/bumpy check --hook pre-push

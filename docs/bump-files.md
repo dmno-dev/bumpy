@@ -66,6 +66,7 @@ Flags:
 - `--message <text>` — changelog description
 - `--name <name>` — set the filename (auto-slugified). If omitted, a random name is generated.
 - `--empty` — create an empty bump file (marks a PR as intentionally having no releases)
+- `--none` — create a bump file with all changed packages set to `none` (acknowledge without bumping)
 
 ### From branch commits
 
@@ -101,6 +102,12 @@ Use bump type `none` to acknowledge that a package changed without triggering a 
 ```
 
 This covers the package in `bumpy check` (including `--strict` mode) without producing a version bump or changelog entry. However, if another package's bump cascades to this package (e.g., via dependency propagation), the cascade will still apply normally.
+
+To quickly set all changed packages to `none`:
+
+```bash
+bumpy add --none
+```
 
 ## Cascade control (advanced)
 

@@ -7,7 +7,8 @@ import { randomName, slugify } from '../utils/names.ts';
 import { writeBumpFile } from '../core/bump-file.ts';
 import picomatch from 'picomatch';
 import { getBumpyDir, loadConfig, loadPackageConfig, matchGlob } from '../core/config.ts';
-import { discoverPackages } from '../core/workspace.ts';
+import { discoverPackages, discoverWorkspace } from '../core/workspace.ts';
+import { findChangedPackages } from './check.ts';
 import { DependencyGraph } from '../core/dep-graph.ts';
 import { getChangedFiles } from '../core/git.ts';
 import { bumpSelectPrompt } from '../prompts/bump-select.ts';
@@ -19,6 +20,7 @@ interface AddOptions {
   message?: string;
   name?: string;
   empty?: boolean;
+  none?: boolean;
 }
 
 const CASCADE_CHOICES: { label: string; value: BumpType }[] = [
@@ -39,6 +41,34 @@ export async function addCommand(rootDir: string, opts: AddOptions): Promise<voi
     const { writeText } = await import('../utils/fs.ts');
     await writeText(filePath, '---\n---\n');
     log.success(`🐸 Created empty bump file: .bumpy/${filename}.md`);
+    return;
+  }
+
+  // Handle --none flag: create bump file with all changed packages set to none
+  if (opts.none) {
+    const { packages } = await discoverWorkspace(rootDir, config);
+    const changedFiles = getChangedFiles(rootDir, config.baseBranch);
+    const changedPackages = await findChangedPackages(changedFiles, packages, rootDir, config);
+
+    if (changedPackages.length === 0) {
+      log.info('No changed packages detected.');
+      return;
+    }
+
+    const releases: BumpFileRelease[] = changedPackages.map((name) => ({ name, type: 'none' as const }));
+    const summary = opts.message || '';
+    const filename = opts.name ? slugify(opts.name) : randomName();
+
+    if (await exists(resolve(bumpyDir, `${filename}.md`))) {
+      await writeBumpFile(rootDir, `${filename}-${Date.now()}`, releases, summary);
+    } else {
+      await writeBumpFile(rootDir, filename, releases, summary);
+    }
+
+    log.success(`🐸 Created bump file with ${changedPackages.length} package(s) set to none: .bumpy/${filename}.md`);
+    for (const name of changedPackages) {
+      log.dim(`  ${name}: none`);
+    }
     return;
   }
 

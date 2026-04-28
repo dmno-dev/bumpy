@@ -23,14 +23,16 @@ Create a bump file interactively or non-interactively.
 bumpy add                                                # interactive
 bumpy add --packages "core:minor,utils:patch" --message "Added features"  # non-interactive
 bumpy add --empty --name "docs-only-pr"                  # empty (no releases)
+bumpy add --none                                         # all changed packages → none
 ```
 
-| Flag                | Description                                                                |
-| ------------------- | -------------------------------------------------------------------------- |
-| `--packages <list>` | Comma-separated `name:level` pairs                                         |
-| `--message <text>`  | Changelog description                                                      |
-| `--name <name>`     | Bump file filename (auto-slugified)                                        |
-| `--empty`           | Create an empty bump file (marks a PR as intentionally having no releases) |
+| Flag                | Description                                                                           |
+| ------------------- | ------------------------------------------------------------------------------------- |
+| `--packages <list>` | Comma-separated `name:level` pairs                                                    |
+| `--message <text>`  | Changelog description                                                                 |
+| `--name <name>`     | Bump file filename (auto-slugified)                                                   |
+| `--empty`           | Create an empty bump file (marks a PR as intentionally having no releases)            |
+| `--none`            | Set all changed packages to `none` (acknowledge without bumping, for `--strict` mode) |
 
 ## `bumpy status`
 
