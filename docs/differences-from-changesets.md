@@ -24,7 +24,7 @@ Key differences from changesets:
 - Per-bump-file `none` to suppress propagation on specific changes
 - Warns about `^0.x` caret range gotchas and `workspace:*` on peer deps
 
-See [docs/version-propagation.md](docs/version-propagation.md) for the full algorithm.
+See [docs/version-propagation.md](./version-propagation.md) for the full algorithm.
 
 - [changesets#1011](https://github.com/changesets/changesets/issues/1011) — peerDependencies cause unnecessary major bumps (70+ thumbs-up)
 - [changesets#822](https://github.com/changesets/changesets/issues/822) — unexpected major version bumps from peer deps
