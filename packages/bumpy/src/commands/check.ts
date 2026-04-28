@@ -118,11 +118,7 @@ export async function checkCommand(rootDir: string, opts: CheckOptions = {}): Pr
     }
   }
 
-  // If an empty bump file exists on this branch, the check passes
-  if (effectiveEmptyIds.length > 0) {
-    log.success('Empty bump file found — no releases needed.');
-    return;
-  }
+  const hasEmptyBumpFile = effectiveEmptyIds.length > 0;
 
   // Find which packages are covered by bump files on this branch
   const coveredPackages = new Set<string>();
@@ -139,36 +135,37 @@ export async function checkCommand(rootDir: string, opts: CheckOptions = {}): Pr
     return;
   }
 
-  // No bump files at all — fail by default
-  const willFailNoBump = !opts.noFail;
-  if (effectiveBumpFiles.length === 0) {
-    (willFailNoBump ? log.error : log.warn)(`${changedPackages.length} changed package(s) missing bump files:\n`);
-    for (const name of changedPackages) {
-      console.log(`  ${colorize(name, 'yellow')}`);
-    }
-    console.log();
-    log.dim('Run `bumpy add` to create a bump file, or `bumpy add --empty` if no release is needed.');
-    log.dim('To adjust which files trigger change detection, set `changedFilePatterns` in .bumpy/_config.json.');
-    if (willFailNoBump) process.exit(1);
-    return;
-  }
-
   // Check which changed packages are missing bump files
   const missing = changedPackages.filter((name) => !coveredPackages.has(name));
 
-  if (missing.length === 0) {
-    log.success(`🐸 All ${changedPackages.length} changed package(s) have bump files.`);
-    printBumpFileList(
-      effectiveBumpFiles.map((bf) => bf.id),
-      bumpyRelDir,
-      bumpFileStatuses,
-    );
+  // An empty bump file covers all remaining packages (in non-strict mode)
+  // It acts as a blanket acknowledgment that non-publishable changes are expected
+  const hasAnyCoverage = effectiveBumpFiles.length > 0 || hasEmptyBumpFile;
+  const allCovered = missing.length === 0 || (hasEmptyBumpFile && !opts.strict);
+
+  if (allCovered) {
+    if (hasEmptyBumpFile && missing.length > 0) {
+      // Empty bump file covers remaining packages — inform the user
+      log.success('Empty bump file found — uncovered packages acknowledged.');
+    } else {
+      log.success(`🐸 All ${changedPackages.length} changed package(s) have bump files.`);
+    }
+    if (effectiveBumpFiles.length > 0) {
+      printBumpFileList(
+        effectiveBumpFiles.map((bf) => bf.id),
+        bumpyRelDir,
+        bumpFileStatuses,
+      );
+    }
     return;
   }
 
-  // Some packages uncovered — warn by default, fail with --strict
-  const willFailUncovered = opts.strict && !opts.noFail;
-  (willFailUncovered ? log.error : log.warn)(`${missing.length} changed package(s) missing bump files:\n`);
+  // Determine failure behavior
+  // - No coverage at all: fail by default (unless --no-fail)
+  // - Partial coverage: fail only with --strict (unless --no-fail)
+  const willFail = !opts.noFail && (opts.strict || !hasAnyCoverage);
+
+  (willFail ? log.error : log.warn)(`${missing.length} changed package(s) missing bump files:\n`);
   for (const name of missing) {
     console.log(`  ${colorize(name, 'yellow')}`);
   }
@@ -191,7 +188,7 @@ export async function checkCommand(rootDir: string, opts: CheckOptions = {}): Pr
     log.dim('Run `bumpy add` to create a bump file, or `bumpy add --empty` if no release is needed.');
   }
   log.dim('To adjust which files trigger change detection, set `changedFilePatterns` in .bumpy/_config.json.');
-  if (willFailUncovered) process.exit(1);
+  if (willFail) process.exit(1);
 }
 
 function printBumpFileList(
