@@ -65,11 +65,16 @@ Consume all pending bump files and apply the release plan:
 3. Generates CHANGELOG.md entries
 4. Deletes consumed bump files
 5. Updates the lockfile
-6. Optionally commits (if `commit: true` in config)
+6. Optionally commits (with `--commit` flag)
 
 ```bash
 bumpy version
+bumpy version --commit
 ```
+
+| Flag       | Description                       |
+| ---------- | --------------------------------- |
+| `--commit` | Commit the version changes to git |
 
 ## `bumpy publish`
 

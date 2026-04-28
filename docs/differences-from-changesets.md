@@ -1,6 +1,6 @@
 # Differences from Changesets
 
-Bumpy is built as a modern successor to [@changesets/changesets](https://github.com/changesets/changesets). This document tracks the pain points, missing features, and design problems in changesets that bumpy addresses (or plans to address), with links back to the relevant GitHub issues.
+Bumpy is built as a modern successor to [changesets](https://github.com/changesets/changesets). This document tracks the pain points, missing features, and design problems in changesets that bumpy addresses (or plans to address), with links back to the relevant GitHub issues.
 
 ---
 
@@ -21,10 +21,10 @@ Key differences from changesets:
 - Out-of-range peer dep bumps match the triggering bump level (not always major) — a minor bump on `core` → minor bump on `plugin`, not major
 - Dev deps never propagate by default (configurable per-package for bundled devDeps)
 - `cascadeTo` config for source-side "when I change, cascade to these packages"
-- Per-bump-file `none` to suppress propagation on specific changes
+- Per-bump-file `none` to acknowledge changes without triggering a direct bump
 - Warns about `^0.x` caret range gotchas and `workspace:*` on peer deps
 
-See [docs/version-propagation.md](docs/version-propagation.md) for the full algorithm.
+See [docs/version-propagation.md](./version-propagation.md) for the full algorithm.
 
 - [changesets#1011](https://github.com/changesets/changesets/issues/1011) — peerDependencies cause unnecessary major bumps (70+ thumbs-up)
 - [changesets#822](https://github.com/changesets/changesets/issues/822) — unexpected major version bumps from peer deps
