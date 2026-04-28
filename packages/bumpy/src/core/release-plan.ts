@@ -117,8 +117,8 @@ export function assembleReleasePlan(
           depBump = 'patch';
         }
 
-        // Warn about ^0.x peer dep propagation
-        if (dep.depType === 'peerDependencies' && depBump !== 'patch') {
+        // Warn about ^0.x peer dep propagation (only when it's surprising, not for major→major)
+        if (dep.depType === 'peerDependencies' && depBump !== 'patch' && bump.type !== 'major') {
           // Resolve workspace:^ to ^<version> for checking
           let resolvedRange = dep.versionRange.replace(/^workspace:/, '');
           if (resolvedRange === '^' || resolvedRange === '~') {
