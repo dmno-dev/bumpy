@@ -30,7 +30,19 @@ describe('defaultFormatter', () => {
     expect(result.indexOf('Added new feature')).toBeLessThan(result.indexOf('Fixed a bug'));
   });
 
-  test('formats dependency bump with no bump files', async () => {
+  test('formats dependency bump with source packages', async () => {
+    const release = makeRelease('pkg-a', '1.0.1', {
+      isDependencyBump: true,
+      bumpFiles: [],
+      bumpSources: [{ name: 'core', newVersion: '2.0.0' }],
+    });
+
+    const result = await defaultFormatter({ release, bumpFiles: [], date: '2026-04-14' });
+
+    expect(result).toContain('- Updated dependency `core` v2.0.0');
+  });
+
+  test('formats dependency bump without source packages (fallback)', async () => {
     const release = makeRelease('pkg-a', '1.0.1', {
       isDependencyBump: true,
       bumpFiles: [],
@@ -38,10 +50,22 @@ describe('defaultFormatter', () => {
 
     const result = await defaultFormatter({ release, bumpFiles: [], date: '2026-04-14' });
 
-    expect(result).toContain('- Updated dependencies');
+    expect(result).toContain('- Updated dependency (internal)');
   });
 
-  test('formats cascade bump with no bump files', async () => {
+  test('formats cascade bump with source packages', async () => {
+    const release = makeRelease('pkg-a', '1.0.1', {
+      isCascadeBump: true,
+      bumpFiles: [],
+      bumpSources: [{ name: 'core', newVersion: '1.1.0' }],
+    });
+
+    const result = await defaultFormatter({ release, bumpFiles: [], date: '2026-04-14' });
+
+    expect(result).toContain('- Version bump from `core` v1.1.0');
+  });
+
+  test('formats cascade bump without source packages (fallback)', async () => {
     const release = makeRelease('pkg-a', '1.0.1', {
       isCascadeBump: true,
       bumpFiles: [],
@@ -52,17 +76,76 @@ describe('defaultFormatter', () => {
     expect(result).toContain('- Version bump via cascade rule');
   });
 
-  test('dependency bump takes precedence over cascade in message', async () => {
-    const release = makeRelease('pkg-a', '1.0.1', {
-      isDependencyBump: true,
-      isCascadeBump: true,
+  test('formats group bump with source packages', async () => {
+    const release = makeRelease('types', '1.1.0', {
+      type: 'minor',
+      isGroupBump: true,
+      bumpFiles: [],
+      bumpSources: [{ name: 'core', newVersion: '1.1.0' }],
+    });
+
+    const result = await defaultFormatter({ release, bumpFiles: [], date: '2026-04-14' });
+
+    expect(result).toContain('- Version bump from group with `core` v1.1.0');
+  });
+
+  test('formats group bump without source packages (fallback)', async () => {
+    const release = makeRelease('types', '1.1.0', {
+      type: 'minor',
+      isGroupBump: true,
       bumpFiles: [],
     });
 
     const result = await defaultFormatter({ release, bumpFiles: [], date: '2026-04-14' });
 
-    expect(result).toContain('- Updated dependencies');
+    expect(result).toContain('- Version bump from group');
+  });
+
+  test('dependency + cascade shows only dependency message', async () => {
+    const release = makeRelease('pkg-a', '1.0.1', {
+      isDependencyBump: true,
+      isCascadeBump: true,
+      bumpFiles: [],
+      bumpSources: [{ name: 'core', newVersion: '2.0.0' }],
+    });
+
+    const result = await defaultFormatter({ release, bumpFiles: [], date: '2026-04-14' });
+
+    expect(result).toContain('- Updated dependency `core` v2.0.0');
     expect(result).not.toContain('cascade');
+  });
+
+  test('dependency + group shows both messages', async () => {
+    const release = makeRelease('plugin-b', '1.1.0', {
+      type: 'minor',
+      isDependencyBump: true,
+      isGroupBump: true,
+      bumpFiles: [],
+      bumpSources: [
+        { name: 'core', newVersion: '2.0.0' },
+        { name: 'plugin-a', newVersion: '1.1.0' },
+      ],
+    });
+
+    const result = await defaultFormatter({ release, bumpFiles: [], date: '2026-04-14' });
+
+    expect(result).toContain('Updated dependency');
+    expect(result).toContain('Version bump from group with');
+  });
+
+  test('direct changes + group upgrade shows both', async () => {
+    const release = makeRelease('pkg-b', '1.1.0', {
+      type: 'minor',
+      isGroupBump: true,
+      bumpFiles: ['cs1'],
+      bumpSources: [{ name: 'pkg-a', newVersion: '1.1.0' }],
+    });
+    const bumpFiles = [makeBumpFile('cs1', [{ name: 'pkg-b', type: 'patch' }], 'Fixed a typo')];
+
+    const result = await defaultFormatter({ release, bumpFiles, date: '2026-04-14' });
+
+    expect(result).toContain('*(patch)* Fixed a typo');
+    expect(result).toContain('Version bump from group with `pkg-a` v1.1.0');
   });
 
   test('handles multi-line bump file summaries', async () => {

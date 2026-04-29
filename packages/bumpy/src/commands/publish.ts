@@ -157,6 +157,8 @@ async function findUnpublishedPackages(
         bumpFiles: [],
         isDependencyBump: false,
         isCascadeBump: false,
+        isGroupBump: false,
+        bumpSources: [],
       });
     }
   }

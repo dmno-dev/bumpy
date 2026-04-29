@@ -54,7 +54,12 @@ export function makeConfig(overrides: Partial<BumpyConfig> = {}): BumpyConfig {
 export function makeRelease(
   name: string,
   newVersion: string,
-  opts: Partial<Pick<PlannedRelease, 'type' | 'oldVersion' | 'bumpFiles' | 'isDependencyBump' | 'isCascadeBump'>> = {},
+  opts: Partial<
+    Pick<
+      PlannedRelease,
+      'type' | 'oldVersion' | 'bumpFiles' | 'isDependencyBump' | 'isCascadeBump' | 'isGroupBump' | 'bumpSources'
+    >
+  > = {},
 ): PlannedRelease {
   return {
     name,
@@ -64,6 +69,8 @@ export function makeRelease(
     bumpFiles: opts.bumpFiles ?? [],
     isDependencyBump: opts.isDependencyBump ?? false,
     isCascadeBump: opts.isCascadeBump ?? false,
+    isGroupBump: opts.isGroupBump ?? false,
+    bumpSources: opts.bumpSources ?? [],
   };
 }
 

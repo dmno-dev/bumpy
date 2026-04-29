@@ -11,5 +11,8 @@ pre-commit:
 
 pre-push:
   jobs:
+    - name: typecheck
+      run: bunx tsc --noEmit
+      root: packages/bumpy/
     - name: bumpy-check
       run: bunx @varlock/bumpy check --hook pre-push

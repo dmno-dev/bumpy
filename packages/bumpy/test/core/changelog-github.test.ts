@@ -135,7 +135,20 @@ describe('createGithubFormatter', () => {
     expect(result).not.toContain('issues/123');
   });
 
-  test('handles dependency bump with no bump files', async () => {
+  test('handles dependency bump with source packages', async () => {
+    const formatter = createGithubFormatter({ repo: 'dmno-dev/bumpy' });
+    const release = makeRelease('pkg-a', '1.0.1', {
+      isDependencyBump: true,
+      bumpFiles: [],
+      bumpSources: [{ name: 'core', newVersion: '2.0.0' }],
+    });
+
+    const result = await formatter({ release, bumpFiles: [], date: '2026-04-14' });
+
+    expect(result).toContain('Updated dependency `core` v2.0.0');
+  });
+
+  test('handles dependency bump without source packages (fallback)', async () => {
     const formatter = createGithubFormatter({ repo: 'dmno-dev/bumpy' });
     const release = makeRelease('pkg-a', '1.0.1', {
       isDependencyBump: true,
@@ -144,10 +157,23 @@ describe('createGithubFormatter', () => {
 
     const result = await formatter({ release, bumpFiles: [], date: '2026-04-14' });
 
-    expect(result).toContain('- Updated dependencies');
+    expect(result).toContain('Updated dependency (internal)');
   });
 
-  test('handles cascade bump with no bump files', async () => {
+  test('handles cascade bump with source packages', async () => {
+    const formatter = createGithubFormatter({ repo: 'dmno-dev/bumpy' });
+    const release = makeRelease('pkg-a', '1.0.1', {
+      isCascadeBump: true,
+      bumpFiles: [],
+      bumpSources: [{ name: 'core', newVersion: '1.1.0' }],
+    });
+
+    const result = await formatter({ release, bumpFiles: [], date: '2026-04-14' });
+
+    expect(result).toContain('- Version bump from `core` v1.1.0');
+  });
+
+  test('handles cascade bump without source packages (fallback)', async () => {
     const formatter = createGithubFormatter({ repo: 'dmno-dev/bumpy' });
     const release = makeRelease('pkg-a', '1.0.1', {
       isCascadeBump: true,
@@ -157,6 +183,33 @@ describe('createGithubFormatter', () => {
     const result = await formatter({ release, bumpFiles: [], date: '2026-04-14' });
 
     expect(result).toContain('- Version bump via cascade rule');
+  });
+
+  test('handles group bump with source packages', async () => {
+    const formatter = createGithubFormatter({ repo: 'dmno-dev/bumpy' });
+    const release = makeRelease('types', '1.1.0', {
+      type: 'minor',
+      isGroupBump: true,
+      bumpFiles: [],
+      bumpSources: [{ name: 'core', newVersion: '1.1.0' }],
+    });
+
+    const result = await formatter({ release, bumpFiles: [], date: '2026-04-14' });
+
+    expect(result).toContain('- Version bump from group with `core` v1.1.0');
+  });
+
+  test('handles group bump without source packages (fallback)', async () => {
+    const formatter = createGithubFormatter({ repo: 'dmno-dev/bumpy' });
+    const release = makeRelease('types', '1.1.0', {
+      type: 'minor',
+      isGroupBump: true,
+      bumpFiles: [],
+    });
+
+    const result = await formatter({ release, bumpFiles: [], date: '2026-04-14' });
+
+    expect(result).toContain('- Version bump from group');
   });
 
   test('resolves bump file info from git log', async () => {
