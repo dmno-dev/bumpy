@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.2
+
+<sub>2026-04-28</sub>
+
+- [#58](https://github.com/dmno-dev/bumpy/pull/58) - Skip ^0.x peer dep warning when major bump triggers major cascade
+
 ## 1.4.1
 
 <sub>2026-04-28</sub>
