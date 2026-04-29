@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5.0
+
+<sub>2026-04-29</sub>
+
+- [#60](https://github.com/dmno-dev/bumpy/pull/60) - Show source package info in changelogs for indirect bumps instead of inheriting the source package's change descriptions
+
 ## 1.4.2
 
 <sub>2026-04-28</sub>
