@@ -96,13 +96,20 @@ export function createGithubFormatter(options: GithubChangelogOptions = {}): Cha
       }
     }
 
+    const sourceList =
+      release.bumpSources.length > 0 ? release.bumpSources.map((s) => `\`${s.name}\` v${s.newVersion}`).join(', ') : '';
+
     if (release.isDependencyBump) {
       const depTag = release.type !== 'patch' ? ` *(patch)* -` : '';
-      lines.push(`-${depTag} Updated dependencies`);
+      lines.push(`-${depTag} Updated dependency ${sourceList || '(internal)'}`);
     }
 
-    if (release.isCascadeBump && !release.isDependencyBump && relevantBumpFiles.length === 0) {
-      lines.push('- Version bump via cascade rule');
+    if (release.isGroupBump) {
+      lines.push(sourceList ? `- Version bump from group with ${sourceList}` : '- Version bump from group');
+    }
+
+    if (release.isCascadeBump && !release.isDependencyBump && !release.isGroupBump) {
+      lines.push(sourceList ? `- Version bump from ${sourceList}` : '- Version bump via cascade rule');
     }
 
     lines.push('');

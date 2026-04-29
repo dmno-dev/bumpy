@@ -62,6 +62,8 @@ describe('publishPackages', () => {
           bumpFiles: [],
           isDependencyBump: false,
           isCascadeBump: false,
+          isGroupBump: false,
+          bumpSources: [],
         },
       ],
     };
@@ -105,6 +107,8 @@ describe('publishPackages', () => {
           bumpFiles: [],
           isDependencyBump: false,
           isCascadeBump: false,
+          isGroupBump: false,
+          bumpSources: [],
         },
       ],
     };
@@ -144,6 +148,8 @@ describe('publishPackages', () => {
           bumpFiles: [],
           isDependencyBump: false,
           isCascadeBump: false,
+          isGroupBump: false,
+          bumpSources: [],
         },
       ],
     };
@@ -192,6 +198,8 @@ describe('publishPackages', () => {
           bumpFiles: [],
           isDependencyBump: false,
           isCascadeBump: false,
+          isGroupBump: false,
+          bumpSources: [],
         },
         {
           name: 'app',
@@ -201,6 +209,8 @@ describe('publishPackages', () => {
           bumpFiles: [],
           isDependencyBump: true,
           isCascadeBump: false,
+          isGroupBump: false,
+          bumpSources: [],
         },
       ],
     };
@@ -239,6 +249,8 @@ describe('publishPackages', () => {
           bumpFiles: [],
           isDependencyBump: false,
           isCascadeBump: false,
+          isGroupBump: false,
+          bumpSources: [],
         },
       ],
     };

@@ -137,9 +137,14 @@ async function generateAggregateBody(
       if (body) {
         lines.push(body);
       } else if (release.isDependencyBump) {
-        lines.push('- Updated dependencies');
+        const sourceList = release.bumpSources.map((s) => `\`${s.name}\` v${s.newVersion}`).join(', ');
+        lines.push(sourceList ? `- Updated dependency ${sourceList}` : '- Updated dependencies');
+      } else if (release.isGroupBump) {
+        const sourceList = release.bumpSources.map((s) => `\`${s.name}\` v${s.newVersion}`).join(', ');
+        lines.push(sourceList ? `- Version bump from group with ${sourceList}` : '- Version bump from group');
       } else if (release.isCascadeBump) {
-        lines.push('- Version bump via cascade rule');
+        const sourceList = release.bumpSources.map((s) => `\`${s.name}\` v${s.newVersion}`).join(', ');
+        lines.push(sourceList ? `- Version bump from ${sourceList}` : '- Version bump via cascade rule');
       }
       lines.push('');
     }
@@ -168,8 +173,15 @@ function buildReleaseBody(release: PlannedRelease, bumpFiles: BumpFile[]): strin
     }
   }
 
-  if (release.isDependencyBump && relevant.length === 0) {
-    lines.push('- Updated dependencies');
+  if (relevant.length === 0) {
+    const sourceList = release.bumpSources.map((s) => `\`${s.name}\` v${s.newVersion}`).join(', ');
+    if (release.isDependencyBump) {
+      lines.push(sourceList ? `- Updated dependency ${sourceList}` : '- Updated dependencies');
+    } else if (release.isGroupBump) {
+      lines.push(sourceList ? `- Version bump from group with ${sourceList}` : '- Version bump from group');
+    } else if (release.isCascadeBump) {
+      lines.push(sourceList ? `- Version bump from ${sourceList}` : '- Version bump via cascade rule');
+    }
   }
 
   return lines.join('\n') || 'No changelog entries.';
@@ -198,10 +210,15 @@ function buildAggregateBody(releases: PlannedRelease[], bumpFiles: BumpFile[]): 
             lines.push(`- ${bf.summary.split('\n')[0]}`);
           }
         }
-      } else if (release.isDependencyBump) {
-        lines.push('- Updated dependencies');
-      } else if (release.isCascadeBump) {
-        lines.push('- Version bump via cascade rule');
+      } else {
+        const sourceList = release.bumpSources.map((s) => `\`${s.name}\` v${s.newVersion}`).join(', ');
+        if (release.isDependencyBump) {
+          lines.push(sourceList ? `- Updated dependency ${sourceList}` : '- Updated dependencies');
+        } else if (release.isGroupBump) {
+          lines.push(sourceList ? `- Version bump from group with ${sourceList}` : '- Version bump from group');
+        } else if (release.isCascadeBump) {
+          lines.push(sourceList ? `- Version bump from ${sourceList}` : '- Version bump via cascade rule');
+        }
       }
       lines.push('');
     }

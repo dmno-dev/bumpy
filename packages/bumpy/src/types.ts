@@ -223,9 +223,12 @@ export interface PlannedRelease {
   type: BumpType;
   oldVersion: string;
   newVersion: string;
-  bumpFiles: string[]; // bump file IDs that contributed
+  bumpFiles: string[]; // bump file IDs that contributed (direct only)
   isDependencyBump: boolean;
   isCascadeBump: boolean;
+  isGroupBump: boolean;
+  /** Packages whose bumps caused this dependency/cascade/group bump, with their new versions */
+  bumpSources: Array<{ name: string; newVersion: string }>;
 }
 
 export interface ReleasePlan {
