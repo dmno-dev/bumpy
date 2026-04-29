@@ -2,7 +2,7 @@ import { resolve, relative } from 'node:path';
 import { realpathSync } from 'node:fs';
 import { log } from '../utils/logger.ts';
 import type { BumpFile, BumpType, PlannedRelease, BumpyConfig } from '../types.ts';
-import { BUMP_LEVELS } from '../types.ts';
+import { BUMP_LEVELS, maxBump } from '../types.ts';
 
 // ---- Formatter interface ----
 
@@ -69,7 +69,11 @@ export const defaultFormatter: ChangelogFormatter = (ctx) => {
     release.bumpSources.length > 0 ? release.bumpSources.map((s) => `\`${s.name}\` v${s.newVersion}`).join(', ') : '';
 
   if (release.isDependencyBump) {
-    const tag = release.type !== 'patch' ? `*(patch)* ` : '';
+    const depBumpType = release.bumpSources.reduce<BumpType | undefined>(
+      (max, s) => maxBump(max, s.bumpType),
+      undefined,
+    );
+    const tag = depBumpType && depBumpType !== release.type ? `*(${depBumpType})* ` : '';
     lines.push(`- ${tag}Updated dependency ${sourceList || '(internal)'}`);
   }
 
