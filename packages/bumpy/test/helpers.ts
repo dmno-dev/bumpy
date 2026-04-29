@@ -55,11 +55,10 @@ export function makeRelease(
   name: string,
   newVersion: string,
   opts: Partial<
-    Pick<
-      PlannedRelease,
-      'type' | 'oldVersion' | 'bumpFiles' | 'isDependencyBump' | 'isCascadeBump' | 'isGroupBump' | 'bumpSources'
-    >
-  > = {},
+    Pick<PlannedRelease, 'type' | 'oldVersion' | 'bumpFiles' | 'isDependencyBump' | 'isCascadeBump' | 'isGroupBump'>
+  > & {
+    bumpSources?: Array<{ name: string; newVersion: string; bumpType?: BumpType }>;
+  } = {},
 ): PlannedRelease {
   return {
     name,
