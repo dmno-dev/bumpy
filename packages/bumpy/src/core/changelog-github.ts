@@ -1,4 +1,6 @@
 import { tryRunArgs } from '../utils/shell.ts';
+import type { BumpType } from '../types.ts';
+import { maxBump } from '../types.ts';
 import type { ChangelogContext, ChangelogFormatter } from './changelog.ts';
 import { getBumpTypeForPackage, sortBumpFilesByType } from './changelog.ts';
 
@@ -100,7 +102,11 @@ export function createGithubFormatter(options: GithubChangelogOptions = {}): Cha
       release.bumpSources.length > 0 ? release.bumpSources.map((s) => `\`${s.name}\` v${s.newVersion}`).join(', ') : '';
 
     if (release.isDependencyBump) {
-      const depTag = release.type !== 'patch' ? ` *(patch)* -` : '';
+      const depBumpType = release.bumpSources.reduce<BumpType | undefined>(
+        (max, s) => maxBump(max, s.bumpType),
+        undefined,
+      );
+      const depTag = depBumpType && depBumpType !== release.type ? ` *(${depBumpType})* -` : '';
       lines.push(`-${depTag} Updated dependency ${sourceList || '(internal)'}`);
     }
 

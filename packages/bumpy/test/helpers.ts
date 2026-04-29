@@ -70,7 +70,7 @@ export function makeRelease(
     isDependencyBump: opts.isDependencyBump ?? false,
     isCascadeBump: opts.isCascadeBump ?? false,
     isGroupBump: opts.isGroupBump ?? false,
-    bumpSources: opts.bumpSources ?? [],
+    bumpSources: (opts.bumpSources ?? []).map((s) => ({ ...s, bumpType: s.bumpType ?? opts.type ?? 'patch' })),
   };
 }
 

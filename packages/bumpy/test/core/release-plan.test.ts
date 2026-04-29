@@ -92,7 +92,7 @@ describe('assembleReleasePlan', () => {
       const pluginRelease = plan.releases.find((r) => r.name === 'plugin')!;
       expect(pluginRelease.type).toBe('major'); // matches the triggering bump
       expect(pluginRelease.isDependencyBump).toBe(true);
-      expect(pluginRelease.bumpSources).toEqual([{ name: 'core', newVersion: '2.0.0' }]);
+      expect(pluginRelease.bumpSources).toEqual([{ name: 'core', newVersion: '2.0.0', bumpType: 'major' }]);
       expect(pluginRelease.bumpFiles).toEqual([]); // no inherited bump files
     });
 
@@ -248,12 +248,12 @@ describe('assembleReleasePlan', () => {
       // pkg-b was upgraded from patch to minor, pkg-c was added — both should have group bump info
       const pkgB = plan.releases.find((r) => r.name === 'pkg-b')!;
       expect(pkgB.isGroupBump).toBe(true);
-      expect(pkgB.bumpSources).toEqual([{ name: 'pkg-a', newVersion: '1.1.0' }]);
+      expect(pkgB.bumpSources).toEqual([{ name: 'pkg-a', newVersion: '1.1.0', bumpType: 'minor' }]);
       expect(pkgB.bumpFiles).toEqual(['cs2']); // keeps its own direct bump file
 
       const pkgC = plan.releases.find((r) => r.name === 'pkg-c')!;
       expect(pkgC.isGroupBump).toBe(true);
-      expect(pkgC.bumpSources).toEqual([{ name: 'pkg-a', newVersion: '1.1.0' }]);
+      expect(pkgC.bumpSources).toEqual([{ name: 'pkg-a', newVersion: '1.1.0', bumpType: 'minor' }]);
       expect(pkgC.bumpFiles).toEqual([]); // no direct bump files
 
       // pkg-a drove the bump — not a group bump itself
@@ -307,8 +307,8 @@ describe('assembleReleasePlan', () => {
       expect(pluginB.type).toBe('minor');
       expect(pluginB.isGroupBump).toBe(true);
       expect(pluginB.bumpSources).toEqual([
-        { name: 'core', newVersion: '1.1.0' }, // from out-of-range dep bump
-        { name: 'plugin-a', newVersion: '2.1.0' }, // from linked group upgrade
+        { name: 'core', newVersion: '1.1.0', bumpType: 'patch' }, // from out-of-range dep bump
+        { name: 'plugin-a', newVersion: '2.1.0', bumpType: 'minor' }, // from linked group upgrade
       ]);
     });
   });
@@ -342,7 +342,7 @@ describe('assembleReleasePlan', () => {
       expect(plan.releases.find((r) => r.name === 'unrelated')).toBeUndefined();
       const pluginA = plan.releases.find((r) => r.name === 'plugin-a')!;
       expect(pluginA.type).toBe('patch');
-      expect(pluginA.bumpSources).toEqual([{ name: 'core', newVersion: '1.1.0' }]);
+      expect(pluginA.bumpSources).toEqual([{ name: 'core', newVersion: '1.1.0', bumpType: 'patch' }]);
     });
 
     test('proactive propagation with updateInternalDependencies: "patch"', () => {
@@ -407,11 +407,11 @@ describe('assembleReleasePlan', () => {
       const pluginB = plan.releases.find((r) => r.name === 'plugin-b')!;
       expect(pluginA.type).toBe('patch');
       expect(pluginA.isCascadeBump).toBe(true);
-      expect(pluginA.bumpSources).toEqual([{ name: 'core', newVersion: '1.1.0' }]);
+      expect(pluginA.bumpSources).toEqual([{ name: 'core', newVersion: '1.1.0', bumpType: 'patch' }]);
       expect(pluginA.bumpFiles).toEqual([]); // no inherited bump files
       expect(pluginB.type).toBe('patch');
       expect(pluginB.isCascadeBump).toBe(true);
-      expect(pluginB.bumpSources).toEqual([{ name: 'core', newVersion: '1.1.0' }]);
+      expect(pluginB.bumpSources).toEqual([{ name: 'core', newVersion: '1.1.0', bumpType: 'patch' }]);
     });
 
     test('devDependencies do not propagate by default', () => {

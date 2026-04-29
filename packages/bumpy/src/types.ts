@@ -228,7 +228,7 @@ export interface PlannedRelease {
   isCascadeBump: boolean;
   isGroupBump: boolean;
   /** Packages whose bumps caused this dependency/cascade/group bump, with their new versions */
-  bumpSources: Array<{ name: string; newVersion: string }>;
+  bumpSources: Array<{ name: string; newVersion: string; bumpType: BumpType }>;
 }
 
 export interface ReleasePlan {

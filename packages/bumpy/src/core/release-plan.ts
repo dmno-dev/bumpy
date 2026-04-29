@@ -22,8 +22,8 @@ interface PlannedBump {
   isCascadeBump: boolean;
   isGroupBump: boolean;
   bumpFiles: Set<string>;
-  /** Package names that caused this bump via dependency/cascade/group propagation */
-  bumpSources: Set<string>;
+  /** Package names that caused this bump via dependency/cascade/group propagation, with the bump type they contributed */
+  bumpSources: Map<string, BumpType>;
 }
 
 /**
@@ -71,7 +71,7 @@ export function assembleReleasePlan(
           isCascadeBump: false,
           isGroupBump: false,
           bumpFiles: new Set([bf.id]),
-          bumpSources: new Set(),
+          bumpSources: new Map(),
         });
       }
 
@@ -172,7 +172,7 @@ export function assembleReleasePlan(
               existing.type = newType;
               existing.isGroupBump = true;
               for (const src of groupSources) {
-                if (src !== name) existing.bumpSources.add(src);
+                if (src !== name) existing.bumpSources.set(src, groupBump);
               }
               changed = true;
             }
@@ -183,7 +183,7 @@ export function assembleReleasePlan(
               isCascadeBump: false,
               isGroupBump: true,
               bumpFiles: new Set(),
-              bumpSources: new Set(groupSources.filter((s) => s !== name)),
+              bumpSources: new Map(groupSources.filter((s) => s !== name).map((s) => [s, groupBump])),
             });
             changed = true;
           }
@@ -219,7 +219,7 @@ export function assembleReleasePlan(
             existing.type = newType;
             existing.isGroupBump = true;
             for (const src of groupSources) {
-              if (src !== name) existing.bumpSources.add(src);
+              if (src !== name) existing.bumpSources.set(src, groupBump);
             }
             changed = true;
           }
@@ -328,12 +328,13 @@ export function assembleReleasePlan(
       isDependencyBump: bump.isDependencyBump,
       isCascadeBump: bump.isCascadeBump,
       isGroupBump: bump.isGroupBump,
-      bumpSources: [...bump.bumpSources].map((srcName) => {
+      bumpSources: [...bump.bumpSources].map(([srcName, contributedType]) => {
         const srcBump = planned.get(srcName);
         const srcPkg = packages.get(srcName);
         return {
           name: srcName,
           newVersion: srcPkg && srcBump ? bumpVersion(srcPkg.version, srcBump.type) : 'unknown',
+          bumpType: contributedType,
         };
       }),
     });
@@ -373,7 +374,7 @@ function applyBump(
     existing.type = newType;
     if (isDependencyBump) existing.isDependencyBump = true;
     if (isCascadeBump) existing.isCascadeBump = true;
-    existing.bumpSources.add(sourcePackageName);
+    existing.bumpSources.set(sourcePackageName, type);
     return true;
   }
   planned.set(name, {
@@ -382,7 +383,7 @@ function applyBump(
     isCascadeBump,
     isGroupBump: false,
     bumpFiles: new Set(),
-    bumpSources: new Set([sourcePackageName]),
+    bumpSources: new Map([[sourcePackageName, type]]),
   });
   return true;
 }
