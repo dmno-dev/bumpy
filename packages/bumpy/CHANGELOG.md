@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5.1
+
+<sub>2026-04-29</sub>
+
+- [#62](https://github.com/dmno-dev/bumpy/pull/62) - Fix changelog dependency bump tag showing incorrect bump level
+
 ## 1.5.0
 
 <sub>2026-04-29</sub>
