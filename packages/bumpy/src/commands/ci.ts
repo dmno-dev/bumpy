@@ -10,8 +10,9 @@ import { runArgs, runArgsAsync, tryRunArgs } from '../utils/shell.ts';
 import { randomName } from '../utils/names.ts';
 import { detectPackageManager } from '../utils/package-manager.ts';
 import { createHash } from 'node:crypto';
+import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { resolveCommitMessage } from '../core/commit-message.ts';
-import type { BumpyConfig, BumpFile, PackageManager, ReleasePlan, PlannedRelease } from '../types.ts';
+import type { BumpyConfig, BumpFile, PackageConfig, PackageManager, ReleasePlan, PlannedRelease } from '../types.ts';
 
 // ---- PAT-scoped gh helpers ----
 
@@ -210,6 +211,159 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
     logFn(`${missing.length} changed package(s) not covered by bump files: ${missing.join(', ')}`);
     if (willFail) process.exit(1);
   }
+}
+
+// ---- ci plan ----
+
+/** Path (relative to rootDir) where ci plan caches its output for ci release to reuse */
+export const CI_PLAN_CACHE_PATH = 'node_modules/.cache/bumpy/ci-plan.json';
+
+export type CiPlanMode = 'version-pr' | 'publish' | 'nothing';
+
+interface PlanRelease {
+  name: string;
+  type: string;
+  oldVersion: string;
+  newVersion: string;
+  dir?: string;
+  bumpFiles: string[];
+  isDependencyBump: boolean;
+  isCascadeBump: boolean;
+  publishTargets: string[];
+}
+
+interface PlanOutput {
+  mode: CiPlanMode;
+  bumpFiles: Array<{
+    id: string;
+    summary: string;
+    releases: Array<{ name: string; type: string }>;
+  }>;
+  releases: PlanRelease[];
+  packageNames: string[];
+}
+
+/**
+ * CI plan: report what `ci release` would do, without acting.
+ * Outputs JSON to stdout and sets GitHub Actions outputs when detected.
+ */
+export async function ciPlanCommand(rootDir: string): Promise<void> {
+  const config = await loadConfig(rootDir);
+  const { packages } = await discoverWorkspace(rootDir, config);
+  const depGraph = new DependencyGraph(packages);
+  const { bumpFiles, errors: parseErrors } = await readBumpFiles(rootDir);
+
+  if (parseErrors.length > 0) {
+    for (const err of parseErrors) {
+      log.error(err);
+    }
+    throw new Error('Bump file parse errors must be fixed before planning.');
+  }
+
+  let output: PlanOutput;
+
+  if (bumpFiles.length > 0) {
+    // Bump files exist → version-pr mode
+    const plan = assembleReleasePlan(bumpFiles, packages, depGraph, config);
+    output = {
+      mode: 'version-pr',
+      bumpFiles: plan.bumpFiles.map((bf) => ({
+        id: bf.id,
+        summary: bf.summary,
+        releases: bf.releases.map((r) => ({ name: r.name, type: r.type })),
+      })),
+      releases: plan.releases.map((r) => formatPlanRelease(r, packages, config)),
+      packageNames: plan.releases.map((r) => r.name),
+    };
+  } else {
+    // No bump files → check for unpublished packages
+    const { findUnpublishedPackages } = await import('./publish.ts');
+    const unpublished = await findUnpublishedPackages(packages, config);
+
+    if (unpublished.length > 0) {
+      output = {
+        mode: 'publish',
+        bumpFiles: [],
+        releases: unpublished.map((r) => formatPlanRelease(r, packages, config)),
+        packageNames: unpublished.map((r) => r.name),
+      };
+    } else {
+      output = {
+        mode: 'nothing',
+        bumpFiles: [],
+        releases: [],
+        packageNames: [],
+      };
+    }
+  }
+
+  // JSON to stdout
+  const json = JSON.stringify(output, null, 2);
+  console.log(json);
+
+  // Cache for ci release to reuse (avoids duplicate registry lookups)
+  const cachePath = `${rootDir}/${CI_PLAN_CACHE_PATH}`;
+  const cacheDir = cachePath.slice(0, cachePath.lastIndexOf('/'));
+  mkdirSync(cacheDir, { recursive: true });
+  writeFileSync(cachePath, json, 'utf-8');
+
+  // Set GitHub Actions outputs
+  writeGitHubOutput('mode', output.mode);
+  writeGitHubOutput('packages', output.packageNames.join(','));
+  writeGitHubOutput('json', JSON.stringify(output));
+}
+
+function formatPlanRelease(
+  r: {
+    name: string;
+    type: string;
+    oldVersion: string;
+    newVersion: string;
+    bumpFiles: string[];
+    isDependencyBump: boolean;
+    isCascadeBump: boolean;
+  },
+  packages: Map<string, { relativeDir: string; private: boolean; bumpy?: PackageConfig }>,
+  config: BumpyConfig,
+): PlanRelease {
+  const pkg = packages.get(r.name);
+  return {
+    name: r.name,
+    type: r.type,
+    oldVersion: r.oldVersion,
+    newVersion: r.newVersion,
+    dir: pkg?.relativeDir,
+    bumpFiles: r.bumpFiles,
+    isDependencyBump: r.isDependencyBump,
+    isCascadeBump: r.isCascadeBump,
+    publishTargets: getPublishTargets(pkg, config),
+  };
+}
+
+function getPublishTargets(
+  pkg: { private: boolean; bumpy?: PackageConfig } | undefined,
+  _config: BumpyConfig,
+): string[] {
+  if (!pkg) return [];
+  const pkgConfig = pkg.bumpy || {};
+  if (pkg.private && !pkgConfig.publishCommand) return [];
+  const targets: string[] = [];
+  if (pkgConfig.publishCommand) {
+    targets.push('custom');
+  }
+  if (!pkgConfig.publishCommand && !pkgConfig.skipNpmPublish) {
+    targets.push('npm');
+  }
+  return targets;
+}
+
+/** Write a key=value pair to $GITHUB_OUTPUT if available */
+function writeGitHubOutput(key: string, value: string): void {
+  const outputFile = process.env.GITHUB_OUTPUT;
+  if (!outputFile) return;
+  // Use delimiter protocol for multiline values
+  const delimiter = `ghadelimiter_${Date.now()}`;
+  appendFileSync(outputFile, `${key}<<${delimiter}\n${value}\n${delimiter}\n`);
 }
 
 // ---- ci release ----

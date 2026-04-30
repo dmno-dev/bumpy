@@ -7,6 +7,7 @@ import { publishPackages } from '../core/publish-pipeline.ts';
 import { createIndividualReleases, createAggregateRelease } from '../core/github-release.ts';
 import { loadFormatter } from '../core/changelog.ts';
 import { detectWorkspaces } from '../utils/package-manager.ts';
+import { CI_PLAN_CACHE_PATH } from './ci.ts';
 import type { BumpyConfig, PackageConfig, ReleasePlan, PlannedRelease, WorkspacePackage } from '../types.ts';
 
 interface PublishCommandOptions {
@@ -32,9 +33,9 @@ export async function publishCommand(rootDir: string, opts: PublishCommandOption
     process.exit(1);
   }
 
-  // Find packages that need publishing by checking which ones have versions
-  // not yet on the registry
-  let toPublish = await findUnpublishedPackages(packages, config);
+  // Find packages that need publishing — use cached plan from `ci plan` if available,
+  // otherwise query the registry
+  let toPublish = await findUnpublishedWithCache(rootDir, packages, config);
 
   // Apply filter
   if (opts.filter) {
@@ -128,6 +129,79 @@ export async function publishCommand(rootDir: string, opts: PublishCommandOption
 }
 
 /**
+ * Try to load cached plan from `ci plan`. Returns the unpublished package names
+ * if the cache is valid, or null to fall back to registry lookups.
+ *
+ * Validates that every cached package exists in the workspace with the same version,
+ * so the cache can only filter — never fabricate — the set of packages.
+ */
+function loadCachedPlan(rootDir: string, packages: Map<string, WorkspacePackage>): Set<string> | null {
+  const cachePath = `${rootDir}/${CI_PLAN_CACHE_PATH}`;
+  let raw: string;
+  try {
+    raw = require('node:fs').readFileSync(cachePath, 'utf-8');
+    // Clean up cache file after reading
+    require('node:fs').unlinkSync(cachePath);
+  } catch {
+    return null;
+  }
+
+  try {
+    const cached = JSON.parse(raw);
+    if (cached?.mode !== 'publish' || !Array.isArray(cached.releases)) return null;
+
+    const names = new Set<string>();
+    for (const r of cached.releases) {
+      if (typeof r.name !== 'string' || typeof r.newVersion !== 'string') return null;
+      // Validate against workspace — reject if package doesn't exist or version doesn't match
+      const pkg = packages.get(r.name);
+      if (!pkg || pkg.version !== r.newVersion) {
+        log.dim('  ci plan cache is stale — falling back to registry lookups');
+        return null;
+      }
+      names.add(r.name);
+    }
+
+    log.dim('  Using cached plan from ci plan');
+    return names;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Find unpublished packages, using the ci plan cache if available.
+ * Falls back to registry lookups if no cache or cache is invalid.
+ */
+async function findUnpublishedWithCache(
+  rootDir: string,
+  packages: Map<string, WorkspacePackage>,
+  config: BumpyConfig,
+): Promise<PlannedRelease[]> {
+  const cachedNames = loadCachedPlan(rootDir, packages);
+  if (cachedNames) {
+    // Build PlannedRelease entries directly from workspace data — no network needed
+    const unpublished: PlannedRelease[] = [];
+    for (const name of cachedNames) {
+      const pkg = packages.get(name)!;
+      unpublished.push({
+        name,
+        type: 'patch',
+        oldVersion: pkg.version,
+        newVersion: pkg.version,
+        bumpFiles: [],
+        isDependencyBump: false,
+        isCascadeBump: false,
+        isGroupBump: false,
+        bumpSources: [],
+      });
+    }
+    return unpublished;
+  }
+  return findUnpublishedPackages(packages, config);
+}
+
+/**
  * Find packages whose current version is not yet published.
  *
  * Detection strategy (per package):
@@ -135,7 +209,7 @@ export async function publishCommand(rootDir: string, opts: PublishCommandOption
  * 2. `skipNpmPublish` or custom `publishCommand` → check git tags
  * 3. Default → check npm registry via `npm info`
  */
-async function findUnpublishedPackages(
+export async function findUnpublishedPackages(
   packages: Map<string, WorkspacePackage>,
   _config: BumpyConfig,
 ): Promise<PlannedRelease[]> {

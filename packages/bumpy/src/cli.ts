@@ -112,6 +112,9 @@ async function main() {
             strict: ciFlags.strict === true,
             noFail: ciFlags['no-fail'] === true,
           });
+        } else if (subcommand === 'plan') {
+          const { ciPlanCommand } = await import('./commands/ci.ts');
+          await ciPlanCommand(rootDir);
         } else if (subcommand === 'release') {
           const { ciReleaseCommand } = await import('./commands/ci.ts');
           const mode = ciFlags['auto-publish'] === true ? ('auto-publish' as const) : ('version-pr' as const);
@@ -124,7 +127,7 @@ async function main() {
           const { ciSetupCommand } = await import('./commands/ci-setup.ts');
           await ciSetupCommand(rootDir);
         } else {
-          log.error(`Unknown ci subcommand: ${subcommand}. Use "ci check", "ci release", or "ci setup".`);
+          log.error(`Unknown ci subcommand: ${subcommand}. Use "ci check", "ci plan", "ci release", or "ci setup".`);
           process.exit(1);
         }
         break;
@@ -202,6 +205,7 @@ function printHelp() {
     version [--commit]      Apply bump files and bump versions
     publish                 Publish versioned packages
     ci check                PR check — report pending releases, comment on PR
+    ci plan                 Report what ci release would do (JSON + GitHub Actions outputs)
     ci release              Release — create version PR or auto-publish
     ci setup                Set up a token for triggering CI on version PRs
     ai setup                Install AI skill for creating bump files
