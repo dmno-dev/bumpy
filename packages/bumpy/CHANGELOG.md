@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.7.0
+
+<sub>2026-04-30</sub>
+
+- [#66](https://github.com/dmno-dev/bumpy/pull/66) - Add `bumpy ci plan` command for conditional CI builds
+
 ## 1.6.0
 
 <sub>2026-04-30</sub>
