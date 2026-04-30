@@ -171,9 +171,14 @@ function migrateChangesetConfig(csConfig: Record<string, unknown>): Record<strin
   ] as const;
 
   for (const field of migrateableFields) {
-    if (csConfig[field] !== undefined) {
-      bumpyConfig[field] = csConfig[field];
-    }
+    const value = csConfig[field];
+    if (value === undefined) continue;
+    // Skip empty arrays and values that match bumpy defaults — no need to clutter the config
+    if (Array.isArray(value) && value.length === 0) continue;
+    if (field === 'baseBranch' && value === 'main') continue;
+    if (field === 'access' && value === 'public') continue;
+    if (field === 'updateInternalDependencies' && value === 'out-of-range') continue;
+    bumpyConfig[field] = value;
   }
 
   // Fields intentionally NOT migrated (changesets-only):
