@@ -81,6 +81,7 @@ Then set up CI to automate versioning and publishing (see below).
 No GitHub App to install, no separate action to rely on - just call `bumpy ci` directly in your workflows. Two commands handle the entire release lifecycle:
 
 - **`bumpy ci check`** - runs on every PR. Computes the release plan from pending bump files and posts/updates a comment on the PR showing what versions would be released. Warns if any changed packages are missing bump files.
+- **`bumpy ci plan`** - runs on push to main, before `ci release`. Reports what would happen (JSON + GitHub Actions outputs) so you can conditionally gate expensive build steps. Caches the result so `ci release` skips duplicate registry lookups.
 - **`bumpy ci release`** - runs on push to main. If pending bump files exist, it opens (or updates) a "Version Packages" PR that applies all version bumps and changelog updates. If the current push _is_ the Version Packages PR being merged, it publishes the new versions, creates git tags, and creates GitHub releases.
 
 _examples use bun, but works with Node.js_
@@ -115,6 +116,10 @@ on:
   push:
     branches: [main]
 
+concurrency:
+  group: bumpy-release
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -131,6 +136,17 @@ jobs:
         with:
           node-version: lts/*
       - run: bun install
+
+      # Plan first — detect mode and conditionally run expensive steps
+      - id: plan
+        run: bunx @varlock/bumpy ci plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      # Only run build steps when we're about to publish (not when updating version PR)
+      - if: steps.plan.outputs.mode == 'publish'
+        run: bun run build
+
       - run: bunx @varlock/bumpy ci release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -149,6 +165,10 @@ on:
   push:
     branches: [main]
 
+concurrency:
+  group: bumpy-release
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -161,6 +181,15 @@ jobs:
           fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
       - run: bun install
+
+      - id: plan
+        run: bunx @varlock/bumpy ci plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - if: steps.plan.outputs.mode == 'publish'
+        run: bun run build
+
       - run: bunx @varlock/bumpy ci release
         env:
           GH_TOKEN: ${{ github.token }}
