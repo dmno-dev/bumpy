@@ -10,24 +10,31 @@ export interface WorkspaceDiscoveryResult {
   catalogs: CatalogMap;
 }
 
-/** Discover all workspace packages and catalogs in a monorepo */
+/** Discover all workspace packages and catalogs in a monorepo or single-package repo */
 export async function discoverWorkspace(rootDir: string, config: BumpyConfig): Promise<WorkspaceDiscoveryResult> {
   const { globs, catalogs } = await detectWorkspaces(rootDir);
-  if (globs.length === 0) {
-    throw new Error('No workspace globs found. Is this a monorepo?');
-  }
 
   const packages = new Map<string, WorkspacePackage>();
-  for (const glob of globs) {
-    const dirs = await resolveGlob(rootDir, glob);
-    for (const dir of dirs) {
-      const pkg = await loadWorkspacePackage(dir, rootDir, config);
-      if (pkg) {
-        if (!isPackageManaged(pkg.name, pkg.private, config, pkg.bumpy)) continue;
-        packages.set(pkg.name, pkg);
+
+  if (globs.length === 0) {
+    // Single-package repo — treat the root as the only package
+    const pkg = await loadWorkspacePackage(rootDir, rootDir, config);
+    if (pkg && isPackageManaged(pkg.name, pkg.private, config, pkg.bumpy)) {
+      packages.set(pkg.name, pkg);
+    }
+  } else {
+    for (const glob of globs) {
+      const dirs = await resolveGlob(rootDir, glob);
+      for (const dir of dirs) {
+        const pkg = await loadWorkspacePackage(dir, rootDir, config);
+        if (pkg) {
+          if (!isPackageManaged(pkg.name, pkg.private, config, pkg.bumpy)) continue;
+          packages.set(pkg.name, pkg);
+        }
       }
     }
   }
+
   return { packages, catalogs };
 }
 
@@ -131,7 +138,7 @@ async function loadWorkspacePackage(
     name,
     version: (pkg.version as string) || '0.0.0',
     dir: resolve(dir),
-    relativeDir: relative(rootDir, dir),
+    relativeDir: relative(rootDir, dir) || '.',
     packageJson: pkg,
     private: !!pkg.private,
     dependencies: (pkg.dependencies as Record<string, string>) || {},
