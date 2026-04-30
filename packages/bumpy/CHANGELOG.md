@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.6.0
+
+<sub>2026-04-30</sub>
+
+- [#64](https://github.com/dmno-dev/bumpy/pull/64) - Support single-package (non-monorepo) repos
+
 ## 1.5.1
 
 <sub>2026-04-29</sub>
