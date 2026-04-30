@@ -178,6 +178,45 @@ bumpy ci check --no-fail
 
 Requires `GH_TOKEN` environment variable (automatically available in GitHub Actions).
 
+## `bumpy ci plan`
+
+CI command that reports what `ci release` would do, without acting. Outputs JSON to stdout and sets GitHub Actions step outputs so you can conditionally run expensive steps (builds, etc.) only when needed.
+
+```bash
+bumpy ci plan
+```
+
+**Output (JSON to stdout):**
+
+```jsonc
+{
+  "mode": "version-pr",    // "version-pr" | "publish" | "nothing"
+  "bumpFiles": [...],       // same shape as `bumpy status --json`
+  "releases": [...],
+  "packageNames": ["pkg-a", "pkg-b"]
+}
+```
+
+**Modes:**
+
+| Mode         | Meaning                                                | `releases` contains              |
+| ------------ | ------------------------------------------------------ | -------------------------------- |
+| `version-pr` | Bump files exist — would create/update the version PR  | Planned releases from bump files |
+| `publish`    | No bump files — unpublished packages detected          | Packages that would be published |
+| `nothing`    | No bump files, no unpublished packages — nothing to do | Empty                            |
+
+**GitHub Actions outputs** (set via `$GITHUB_OUTPUT`):
+
+| Output     | Description                           |
+| ---------- | ------------------------------------- |
+| `mode`     | `version-pr`, `publish`, or `nothing` |
+| `packages` | Comma-separated package names         |
+| `json`     | Full JSON output (for `fromJSON()`)   |
+
+When `ci plan` runs before `ci release` in the same workflow, the plan is cached so `ci release` can skip duplicate registry lookups. The cache is validated against the workspace (package names and versions must match) and deleted after use.
+
+See [GitHub Actions setup](github-actions.md) for workflow examples.
+
 ## `bumpy ci release`
 
 CI command for releases. Has two modes:

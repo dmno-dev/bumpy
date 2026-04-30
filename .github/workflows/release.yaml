@@ -3,6 +3,10 @@ on:
   push:
     branches: [main]
 
+concurrency:
+  group: bumpy-release
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -28,7 +32,20 @@ jobs:
       - run: bun install
       # -------------------------------
 
-      # 🐸 This is the important part - creates/updates release PR when PRs merge to main, publishes packages when release PR is merged
+      # 🐸 Plan first — detects mode and caches the result for ci release
+      # Outputs: mode (version-pr|publish|nothing), packages (comma-separated), json (full plan)
+      - id: plan
+        run: bunx @varlock/bumpy ci plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      # Example: conditionally run expensive steps only when publishing
+      # In your project, this is where you'd put build/compile/test steps
+      # that are only needed before a publish (not when updating the version PR)
+      - if: steps.plan.outputs.mode == 'publish'
+        run: echo "📦 Publish mode — packages to release:" && echo "${{ steps.plan.outputs.packages }}"
+
+      # Creates/updates release PR when PRs merge to main, publishes packages when release PR is merged
       - run: bunx @varlock/bumpy ci release
         env:
           GH_TOKEN: ${{ github.token }}

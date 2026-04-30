@@ -7,6 +7,7 @@ Bumpy handles CI automation with two commands — no separate GitHub Action or b
 | Command            | Trigger        | What it does                                                                                                                        |
 | ------------------ | -------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | `bumpy ci check`   | `pull_request` | Posts/updates a PR comment with the release plan. Warns about missing bump files.                                                   |
+| `bumpy ci plan`    | `push` to main | Reports what `ci release` would do (JSON + GitHub Actions outputs). Use to conditionally gate expensive steps.                      |
 | `bumpy ci release` | `push` to main | Creates/updates a "Version Packages" PR. When that PR is merged, publishes packages, creates git tags, and creates GitHub releases. |
 
 ## PR check workflow
@@ -32,7 +33,7 @@ jobs:
 
 ## Release workflow
 
-### Trusted publishing (OIDC — recommended)
+### Trusted publishing (OIDC ��� recommended)
 
 No `NPM_TOKEN` secret needed. Requires npm >= 11.5.1.
 
@@ -42,6 +43,10 @@ name: Bumpy Release
 on:
   push:
     branches: [main]
+
+concurrency:
+  group: bumpy-release
+  cancel-in-progress: false
 
 jobs:
   release:
@@ -78,6 +83,10 @@ on:
   push:
     branches: [main]
 
+concurrency:
+  group: bumpy-release
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -104,6 +113,78 @@ Instead of the two-step flow (version PR → merge → publish), you can version
 ```yaml
 - run: bunx @varlock/bumpy ci release --auto-publish
 ```
+
+## Conditional builds with `ci plan`
+
+Publishing often requires expensive build steps that aren't needed when just updating the version PR. Use `bumpy ci plan` to detect what `ci release` would do and conditionally gate those steps.
+
+`ci plan` outputs JSON to stdout, sets GitHub Actions step outputs, and caches the result so that `ci release` can skip duplicate registry lookups in the same workflow run.
+
+| Output     | Description                           |
+| ---------- | ------------------------------------- |
+| `mode`     | `version-pr`, `publish`, or `nothing` |
+| `packages` | Comma-separated package names         |
+| `json`     | Full JSON output (for `fromJSON()`)   |
+
+### Basic: skip builds unless publishing
+
+```yaml
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+      - run: bun install
+
+      - id: plan
+        run: bunx @varlock/bumpy ci plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      # Only run expensive build when we're about to publish
+      - if: steps.plan.outputs.mode == 'publish'
+        run: bun run build
+
+      - run: bunx @varlock/bumpy ci release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUMPY_GH_TOKEN: ${{ secrets.BUMPY_GH_TOKEN }}
+```
+
+### Advanced: conditional steps per package
+
+```yaml
+- id: plan
+  run: bunx @varlock/bumpy ci plan
+  env:
+    GH_TOKEN: ${{ github.token }}
+
+# Build only specific packages that are being released
+- if: contains(steps.plan.outputs.packages, 'my-expensive-package')
+  run: bun run build --filter=my-expensive-package
+```
+
+## Concurrency
+
+Use a concurrency group on your release workflow to prevent overlapping publish runs. Without this, rapid merges to main could trigger multiple workflows that race to publish the same packages.
+
+```yaml
+concurrency:
+  group: bumpy-release
+  cancel-in-progress: false # queue rather than cancel — don't skip releases
+```
+
+This is included in all the workflow examples above.
 
 ## Token setup
 
