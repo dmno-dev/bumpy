@@ -166,16 +166,16 @@ function getPublishTargets(
   pkg: WorkspacePackage | undefined,
   pkgConfig: Partial<PackageConfig>,
   _config: BumpyConfig,
-): string[] {
+): Array<{ type: string }> {
   if (!pkg) return [];
   // Private packages with no custom command won't publish
   if (pkg.private && !pkgConfig.publishCommand) return [];
-  const targets: string[] = [];
+  const targets: Array<{ type: string }> = [];
   if (pkgConfig.publishCommand) {
-    targets.push('custom');
+    targets.push({ type: 'custom' });
   }
   if (!pkgConfig.publishCommand && !pkgConfig.skipNpmPublish) {
-    targets.push('npm');
+    targets.push({ type: 'npm' });
   }
   return targets;
 }

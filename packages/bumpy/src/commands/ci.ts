@@ -229,7 +229,7 @@ interface PlanRelease {
   bumpFiles: string[];
   isDependencyBump: boolean;
   isCascadeBump: boolean;
-  publishTargets: string[];
+  publishTargets: Array<{ type: string }>;
 }
 
 interface PlanOutput {
@@ -343,16 +343,16 @@ function formatPlanRelease(
 function getPublishTargets(
   pkg: { private: boolean; bumpy?: PackageConfig } | undefined,
   _config: BumpyConfig,
-): string[] {
+): Array<{ type: string }> {
   if (!pkg) return [];
   const pkgConfig = pkg.bumpy || {};
   if (pkg.private && !pkgConfig.publishCommand) return [];
-  const targets: string[] = [];
+  const targets: Array<{ type: string }> = [];
   if (pkgConfig.publishCommand) {
-    targets.push('custom');
+    targets.push({ type: 'custom' });
   }
   if (!pkgConfig.publishCommand && !pkgConfig.skipNpmPublish) {
-    targets.push('npm');
+    targets.push({ type: 'npm' });
   }
   return targets;
 }
