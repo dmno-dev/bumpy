@@ -120,11 +120,11 @@ Publishing often requires expensive build steps that aren't needed when just upd
 
 `ci plan` outputs JSON to stdout, sets GitHub Actions step outputs, and caches the result so that `ci release` can skip duplicate registry lookups in the same workflow run.
 
-| Output     | Description                           |
-| ---------- | ------------------------------------- |
-| `mode`     | `version-pr`, `publish`, or `nothing` |
-| `packages` | Comma-separated package names         |
-| `json`     | Full JSON output (for `fromJSON()`)   |
+| Output     | Description                                                   |
+| ---------- | ------------------------------------------------------------- |
+| `mode`     | `version-pr`, `publish`, or `nothing`                         |
+| `packages` | JSON array of package names (for `fromJSON()` + `contains()`) |
+| `json`     | Full JSON output (for `fromJSON()`)                           |
 
 ### Basic: skip builds unless publishing
 
@@ -170,7 +170,7 @@ jobs:
     GH_TOKEN: ${{ github.token }}
 
 # Build only specific packages that are being released
-- if: contains(steps.plan.outputs.packages, 'my-expensive-package')
+- if: contains(fromJSON(steps.plan.outputs.packages), 'my-expensive-package')
   run: bun run build --filter=my-expensive-package
 ```
 
