@@ -4,7 +4,7 @@ import { log } from '../utils/logger.ts';
 import { p, unwrap } from '../utils/clack.ts';
 import { ensureDir, exists } from '../utils/fs.ts';
 import { randomName, slugify } from '../utils/names.ts';
-import { writeBumpFile } from '../core/bump-file.ts';
+import { writeBumpFile, readBumpFiles, filterBranchBumpFiles } from '../core/bump-file.ts';
 import picomatch from 'picomatch';
 import { getBumpyDir, loadConfig, loadPackageConfig, matchGlob } from '../core/config.ts';
 import { discoverPackages, discoverWorkspace } from '../core/workspace.ts';
@@ -12,7 +12,7 @@ import { findChangedPackages } from './check.ts';
 import { DependencyGraph } from '../core/dep-graph.ts';
 import { getChangedFiles } from '../core/git.ts';
 import { bumpSelectPrompt } from '../prompts/bump-select.ts';
-import type { BumpSelectItem } from '../prompts/bump-select.ts';
+import type { BumpSelectItem, BumpLevel } from '../prompts/bump-select.ts';
 import type { BumpType, BumpTypeWithNone, BumpFileRelease, BumpFileReleaseCascade } from '../types.ts';
 
 interface AddOptions {
@@ -117,12 +117,29 @@ export async function addCommand(rootDir: string, opts: AddOptions): Promise<voi
       }
     }
 
+    // Load existing bump files on this branch to avoid re-defaulting already-covered packages
+    const { bumpFiles: allBumpFiles } = await readBumpFiles(rootDir);
+    const { branchBumpFiles } = filterBranchBumpFiles(allBumpFiles, changedFiles, rootDir);
+    const alreadyCoveredPackages = new Map<string, BumpLevel>();
+    for (const bf of branchBumpFiles) {
+      for (const release of bf.releases) {
+        alreadyCoveredPackages.set(release.name, release.type === 'none' ? 'none' : release.type);
+      }
+    }
+
     // Build items for the bump select prompt
-    const bumpSelectItems: BumpSelectItem[] = [...pkgs.values()].map((pkg) => ({
-      name: pkg.name,
-      version: pkg.version,
-      changed: changedPackageNames.has(pkg.name),
-    }));
+    const bumpSelectItems: BumpSelectItem[] = [...pkgs.values()].map((pkg) => {
+      const item: BumpSelectItem = {
+        name: pkg.name,
+        version: pkg.version,
+        changed: changedPackageNames.has(pkg.name),
+      };
+      // If already covered by an existing bump file, default to skip
+      if (alreadyCoveredPackages.has(pkg.name)) {
+        item.initialLevel = 'skip';
+      }
+      return item;
+    });
 
     const bumpSelectResult = await bumpSelectPrompt(bumpSelectItems);
     if (typeof bumpSelectResult === 'symbol') {
@@ -140,8 +157,8 @@ export async function addCommand(rootDir: string, opts: AddOptions): Promise<voi
     for (const { name, type: bumpType } of bumpSelections) {
       const release: BumpFileRelease = { name, type: bumpType };
 
-      // Offer cascade options if the package has dependents
-      {
+      // Offer cascade options if the package has dependents (not for 'none' bumps)
+      if (bumpType !== 'none') {
         const dependents = depGraph.getDependents(name);
         const pkg = pkgs.get(name)!;
         const cascadeTargets = pkg.bumpy?.cascadeTo;
