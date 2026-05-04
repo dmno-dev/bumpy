@@ -2,14 +2,17 @@ import * as readline from 'node:readline';
 import pc from 'picocolors';
 import type { BumpTypeWithNone } from '../types.ts';
 
-export type BumpLevel = BumpTypeWithNone | 'none';
+/** 'skip' = not included in bump file at all, 'none' = explicitly included with type none */
+export type BumpLevel = 'skip' | BumpTypeWithNone;
 
-const LEVELS: BumpLevel[] = ['none', 'patch', 'minor', 'major'];
+const LEVELS: BumpLevel[] = ['skip', 'none', 'patch', 'minor', 'major'];
 
 export interface BumpSelectItem {
   name: string;
   version: string;
   changed: boolean;
+  /** Pre-set level (e.g. from an existing bump file on the branch) */
+  initialLevel?: BumpLevel;
 }
 
 export interface BumpSelectResult {
@@ -33,7 +36,9 @@ export async function bumpSelectPrompt(items: BumpSelectItem[]): Promise<BumpSel
 
   // State
   let cursor = 0;
-  const levels: BumpLevel[] = items.map((item) => (item.changed ? 'patch' : 'none'));
+  const levels: BumpLevel[] = items.map((item) =>
+    item.initialLevel !== undefined ? item.initialLevel : item.changed ? 'patch' : 'skip',
+  );
 
   return new Promise<BumpSelectResult[] | symbol>((resolve) => {
     const { stdin, stdout } = process;
@@ -55,9 +60,9 @@ export async function bumpSelectPrompt(items: BumpSelectItem[]): Promise<BumpSel
 
       if (final) {
         lines.push(`${pc.green('◇')}  Bump levels selected`);
-        const selected = displayOrder.filter(({ idx }) => levels[idx] !== 'none');
+        const selected = displayOrder.filter(({ idx }) => levels[idx] !== 'skip');
         if (selected.length === 0) {
-          lines.push(`${pc.dim('│')}  ${pc.dim('(none)')}`);
+          lines.push(`${pc.dim('│')}  ${pc.dim('(none selected)')}`);
         } else {
           for (const { item, idx } of selected) {
             lines.push(`${pc.dim('│')}  ${pc.cyan(item.name)} ${pc.dim('→')} ${pc.bold(levels[idx])}`);
@@ -67,7 +72,7 @@ export async function bumpSelectPrompt(items: BumpSelectItem[]): Promise<BumpSel
       } else {
         lines.push(`${pc.cyan('◆')}  Select bump levels`);
         lines.push(`${pc.dim('│')}  ${pc.dim('↑/↓ navigate · ←/→ change level · enter to confirm')}`);
-        lines.push(`${pc.dim('│')}  ${pc.dim('0 clear current · x clear all · r reset all to defaults')}`);
+        lines.push(`${pc.dim('│')}  ${pc.dim('0 skip current · x skip all · r reset all to defaults')}`);
         lines.push(pc.dim('│'));
 
         let displayIdx = 0;
@@ -92,7 +97,7 @@ export async function bumpSelectPrompt(items: BumpSelectItem[]): Promise<BumpSel
         }
 
         lines.push(pc.dim('│'));
-        const selectedCount = levels.filter((l) => l !== 'none').length;
+        const selectedCount = levels.filter((l) => l !== 'skip').length;
         lines.push(`${pc.dim('│')}  ${pc.dim(`${selectedCount} package${selectedCount !== 1 ? 's' : ''} selected`)}`);
         lines.push(`${pc.dim('└')}`);
       }
@@ -103,6 +108,7 @@ export async function bumpSelectPrompt(items: BumpSelectItem[]): Promise<BumpSel
     }
 
     function cleanup() {
+      stdin.removeListener('keypress', onKeypress);
       rl.close();
       stdout.write('\x1B[?25h'); // Show cursor
       if (stdin.isTTY) stdin.setRawMode(false);
@@ -114,12 +120,15 @@ export async function bumpSelectPrompt(items: BumpSelectItem[]): Promise<BumpSel
       resolve(result);
     }
 
+    // Enable keypress events before setting up listeners
+    readline.emitKeypressEvents(stdin, rl);
+
     if (stdin.isTTY) stdin.setRawMode(true);
     stdin.resume();
 
     render();
 
-    stdin.on('keypress', (_str: string | undefined, key: readline.Key) => {
+    function onKeypress(_str: string | undefined, key: readline.Key) {
       if (!key) return;
 
       if (key.name === 'escape' || (key.ctrl && key.name === 'c')) {
@@ -138,7 +147,7 @@ export async function bumpSelectPrompt(items: BumpSelectItem[]): Promise<BumpSel
       if (key.name === 'return') {
         const results: BumpSelectResult[] = [];
         for (let i = 0; i < items.length; i++) {
-          if (levels[i] !== 'none') {
+          if (levels[i] !== 'skip') {
             results.push({ name: items[i]!.name, type: levels[i] as BumpTypeWithNone });
           }
         }
@@ -163,26 +172,26 @@ export async function bumpSelectPrompt(items: BumpSelectItem[]): Promise<BumpSel
           levels[entry.idx] = LEVELS[currentLevel - 1]!;
         }
       } else if (_str === '0' || key.name === 'backspace') {
-        // Set current item to none
+        // Set current item to skip (not included)
         const entry = displayOrder[cursor]!;
-        levels[entry.idx] = 'none';
+        levels[entry.idx] = 'skip';
       } else if (_str === 'r') {
-        // Reset all to defaults (changed=patch, unchanged=none)
+        // Reset all to defaults
         for (let i = 0; i < items.length; i++) {
-          levels[i] = items[i]!.changed ? 'patch' : 'none';
+          levels[i] =
+            items[i]!.initialLevel !== undefined ? items[i]!.initialLevel! : items[i]!.changed ? 'patch' : 'skip';
         }
       } else if (_str === 'x') {
-        // Clear all — set everything to none
+        // Clear all — set everything to skip
         for (let i = 0; i < items.length; i++) {
-          levels[i] = 'none';
+          levels[i] = 'skip';
         }
       }
 
       render();
-    });
+    }
 
-    // Enable keypress events
-    readline.emitKeypressEvents(stdin, rl);
+    stdin.on('keypress', onKeypress);
   });
 }
 
@@ -198,7 +207,8 @@ function formatRow(item: BumpSelectItem, level: BumpLevel, focused: boolean): st
 
 function formatLevel(level: BumpLevel, focused: boolean): string {
   if (!focused) {
-    if (level === 'none') return pc.dim('·');
+    if (level === 'skip') return pc.dim('·');
+    if (level === 'none') return pc.dim('none');
     if (level === 'major') return pc.red(level);
     if (level === 'minor') return pc.yellow(level);
     return pc.green(level);
@@ -207,6 +217,7 @@ function formatLevel(level: BumpLevel, focused: boolean): string {
   // Show the level selector when focused
   const parts = LEVELS.map((l) => {
     if (l === level) {
+      if (l === 'skip') return pc.bold(pc.dim('[skip]'));
       if (l === 'none') return pc.bold(pc.dim('[none]'));
       if (l === 'major') return pc.bold(pc.red(`[${l}]`));
       if (l === 'minor') return pc.bold(pc.yellow(`[${l}]`));

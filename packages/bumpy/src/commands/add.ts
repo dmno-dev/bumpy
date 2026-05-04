@@ -4,16 +4,15 @@ import { log } from '../utils/logger.ts';
 import { p, unwrap } from '../utils/clack.ts';
 import { ensureDir, exists } from '../utils/fs.ts';
 import { randomName, slugify } from '../utils/names.ts';
-import { writeBumpFile } from '../core/bump-file.ts';
+import { writeBumpFile, readBumpFiles, filterBranchBumpFiles } from '../core/bump-file.ts';
 import picomatch from 'picomatch';
-import { getBumpyDir, loadConfig, loadPackageConfig, matchGlob } from '../core/config.ts';
+import { getBumpyDir, loadConfig, loadPackageConfig } from '../core/config.ts';
 import { discoverPackages, discoverWorkspace } from '../core/workspace.ts';
 import { findChangedPackages } from './check.ts';
-import { DependencyGraph } from '../core/dep-graph.ts';
 import { getChangedFiles } from '../core/git.ts';
 import { bumpSelectPrompt } from '../prompts/bump-select.ts';
-import type { BumpSelectItem } from '../prompts/bump-select.ts';
-import type { BumpType, BumpTypeWithNone, BumpFileRelease, BumpFileReleaseCascade } from '../types.ts';
+import type { BumpSelectItem, BumpLevel } from '../prompts/bump-select.ts';
+import type { BumpTypeWithNone, BumpFileRelease } from '../types.ts';
 
 interface AddOptions {
   packages?: string; // "pkg-a:minor,pkg-b:patch"
@@ -22,12 +21,6 @@ interface AddOptions {
   empty?: boolean;
   none?: boolean;
 }
-
-const CASCADE_CHOICES: { label: string; value: BumpType }[] = [
-  { label: 'patch', value: 'patch' },
-  { label: 'minor', value: 'minor' },
-  { label: 'major', value: 'major' },
-];
 
 export async function addCommand(rootDir: string, opts: AddOptions): Promise<void> {
   const config = await loadConfig(rootDir);
@@ -86,8 +79,6 @@ export async function addCommand(rootDir: string, opts: AddOptions): Promise<voi
     p.intro(pc.bgCyan(pc.black(' bumpy add ')));
 
     const pkgs = await discoverPackages(rootDir, config);
-    const depGraph = new DependencyGraph(pkgs);
-
     if (pkgs.size === 0) {
       p.cancel('No managed packages found in this workspace.');
       process.exit(1);
@@ -117,12 +108,29 @@ export async function addCommand(rootDir: string, opts: AddOptions): Promise<voi
       }
     }
 
+    // Load existing bump files on this branch to avoid re-defaulting already-covered packages
+    const { bumpFiles: allBumpFiles } = await readBumpFiles(rootDir);
+    const { branchBumpFiles } = filterBranchBumpFiles(allBumpFiles, changedFiles, rootDir);
+    const alreadyCoveredPackages = new Map<string, BumpLevel>();
+    for (const bf of branchBumpFiles) {
+      for (const release of bf.releases) {
+        alreadyCoveredPackages.set(release.name, release.type === 'none' ? 'none' : release.type);
+      }
+    }
+
     // Build items for the bump select prompt
-    const bumpSelectItems: BumpSelectItem[] = [...pkgs.values()].map((pkg) => ({
-      name: pkg.name,
-      version: pkg.version,
-      changed: changedPackageNames.has(pkg.name),
-    }));
+    const bumpSelectItems: BumpSelectItem[] = [...pkgs.values()].map((pkg) => {
+      const item: BumpSelectItem = {
+        name: pkg.name,
+        version: pkg.version,
+        changed: changedPackageNames.has(pkg.name),
+      };
+      // If already covered by an existing bump file, default to skip
+      if (alreadyCoveredPackages.has(pkg.name)) {
+        item.initialLevel = 'skip';
+      }
+      return item;
+    });
 
     const bumpSelectResult = await bumpSelectPrompt(bumpSelectItems);
     if (typeof bumpSelectResult === 'symbol') {
@@ -136,62 +144,7 @@ export async function addCommand(rootDir: string, opts: AddOptions): Promise<voi
       process.exit(0);
     }
 
-    releases = [];
-    for (const { name, type: bumpType } of bumpSelections) {
-      const release: BumpFileRelease = { name, type: bumpType };
-
-      // Offer cascade options if the package has dependents
-      {
-        const dependents = depGraph.getDependents(name);
-        const pkg = pkgs.get(name)!;
-        const cascadeTargets = pkg.bumpy?.cascadeTo;
-
-        if (dependents.length > 0 || cascadeTargets) {
-          const wantCascade = unwrap(
-            await p.confirm({
-              message: `${pc.cyan(name)} has ${pc.bold(String(dependents.length))} dependents. Specify explicit cascades?`,
-              initialValue: false,
-            }),
-          );
-
-          if (wantCascade) {
-            const allTargets = new Set<string>();
-            for (const d of dependents) allTargets.add(d.name);
-            if (cascadeTargets) {
-              for (const pattern of Object.keys(cascadeTargets)) {
-                for (const [pName] of pkgs) {
-                  if (matchGlob(pName, pattern)) allTargets.add(pName);
-                }
-              }
-            }
-
-            const cascadeSelected = unwrap(
-              await p.multiselect<string>({
-                message: 'Which packages should cascade?',
-                options: [...allTargets].map((n) => ({ label: n, value: n })),
-                required: false,
-              }),
-            );
-
-            if (cascadeSelected.length > 0) {
-              const cascadeBump = unwrap(
-                await p.select<BumpType>({
-                  message: 'Cascade bump type',
-                  options: CASCADE_CHOICES,
-                }),
-              );
-              const cascade: Record<string, BumpType> = {};
-              for (const target of cascadeSelected) {
-                cascade[target] = cascadeBump;
-              }
-              (release as BumpFileReleaseCascade).cascade = cascade;
-            }
-          }
-        }
-      }
-
-      releases.push(release);
-    }
+    releases = bumpSelections.map(({ name, type }) => ({ name, type }) as BumpFileRelease);
 
     summary = unwrap(
       await p.text({
