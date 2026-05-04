@@ -309,7 +309,7 @@ export async function ciPlanCommand(rootDir: string): Promise<void> {
 
   // Set GitHub Actions outputs
   writeGitHubOutput('mode', output.mode);
-  writeGitHubOutput('packages', output.packageNames.join(','));
+  writeGitHubOutput('packages', JSON.stringify(output.packageNames));
   writeGitHubOutput('json', JSON.stringify(output));
 }
 

@@ -207,11 +207,11 @@ bumpy ci plan
 
 **GitHub Actions outputs** (set via `$GITHUB_OUTPUT`):
 
-| Output     | Description                           |
-| ---------- | ------------------------------------- |
-| `mode`     | `version-pr`, `publish`, or `nothing` |
-| `packages` | Comma-separated package names         |
-| `json`     | Full JSON output (for `fromJSON()`)   |
+| Output     | Description                                                   |
+| ---------- | ------------------------------------------------------------- |
+| `mode`     | `version-pr`, `publish`, or `nothing`                         |
+| `packages` | JSON array of package names (for `fromJSON()` + `contains()`) |
+| `json`     | Full JSON output (for `fromJSON()`)                           |
 
 When `ci plan` runs before `ci release` in the same workflow, the plan is cached so `ci release` can skip duplicate registry lookups. The cache is validated against the workspace (package names and versions must match) and deleted after use.
 
