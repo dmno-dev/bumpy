@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.7.1
+
+<sub>2026-05-04</sub>
+
+- [#69](https://github.com/dmno-dev/bumpy/pull/69) - Fix `bumpy add` interactive prompt: distinguish skip vs none, respect existing bump files, fix prompt rendering, remove cascade prompt
+- [#68](https://github.com/dmno-dev/bumpy/pull/68) - Skip default values (empty arrays, baseBranch: main, etc.) during changeset migration
+
 ## 1.7.0
 
 <sub>2026-04-30</sub>
