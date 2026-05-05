@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.8.0
+
+<sub>2026-05-05</sub>
+
+- [#71](https://github.com/dmno-dev/bumpy/pull/71) - Add `cascadeFrom` config and simplify cascade API
+  Added consumer-side `cascadeFrom` as the complement to `cascadeTo`, allowing packages to declare cascade relationships from either direction. Both now support an array shorthand with sensible defaults (trigger: "patch", bumpAs: "match") alongside the object form for custom rules.
+
 ## 1.7.1
 
 <sub>2026-05-04</sub>
