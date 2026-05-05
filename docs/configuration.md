@@ -100,6 +100,7 @@ Per-package settings can be defined in two places:
 | `changedFilePatterns` | `string[]`                 | Glob patterns for changed-file detection (replaces root setting, not merged) |
 | `dependencyBumpRules` | `object`                   | Per-package override for dependency propagation rules                        |
 | `cascadeTo`           | `object`                   | Explicit cascade targets — glob pattern mapped to `{ trigger, bumpAs }`      |
+| `cascadeFrom`         | `object`                   | Explicit cascade sources — glob pattern mapped to `{ trigger, bumpAs }`      |
 
 ### Custom commands and `allowCustomCommands`
 
@@ -153,7 +154,18 @@ Or in the package's `package.json` (requires `allowCustomCommands`):
 }
 ```
 
-### Example: cascade from core to plugins
+### Example: cascade from core to plugins (source-side)
+
+```json
+{
+  "name": "@myorg/core",
+  "bumpy": {
+    "cascadeTo": ["@myorg/plugin-*", "@myorg/cli"]
+  }
+}
+```
+
+Or with custom trigger/bumpAs:
 
 ```json
 {
@@ -162,6 +174,19 @@ Or in the package's `package.json` (requires `allowCustomCommands`):
     "cascadeTo": {
       "@myorg/plugin-*": { "trigger": "minor", "bumpAs": "patch" }
     }
+  }
+}
+```
+
+### Example: cascade from a bundled dependency (consumer-side)
+
+When a package bundles a devDependency into its published output, use `cascadeFrom` so bumps to the dependency also trigger a release of the consumer:
+
+```json
+{
+  "name": "@myorg/astro-integration",
+  "bumpy": {
+    "cascadeFrom": ["@myorg/vite-integration"]
   }
 }
 ```

@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 import { readJson, readJsonc, exists } from '../utils/fs.ts';
-import { type BumpyConfig, type PackageConfig, DEFAULT_CONFIG } from '../types.ts';
+import { type BumpyConfig, type PackageConfig, DEFAULT_CONFIG, normalizeCascadeConfig } from '../types.ts';
 
 const BUMPY_DIR = '.bumpy';
 const CONFIG_FILE = '_config.json';
@@ -134,7 +134,16 @@ function mergePackageConfig(...configs: PackageConfig[]): PackageConfig {
       result.dependencyBumpRules = { ...result.dependencyBumpRules, ...cfg.dependencyBumpRules };
     }
     if (cfg.cascadeTo) {
-      result.cascadeTo = { ...result.cascadeTo, ...cfg.cascadeTo };
+      result.cascadeTo = {
+        ...(result.cascadeTo ? normalizeCascadeConfig(result.cascadeTo) : {}),
+        ...normalizeCascadeConfig(cfg.cascadeTo),
+      };
+    }
+    if (cfg.cascadeFrom) {
+      result.cascadeFrom = {
+        ...(result.cascadeFrom ? normalizeCascadeConfig(result.cascadeFrom) : {}),
+        ...normalizeCascadeConfig(cfg.cascadeFrom),
+      };
     }
   }
   return result;

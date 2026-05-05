@@ -27,6 +27,31 @@ export interface DependencyBumpRule {
   bumpAs: BumpType | 'match';
 }
 
+export interface CascadeRule {
+  /** What bump level in the source triggers the cascade. Default: "patch" (any bump) */
+  trigger?: BumpType;
+  /** What bump to apply to the target. Default: "match" (same as the source bump level) */
+  bumpAs?: BumpType | 'match';
+}
+
+/** Input type for cascadeTo/cascadeFrom — array of names/globs, or object with per-entry rules */
+export type CascadeConfig = string[] | Record<string, CascadeRule>;
+
+/** Normalize CascadeConfig into a consistent Record form with defaults applied */
+export function normalizeCascadeConfig(config: CascadeConfig): Record<string, Required<CascadeRule>> {
+  const result: Record<string, Required<CascadeRule>> = {};
+  if (Array.isArray(config)) {
+    for (const name of config) {
+      result[name] = { trigger: 'patch', bumpAs: 'match' };
+    }
+  } else {
+    for (const [name, rule] of Object.entries(config)) {
+      result[name] = { trigger: rule.trigger ?? 'patch', bumpAs: rule.bumpAs ?? 'match' };
+    }
+  }
+  return result;
+}
+
 export const DEFAULT_BUMP_RULES: Record<string, DependencyBumpRule | false> = {
   dependencies: { trigger: 'patch', bumpAs: 'patch' },
   peerDependencies: { trigger: 'major', bumpAs: 'match' },
@@ -124,7 +149,8 @@ export interface PackageConfig {
   /** Glob patterns to filter which changed files count toward marking this package as changed */
   changedFilePatterns?: string[];
   dependencyBumpRules?: Partial<Record<DepType, DependencyBumpRule | false>>;
-  cascadeTo?: Record<string, DependencyBumpRule>;
+  cascadeTo?: CascadeConfig;
+  cascadeFrom?: CascadeConfig;
 }
 
 export const DEFAULT_PUBLISH_CONFIG: PublishConfig = {

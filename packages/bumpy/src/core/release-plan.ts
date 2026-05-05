@@ -6,6 +6,7 @@ import {
   type BumpType,
   type BumpFile,
   type DependencyBumpRule,
+  normalizeCascadeConfig,
   type DepType,
   type PlannedRelease,
   type ReleasePlan,
@@ -250,18 +251,15 @@ export function assembleReleasePlan(
 
         // C2: Apply source-side cascadeTo config
         const pkg = packages.get(pkgName);
-        const cascadeTo = pkg?.bumpy?.cascadeTo;
-        if (cascadeTo) {
-          for (const [pattern, rule] of Object.entries(cascadeTo)) {
-            if (!shouldTrigger(bump.type, rule.trigger)) continue;
-            const cascadeBump = rule.bumpAs === 'match' ? bump.type : rule.bumpAs;
-            for (const [targetName] of packages) {
-              if (!matchGlob(targetName, pattern)) continue;
-              if (applyBump(planned, targetName, cascadeBump, false, true, pkgName)) {
-                changed = true;
-              }
-            }
+        if (pkg?.bumpy?.cascadeTo) {
+          if (applyCascadeRules(normalizeCascadeConfig(pkg.bumpy.cascadeTo), pkgName, bump.type, packages, planned)) {
+            changed = true;
           }
+        }
+
+        // C2b: Apply consumer-side cascadeFrom config
+        if (applyCascadeFrom(pkgName, bump.type, packages, planned)) {
+          changed = true;
         }
 
         // C3: Apply dependency graph proactive propagation
@@ -278,7 +276,7 @@ export function assembleReleasePlan(
         }
       }
     } else {
-      // Even in out-of-range mode, still apply bump file cascades and cascadeTo
+      // Even in out-of-range mode, still apply bump file cascades, cascadeTo, and cascadeFrom
       for (const [pkgName, bump] of planned) {
         // Bump-file-level cascade overrides always apply
         const bfOverrides = cascadeOverrides.get(pkgName);
@@ -295,18 +293,15 @@ export function assembleReleasePlan(
 
         // Source-side cascadeTo config always applies
         const pkg = packages.get(pkgName);
-        const cascadeTo = pkg?.bumpy?.cascadeTo;
-        if (cascadeTo) {
-          for (const [pattern, rule] of Object.entries(cascadeTo)) {
-            if (!shouldTrigger(bump.type, rule.trigger)) continue;
-            const cascadeBump = rule.bumpAs === 'match' ? bump.type : rule.bumpAs;
-            for (const [targetName] of packages) {
-              if (!matchGlob(targetName, pattern)) continue;
-              if (applyBump(planned, targetName, cascadeBump, false, true, pkgName)) {
-                changed = true;
-              }
-            }
+        if (pkg?.bumpy?.cascadeTo) {
+          if (applyCascadeRules(normalizeCascadeConfig(pkg.bumpy.cascadeTo), pkgName, bump.type, packages, planned)) {
+            changed = true;
           }
+        }
+
+        // Consumer-side cascadeFrom config always applies
+        if (applyCascadeFrom(pkgName, bump.type, packages, planned)) {
+          changed = true;
         }
       }
     }
@@ -386,6 +381,59 @@ function applyBump(
     bumpSources: new Map([[sourcePackageName, type]]),
   });
   return true;
+}
+
+/**
+ * Apply normalized cascade rules (used for both cascadeTo and cascadeFrom).
+ * Keys in `rules` are target package name/glob patterns.
+ * Returns true if any bump was applied.
+ */
+function applyCascadeRules(
+  rules: Record<string, Required<{ trigger: BumpType; bumpAs: BumpType | 'match' }>>,
+  sourceName: string,
+  sourceType: BumpType,
+  packages: Map<string, WorkspacePackage>,
+  planned: Map<string, PlannedBump>,
+): boolean {
+  let changed = false;
+  for (const [pattern, rule] of Object.entries(rules)) {
+    if (!shouldTrigger(sourceType, rule.trigger)) continue;
+    const cascadeBump = rule.bumpAs === 'match' ? sourceType : rule.bumpAs;
+    for (const [targetName] of packages) {
+      if (!matchGlob(targetName, pattern)) continue;
+      if (applyBump(planned, targetName, cascadeBump, false, true, sourceName)) {
+        changed = true;
+      }
+    }
+  }
+  return changed;
+}
+
+/**
+ * Apply consumer-side cascadeFrom rules.
+ * Scans all packages for cascadeFrom entries where the pattern matches the bumped source.
+ * Returns true if any bump was applied.
+ */
+function applyCascadeFrom(
+  sourceName: string,
+  sourceType: BumpType,
+  packages: Map<string, WorkspacePackage>,
+  planned: Map<string, PlannedBump>,
+): boolean {
+  let changed = false;
+  for (const [targetName, targetPkg] of packages) {
+    if (!targetPkg.bumpy?.cascadeFrom) continue;
+    const rules = normalizeCascadeConfig(targetPkg.bumpy.cascadeFrom);
+    for (const [pattern, rule] of Object.entries(rules)) {
+      if (!matchGlob(sourceName, pattern)) continue;
+      if (!shouldTrigger(sourceType, rule.trigger)) continue;
+      const cascadeBump: BumpType = rule.bumpAs === 'match' ? sourceType : rule.bumpAs;
+      if (applyBump(planned, targetName, cascadeBump, false, true, sourceName)) {
+        changed = true;
+      }
+    }
+  }
+  return changed;
 }
 
 /** Check if a bump level meets the trigger threshold */

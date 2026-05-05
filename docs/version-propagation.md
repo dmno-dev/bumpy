@@ -140,24 +140,49 @@ For example, a private app might want devDeps to propagate because they're bundl
 2. `dependencyBumpRules[depType]` in root config
 3. Built-in defaults _(least specific)_
 
-#### `cascadeTo` config
+#### `cascadeTo` and `cascadeFrom` config
 
-Configured on the source package in `package.json["bumpy"]` to push bumps to other packages when it bumps. Keys are package names or glob patterns:
+These let you declare explicit cascade relationships between packages. Both always apply regardless of the `updateInternalDependencies` setting.
+
+- **`cascadeTo`** — configured on the _source_ package: "when I'm bumped, cascade to these packages"
+- **`cascadeFrom`** — configured on the _consumer_ package: "when these packages are bumped, cascade to me"
+
+The simplest form is an array of package names or glob patterns. By default, any bump in the source triggers a matching bump in the target (e.g., minor→minor, patch→patch):
+
+```json
+{
+  "bumpy": {
+    "cascadeTo": ["@myorg/plugin-*", "@myorg/cli"]
+  }
+}
+```
+
+```json
+{
+  "bumpy": {
+    "cascadeFrom": ["@myorg/vite-integration"]
+  }
+}
+```
+
+For more control, use the object form with per-entry rules. Both `trigger` (default: `"patch"`) and `bumpAs` (default: `"match"`) are optional:
 
 ```json
 {
   "bumpy": {
     "cascadeTo": {
-      "@myorg/plugin-*": { "trigger": "minor", "bumpAs": "patch" },
-      "@myorg/cli": { "trigger": "patch", "bumpAs": "patch" }
+      "@myorg/plugin-*": { "trigger": "minor", "bumpAs": "patch" }
     }
   }
 }
 ```
 
-Unlike dependency bump rules (configured on the _dependent_), `cascadeTo` is configured on the _source_ — useful for expressing "when I change, these downstream packages should also release."
+| Field     | Default   | Description                                                                |
+| --------- | --------- | -------------------------------------------------------------------------- |
+| `trigger` | `"patch"` | Minimum bump level in the source that activates the cascade                |
+| `bumpAs`  | `"match"` | What bump to apply to the target (`"match"` mirrors the source bump level) |
 
-`cascadeTo` is checked separately from dependency bump rules and can add bumps beyond what the rules produce. All keys support glob patterns (`*`, `**`).
+`cascadeFrom` is useful when a package bundles a dependency at build time (e.g., a devDependency that ends up in the published output) and should be re-released whenever that dependency changes.
 
 ### Per-bump-file overrides
 
