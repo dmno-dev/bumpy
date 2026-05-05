@@ -774,6 +774,174 @@ describe('assembleReleasePlan', () => {
     });
   });
 
+  // ---- cascadeFrom ----
+
+  describe('cascadeFrom', () => {
+    test('cascadeFrom array shorthand (bundled devDep scenario)', () => {
+      const packages = new Map([
+        ['@scope/vite-integration', makePkg('@scope/vite-integration', '1.1.0')],
+        [
+          '@scope/astro-integration',
+          makePkg('@scope/astro-integration', '1.0.0', {
+            devDependencies: { '@scope/vite-integration': 'workspace:*' },
+            bumpy: {
+              cascadeFrom: ['@scope/vite-integration'],
+            },
+          }),
+        ],
+        // package without cascadeFrom should NOT be affected
+        [
+          '@scope/other-pkg',
+          makePkg('@scope/other-pkg', '1.0.0', {
+            devDependencies: { '@scope/vite-integration': 'workspace:*' },
+          }),
+        ],
+      ]);
+
+      const bumpFiles: BumpFile[] = [
+        { id: 'cs1', releases: [{ name: '@scope/vite-integration', type: 'patch' }], summary: 'Fix' },
+      ];
+
+      const graph = new DependencyGraph(packages);
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig());
+
+      expect(plan.releases).toHaveLength(2);
+      const astroRelease = plan.releases.find((r) => r.name === '@scope/astro-integration')!;
+      expect(astroRelease).toBeDefined();
+      expect(astroRelease.type).toBe('patch'); // match (default) → patch
+      expect(astroRelease.isCascadeBump).toBe(true);
+      expect(astroRelease.bumpSources).toEqual([
+        { name: '@scope/vite-integration', newVersion: '1.1.1', bumpType: 'patch' },
+      ]);
+      expect(plan.releases.find((r) => r.name === '@scope/other-pkg')).toBeUndefined();
+    });
+
+    test('cascadeFrom array shorthand defaults to match (minor → minor)', () => {
+      const packages = new Map([
+        ['core', makePkg('core', '1.0.0')],
+        [
+          'wrapper',
+          makePkg('wrapper', '1.0.0', {
+            bumpy: {
+              cascadeFrom: ['core'],
+            },
+          }),
+        ],
+      ]);
+
+      const bumpFiles: BumpFile[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'minor' }], summary: 'Feature' }];
+
+      const graph = new DependencyGraph(packages);
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig());
+
+      expect(plan.releases).toHaveLength(2);
+      expect(plan.releases.find((r) => r.name === 'wrapper')!.type).toBe('minor');
+    });
+
+    test('cascadeFrom respects trigger threshold', () => {
+      const packages = new Map([
+        ['core', makePkg('core', '1.0.0')],
+        [
+          'wrapper',
+          makePkg('wrapper', '1.0.0', {
+            bumpy: {
+              cascadeFrom: {
+                core: { trigger: 'minor', bumpAs: 'patch' },
+              },
+            },
+          }),
+        ],
+      ]);
+
+      // Patch bump — below minor trigger threshold
+      const bumpFiles: BumpFile[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'patch' }], summary: 'Fix' }];
+
+      const graph = new DependencyGraph(packages);
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig());
+
+      expect(plan.releases).toHaveLength(1);
+      expect(plan.releases[0]!.name).toBe('core');
+    });
+
+    test('cascadeFrom with glob pattern', () => {
+      const packages = new Map([
+        ['@scope/core', makePkg('@scope/core', '1.0.0')],
+        ['@scope/utils', makePkg('@scope/utils', '1.0.0')],
+        [
+          'meta-pkg',
+          makePkg('meta-pkg', '1.0.0', {
+            bumpy: {
+              cascadeFrom: {
+                '@scope/*': { trigger: 'patch', bumpAs: 'patch' },
+              },
+            },
+          }),
+        ],
+      ]);
+
+      const bumpFiles: BumpFile[] = [{ id: 'cs1', releases: [{ name: '@scope/core', type: 'patch' }], summary: 'Fix' }];
+
+      const graph = new DependencyGraph(packages);
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig());
+
+      expect(plan.releases).toHaveLength(2);
+      expect(plan.releases.find((r) => r.name === 'meta-pkg')).toBeDefined();
+    });
+
+    test('cascadeFrom works with proactive propagation mode too', () => {
+      const packages = new Map([
+        ['core', makePkg('core', '1.0.0')],
+        [
+          'wrapper',
+          makePkg('wrapper', '1.0.0', {
+            bumpy: {
+              cascadeFrom: ['core'],
+            },
+          }),
+        ],
+      ]);
+
+      const bumpFiles: BumpFile[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'minor' }], summary: 'Feature' }];
+
+      const graph = new DependencyGraph(packages);
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig({ updateInternalDependencies: 'patch' }));
+
+      expect(plan.releases).toHaveLength(2);
+      expect(plan.releases.find((r) => r.name === 'wrapper')!.type).toBe('minor');
+    });
+
+    test('cascadeFrom and cascadeTo can coexist', () => {
+      const packages = new Map([
+        [
+          'core',
+          makePkg('core', '1.0.0', {
+            bumpy: {
+              cascadeTo: ['plugin-a'],
+            },
+          }),
+        ],
+        ['plugin-a', makePkg('plugin-a', '1.0.0')],
+        [
+          'plugin-b',
+          makePkg('plugin-b', '1.0.0', {
+            bumpy: {
+              cascadeFrom: ['core'],
+            },
+          }),
+        ],
+      ]);
+
+      const bumpFiles: BumpFile[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'patch' }], summary: 'Fix' }];
+
+      const graph = new DependencyGraph(packages);
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig());
+
+      expect(plan.releases).toHaveLength(3);
+      expect(plan.releases.find((r) => r.name === 'plugin-a')).toBeDefined();
+      expect(plan.releases.find((r) => r.name === 'plugin-b')).toBeDefined();
+    });
+  });
+
   // ---- none edge cases ----
 
   describe('none edge cases', () => {

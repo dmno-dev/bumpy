@@ -222,6 +222,33 @@
       "type": "string",
       "enum": ["major", "minor", "patch"]
     },
+    "cascadeConfig": {
+      "oneOf": [
+        {
+          "type": "array",
+          "description": "List of package names/glob patterns (defaults: trigger \"patch\", bumpAs \"match\")",
+          "items": { "type": "string" }
+        },
+        {
+          "type": "object",
+          "description": "Package name/glob patterns mapped to cascade rules",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "trigger": {
+                "$ref": "#/$defs/bumpType",
+                "description": "Minimum bump level that triggers the cascade (default: \"patch\")"
+              },
+              "bumpAs": {
+                "description": "What level to bump the target (default: \"match\")",
+                "oneOf": [{ "$ref": "#/$defs/bumpType" }, { "type": "string", "const": "match" }]
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
     "dependencyBumpRule": {
       "oneOf": [
         {
@@ -302,23 +329,12 @@
           "additionalProperties": false
         },
         "cascadeTo": {
-          "type": "object",
-          "description": "Explicit cascade targets — glob pattern mapped to { trigger, bumpAs }",
-          "additionalProperties": {
-            "type": "object",
-            "properties": {
-              "trigger": {
-                "$ref": "#/$defs/bumpType",
-                "description": "Minimum bump level that triggers the cascade"
-              },
-              "bumpAs": {
-                "description": "What level to bump the target",
-                "oneOf": [{ "$ref": "#/$defs/bumpType" }, { "type": "string", "const": "match" }]
-              }
-            },
-            "required": ["trigger", "bumpAs"],
-            "additionalProperties": false
-          }
+          "description": "Explicit cascade targets — when this package is bumped, cascade to matching packages.",
+          "$ref": "#/$defs/cascadeConfig"
+        },
+        "cascadeFrom": {
+          "description": "Explicit cascade sources — when a matching package is bumped, cascade the bump to this package.",
+          "$ref": "#/$defs/cascadeConfig"
         }
       },
       "additionalProperties": false
