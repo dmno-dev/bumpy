@@ -177,6 +177,32 @@ export async function generateChangelogEntry(
   return formatter({ release, bumpFiles, date, target });
 }
 
+/**
+ * Extract the changelog entry for a specific version from a CHANGELOG.md string.
+ * Returns the content between the `## {version}` heading and the next `## ` heading
+ * (or end of file), with the heading and date sub-heading stripped.
+ */
+export function extractChangelogEntry(changelogContent: string, version: string): string | null {
+  // Match ## {version} heading (with or without leading whitespace)
+  const versionHeadingRe = new RegExp(`^## ${version.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'm');
+  const match = versionHeadingRe.exec(changelogContent);
+  if (!match || match.index === undefined) return null;
+
+  // Find the next ## heading after this one
+  const afterHeading = match.index + match[0].length;
+  const nextHeading = changelogContent.indexOf('\n## ', afterHeading);
+  const entryContent =
+    nextHeading === -1 ? changelogContent.slice(afterHeading) : changelogContent.slice(afterHeading, nextHeading);
+
+  // Strip the date sub-heading (<sub>...</sub> or _..._) and trim
+  return (
+    entryContent
+      .replace(/^\s*<sub>.+<\/sub>\s*/m, '')
+      .replace(/^\s*_.+_\s*/m, '')
+      .trim() || null
+  );
+}
+
 /** Prepend a new entry to an existing CHANGELOG.md content */
 export function prependToChangelog(existingContent: string, newEntry: string): string {
   // Try to find the first ## heading and insert before it

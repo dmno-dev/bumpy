@@ -16,6 +16,8 @@ interface PublishCommandOptions {
   noPush?: boolean;
   /** Filter to specific packages by name/glob (comma-separated) */
   filter?: string;
+  /** Recovered bump files from a version commit — used for GitHub release body generation */
+  recoveredBumpFiles?: import('../types.ts').BumpFile[];
 }
 
 /**
@@ -50,8 +52,18 @@ export async function publishCommand(rootDir: string, opts: PublishCommandOption
   }
 
   // Build a synthetic release plan from unpublished packages
+  // Use recovered bump files (from version commit) when available so that
+  // GitHub release bodies can be generated with the formatter
+  const recoveredBumpFiles = opts.recoveredBumpFiles || [];
+  if (recoveredBumpFiles.length > 0) {
+    for (const release of toPublish) {
+      release.bumpFiles = recoveredBumpFiles
+        .filter((bf) => bf.releases.some((r) => r.name === release.name))
+        .map((bf) => bf.id);
+    }
+  }
   const releasePlan: ReleasePlan = {
-    bumpFiles: [],
+    bumpFiles: recoveredBumpFiles,
     releases: toPublish,
     warnings: [],
   };
