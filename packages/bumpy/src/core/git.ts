@@ -56,6 +56,8 @@ export function withGitToken(cwd: string | undefined, fn: () => void): void {
   const originalUrl = tryRunArgs(['git', 'remote', 'get-url', 'origin'], { cwd });
   const authedUrl = originalUrl ? originalUrl.replace(/^https:\/\//, `https://x-access-token:${token}@`) : null;
 
+  const redact = (s: string) => s.replaceAll(token, '***');
+
   try {
     if (savedHeader) {
       runArgs(['git', 'config', '--local', '--unset-all', extraHeaderKey], { cwd });
@@ -66,21 +68,19 @@ export function withGitToken(cwd: string | undefined, fn: () => void): void {
     if (authedUrl) {
       runArgs(['git', 'remote', 'set-url', 'origin', authedUrl], { cwd });
     }
-    try {
-      fn();
-    } catch (err) {
-      // Redact token from error messages to prevent leakage in CI logs
-      const msg = err instanceof Error ? err.message : String(err);
-      throw new Error(msg.replaceAll(token, '***'));
-    }
+    fn();
+  } catch (err) {
+    // Redact token from all error messages to prevent leakage in CI logs
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(redact(msg));
   } finally {
-    // Restore original remote URL
+    // Always restore original remote URL first to avoid leaving token in config
     if (originalUrl) {
-      runArgs(['git', 'remote', 'set-url', 'origin', originalUrl], { cwd });
+      tryRunArgs(['git', 'remote', 'set-url', 'origin', originalUrl], { cwd });
     }
     // Restore previous credential config
     if (savedHeader) {
-      runArgs(['git', 'config', '--local', extraHeaderKey, savedHeader], { cwd });
+      tryRunArgs(['git', 'config', '--local', extraHeaderKey, savedHeader], { cwd });
     }
     for (const entry of savedIncludeIfs) {
       tryRunArgs(['git', 'config', '--local', entry.key, entry.value], { cwd });
