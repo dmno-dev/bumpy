@@ -201,6 +201,31 @@ export async function writeBumpFile(
   return filePath;
 }
 
+/**
+ * Recover bump files that were deleted in the HEAD commit (version commit).
+ * Used during the publish-only flow (after version PR merge) to provide
+ * bump file context for GitHub release body generation.
+ */
+export function recoverDeletedBumpFiles(rootDir: string): BumpFile[] {
+  // Find .bumpy/*.md files deleted in the HEAD commit
+  const deleted = tryRunArgs(['git', 'diff', '--diff-filter=D', '--name-only', 'HEAD~1', 'HEAD', '--', '.bumpy/*.md'], {
+    cwd: rootDir,
+  });
+  if (!deleted) return [];
+
+  const bumpFiles: BumpFile[] = [];
+  for (const filePath of deleted.split('\n').filter(Boolean)) {
+    if (filePath.endsWith('README.md')) continue;
+    // Read the file content from the parent commit
+    const content = tryRunArgs(['git', 'show', `HEAD~1:${filePath}`], { cwd: rootDir });
+    if (!content) continue;
+    const id = filePath.replace(/^\.bumpy\//, '').replace(/\.md$/, '');
+    const { bumpFile } = parseBumpFile(content, id);
+    if (bumpFile) bumpFiles.push(bumpFile);
+  }
+  return bumpFiles;
+}
+
 /** Delete consumed bump files */
 export async function deleteBumpFiles(rootDir: string, ids: string[]): Promise<void> {
   const dir = getBumpyDir(rootDir);

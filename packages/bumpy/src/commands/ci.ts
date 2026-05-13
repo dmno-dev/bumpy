@@ -3,8 +3,8 @@ import { loadConfig } from '../core/config.ts';
 import { findChangedPackages } from './check.ts';
 import { discoverWorkspace } from '../core/workspace.ts';
 import { DependencyGraph } from '../core/dep-graph.ts';
-import { readBumpFiles, filterBranchBumpFiles } from '../core/bump-file.ts';
-import { getChangedFiles } from '../core/git.ts';
+import { readBumpFiles, filterBranchBumpFiles, recoverDeletedBumpFiles } from '../core/bump-file.ts';
+import { getChangedFiles, withGitToken } from '../core/git.ts';
 import { assembleReleasePlan } from '../core/release-plan.ts';
 import { runArgs, runArgsAsync, tryRunArgs } from '../utils/shell.ts';
 import { randomName } from '../utils/names.ts';
@@ -396,8 +396,11 @@ export async function ciReleaseCommand(rootDir: string, opts: ReleaseOptions): P
     // No bump files — check if there are unpublished packages to publish
     // (this handles the case where a version PR was just merged)
     log.info('No pending bump files — checking for unpublished packages...');
+    // Recover bump files deleted in the version commit so the formatter
+    // can generate proper GitHub release bodies
+    const recoveredBumpFiles = recoverDeletedBumpFiles(rootDir);
     const { publishCommand } = await import('./publish.ts');
-    await publishCommand(rootDir, { tag: opts.tag });
+    await publishCommand(rootDir, { tag: opts.tag, recoveredBumpFiles });
     return;
   }
 
@@ -456,75 +459,19 @@ function pushWithToken(rootDir: string, branch: string, config: BumpyConfig): vo
     throw new Error(`Refusing to force-push to "${branch}" — this looks like a base branch, not a version PR branch`);
   }
 
-  const token = process.env.BUMPY_GH_TOKEN;
-  const repo = process.env.GITHUB_REPOSITORY; // e.g. "owner/repo"
-  const server = process.env.GITHUB_SERVER_URL || 'https://github.com';
-
-  if (token && repo) {
-    const authedUrl = `${server.replace('://', `://x-access-token:${token}@`)}/${repo}.git`;
-    const originalUrl = tryRunArgs(['git', 'remote', 'get-url', 'origin'], { cwd: rootDir });
-
-    // `actions/checkout@v6` persists the default GITHUB_TOKEN in two ways:
-    //   1. Direct http.<server>/.extraheader config
-    //   2. includeIf.gitdir entries pointing to credential config files
-    //      that also sets http.<server>/.extraheader
-    // Both must be cleared for our custom token to be used.
-    const extraHeaderKey = `http.${server}/.extraheader`;
-    const savedHeader = tryRunArgs(['git', 'config', '--local', extraHeaderKey], { cwd: rootDir });
-
-    // Collect includeIf entries that point to credential config files
-    // git config --get-regexp outputs keys in lowercase
-    const includeIfRaw = tryRunArgs(['git', 'config', '--local', '--get-regexp', '^includeif\\.gitdir:'], {
-      cwd: rootDir,
-    });
-    const savedIncludeIfs: Array<{ key: string; value: string }> = [];
-    if (includeIfRaw) {
-      for (const line of includeIfRaw.split('\n').filter(Boolean)) {
-        const spaceIdx = line.indexOf(' ');
-        if (spaceIdx > 0) {
-          savedIncludeIfs.push({ key: line.slice(0, spaceIdx), value: line.slice(spaceIdx + 1) });
-        }
-      }
-    }
-
-    try {
-      if (savedHeader) {
-        runArgs(['git', 'config', '--local', '--unset-all', extraHeaderKey], { cwd: rootDir });
-      }
-      for (const entry of savedIncludeIfs) {
-        tryRunArgs(['git', 'config', '--local', '--unset', entry.key], { cwd: rootDir });
-      }
-      runArgs(['git', 'remote', 'set-url', 'origin', authedUrl], { cwd: rootDir });
-      try {
-        // --no-verify skips pre-push hooks (e.g. bumpy check) which would fail
-        // on the version branch since bump files are consumed during versioning
-        runArgs(['git', 'push', '-u', 'origin', branch, '--force', '--no-verify'], { cwd: rootDir });
-      } catch (err) {
-        // Redact token from error messages to prevent leakage in CI logs
-        const msg = err instanceof Error ? err.message : String(err);
-        throw new Error(msg.replaceAll(token, '***'));
-      }
-    } finally {
-      // Restore original URL, extraheader, and includeIf entries
-      if (originalUrl) {
-        runArgs(['git', 'remote', 'set-url', 'origin', originalUrl], { cwd: rootDir });
-      }
-      if (savedHeader) {
-        runArgs(['git', 'config', '--local', extraHeaderKey, savedHeader], { cwd: rootDir });
-      }
-      for (const entry of savedIncludeIfs) {
-        tryRunArgs(['git', 'config', '--local', entry.key, entry.value], { cwd: rootDir });
-      }
-    }
-    log.dim('  Pushed with custom token — PR workflows will be triggered');
-  } else {
+  withGitToken(rootDir, () => {
+    // --no-verify skips pre-push hooks (e.g. bumpy check) which would fail
+    // on the version branch since bump files are consumed during versioning
     runArgs(['git', 'push', '-u', 'origin', branch, '--force', '--no-verify'], { cwd: rootDir });
-    if (!token && repo) {
-      // Only warn on GitHub Actions — other CI providers don't have this limitation
-      log.warn(
-        'BUMPY_GH_TOKEN is not set — PR checks will not trigger automatically.\n' + '  Run `bumpy ci setup` for help.',
-      );
-    }
+  });
+
+  if (process.env.BUMPY_GH_TOKEN && process.env.GITHUB_REPOSITORY) {
+    log.dim('  Pushed with custom token — PR workflows will be triggered');
+  } else if (!process.env.BUMPY_GH_TOKEN && process.env.GITHUB_REPOSITORY) {
+    // Only warn on GitHub Actions — other CI providers don't have this limitation
+    log.warn(
+      'BUMPY_GH_TOKEN is not set — PR checks will not trigger automatically.\n' + '  Run `bumpy ci setup` for help.',
+    );
   }
 }
 
