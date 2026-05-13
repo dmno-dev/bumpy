@@ -20,12 +20,9 @@ export function pushWithTags(opts?: { cwd?: string }): void {
  * Temporarily configure git credentials using BUMPY_GH_TOKEN (or GH_TOKEN),
  * execute a callback, then restore the original config.
  *
- * Uses the http.extraheader approach (same as actions/checkout) rather than
- * embedding tokens in the remote URL, because extraheader takes priority over
- * any credential manager that may be installed on the runner.
- *
- * Also clears any existing credential config set by actions/checkout (extraheader
- * or includeIf entries) so our token is used instead of the default GITHUB_TOKEN.
+ * Embeds the token in the remote URL and clears any existing credential config
+ * set by actions/checkout (extraheader or includeIf entries) so our token is
+ * used instead of the default GITHUB_TOKEN.
  */
 export function withGitToken(cwd: string | undefined, fn: () => void): void {
   const token = process.env.BUMPY_GH_TOKEN || process.env.GH_TOKEN;
@@ -37,8 +34,6 @@ export function withGitToken(cwd: string | undefined, fn: () => void): void {
   }
 
   const extraHeaderKey = `http.${server}/.extraheader`;
-  // Authorization: bearer works for both GitHub PATs and GITHUB_TOKEN
-  const authHeader = `Authorization: bearer ${token}`;
 
   // Save and clear any existing credential config set by actions/checkout:
   //   1. Direct http.<server>/.extraheader in local config
@@ -56,6 +51,11 @@ export function withGitToken(cwd: string | undefined, fn: () => void): void {
     }
   }
 
+  // Rewrite the remote URL to embed the token — this is the most reliable
+  // auth method as it bypasses all credential helpers and extraheader issues
+  const originalUrl = tryRunArgs(['git', 'remote', 'get-url', 'origin'], { cwd });
+  const authedUrl = originalUrl ? originalUrl.replace(/^https:\/\//, `https://x-access-token:${token}@`) : null;
+
   try {
     if (savedHeader) {
       runArgs(['git', 'config', '--local', '--unset-all', extraHeaderKey], { cwd });
@@ -63,8 +63,9 @@ export function withGitToken(cwd: string | undefined, fn: () => void): void {
     for (const entry of savedIncludeIfs) {
       tryRunArgs(['git', 'config', '--local', '--unset', entry.key], { cwd });
     }
-    // Set our token as the Authorization header — this takes priority over credential managers
-    runArgs(['git', 'config', '--local', extraHeaderKey, authHeader], { cwd });
+    if (authedUrl) {
+      runArgs(['git', 'remote', 'set-url', 'origin', authedUrl], { cwd });
+    }
     try {
       fn();
     } catch (err) {
@@ -73,8 +74,10 @@ export function withGitToken(cwd: string | undefined, fn: () => void): void {
       throw new Error(msg.replaceAll(token, '***'));
     }
   } finally {
-    // Remove our injected header
-    tryRunArgs(['git', 'config', '--local', '--unset-all', extraHeaderKey], { cwd });
+    // Restore original remote URL
+    if (originalUrl) {
+      runArgs(['git', 'remote', 'set-url', 'origin', originalUrl], { cwd });
+    }
     // Restore previous credential config
     if (savedHeader) {
       runArgs(['git', 'config', '--local', extraHeaderKey, savedHeader], { cwd });
