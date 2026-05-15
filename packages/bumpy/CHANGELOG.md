@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.8.1
+
+<sub>2026-05-15</sub>
+
+- [#74](https://github.com/dmno-dev/bumpy/pull/74) - Fix git push auth in CI by using remote URL token embedding instead of extraheader approach, which doesn't work with actions/checkout@v6
+- [#73](https://github.com/dmno-dev/bumpy/pull/73) - Fix git tag push auth using http.extraheader; recover deleted bump files for GitHub release notes in post-merge publish flow
+
 ## 1.8.0
 
 <sub>2026-05-05</sub>
