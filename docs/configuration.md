@@ -68,6 +68,7 @@ The `publish` object controls how packages are packed and published:
 | `publishManager`     | `string`               | `"npm"`  | Which tool runs `publish` (npm supports OIDC/provenance)              |
 | `publishArgs`        | `string[]`             | `[]`     | Extra args passed to publish (e.g., `["--provenance"]`)               |
 | `protocolResolution` | `"pack" \| "in-place"` | `"pack"` | How `workspace:` and `catalog:` protocols are resolved                |
+| `npmStaged`          | `boolean`              | `false`  | Use `npm stage publish` — requires 2FA approval on npmjs.com          |
 
 ### Version PR config
 
