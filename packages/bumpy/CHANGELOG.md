@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.9.1
+
+<sub>2026-05-23</sub>
+
+- [#79](https://github.com/dmno-dev/bumpy/pull/79) - Fix npm staged publishing docs URL in README
+
 ## 1.9.0
 
 <sub>2026-05-23</sub>
