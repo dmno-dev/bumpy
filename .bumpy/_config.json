@@ -8,5 +8,8 @@
   // only thank external contributors
   "changelog": ["github", { "internalAuthors": ["theoephraim", "philmillman"] }],
   // narrows down which files are considered changes
-  "changedFilePatterns": ["src/**", "skills/**", "package.json", "tsconfig.json", "tsdown.config.ts"]
+  "changedFilePatterns": ["src/**", "skills/**", "package.json", "tsconfig.json", "tsdown.config.ts"],
+  "publish": {
+    "npmStaged": true
+  }
 }
