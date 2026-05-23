@@ -72,6 +72,8 @@ jobs:
 
 **Trusted publishing setup:** Configure each package on [npmjs.com](https://docs.npmjs.com/trusted-publishers/) → Package Settings → Trusted Publishers → GitHub Actions. Specify your org/user, repo, and the workflow filename (`bumpy-release.yml`).
 
+> **Staged publishing:** For an extra layer of security, enable `npmStaged` in your [publish config](./configuration.md#staged-publishing). This uses `npm stage publish` to stage packages on npmjs.com, requiring manual 2FA approval before they go live — even if your CI credentials are compromised, nothing gets published without maintainer approval.
+
 ### Token-based auth (NPM_TOKEN)
 
 If you can't use trusted publishing, use an npm access token instead:

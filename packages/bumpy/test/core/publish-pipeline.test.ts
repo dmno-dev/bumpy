@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { writeJson, readJson, ensureDir, writeText } from '../../src/utils/fs.ts';
 import { makePkg, gitInDir } from '../helpers.ts';
-import { installShellMock, uninstallShellMock } from '../helpers-shell-mock.ts';
+import { installShellMock, uninstallShellMock, addMockRule, getCallsMatching } from '../helpers-shell-mock.ts';
 import { DependencyGraph } from '../../src/core/dep-graph.ts';
 import { publishPackages } from '../../src/core/publish-pipeline.ts';
 import type { WorkspacePackage, ReleasePlan, BumpyConfig } from '../../src/types.ts';
@@ -13,6 +13,11 @@ import { DEFAULT_CONFIG, DEFAULT_PUBLISH_CONFIG } from '../../src/types.ts';
 const IN_PLACE_CONFIG: BumpyConfig = {
   ...DEFAULT_CONFIG,
   publish: { ...DEFAULT_PUBLISH_CONFIG, protocolResolution: 'in-place' },
+};
+
+const STAGED_CONFIG: BumpyConfig = {
+  ...DEFAULT_CONFIG,
+  publish: { ...DEFAULT_PUBLISH_CONFIG, npmStaged: true, protocolResolution: 'in-place' },
 };
 
 describe('publishPackages', () => {
@@ -265,5 +270,44 @@ describe('publishPackages', () => {
     const deps = appPkg.dependencies as Record<string, string>;
     expect(deps.react).toBe('^19.0.0');
     expect(deps.jest).toBe('^30.0.0');
+  });
+
+  test('staged publishing uses npm stage publish', async () => {
+    const pkgDir = resolve(tmpDir, 'packages/staged-pkg');
+    await ensureDir(pkgDir);
+    await writeJson(resolve(pkgDir, 'package.json'), { name: 'staged-pkg', version: '1.0.0' });
+    await setupGitRepo();
+
+    // Mock npm --version (for staged validation) and the publish command
+    addMockRule({ match: 'npm --version', response: '11.5.1' });
+    addMockRule({ match: 'npm stage publish', response: '' });
+
+    const packages = new Map<string, WorkspacePackage>();
+    packages.set('staged-pkg', makePkg('staged-pkg', '1.0.0', { dir: pkgDir }));
+
+    const depGraph = new DependencyGraph(packages);
+    const plan: ReleasePlan = {
+      bumpFiles: [],
+      warnings: [],
+      releases: [
+        {
+          name: 'staged-pkg',
+          type: 'patch',
+          oldVersion: '1.0.0',
+          newVersion: '1.0.1',
+          bumpFiles: [],
+          isDependencyBump: false,
+          isCascadeBump: false,
+          isGroupBump: false,
+          bumpSources: [],
+        },
+      ],
+    };
+
+    const result = await publishPackages(plan, packages, depGraph, STAGED_CONFIG, tmpDir, {});
+
+    expect(result.published).toHaveLength(1);
+    const publishCalls = getCallsMatching('npm stage publish');
+    expect(publishCalls.length).toBeGreaterThanOrEqual(1);
   });
 });

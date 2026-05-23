@@ -132,6 +132,24 @@ export async function publishPackages(
   // Set up npm authentication before publishing
   setupNpmAuth(rootDir, publishConfig.publishManager);
 
+  // Validate staged publishing config
+  if (publishConfig.npmStaged) {
+    if (publishConfig.publishManager !== 'npm') {
+      log.warn('Staged publishing is only supported with publishManager "npm" — ignoring staged option');
+    } else {
+      const npmVersion = tryRunArgs(['npm', '--version']);
+      if (npmVersion) {
+        const [major, minor, patch] = npmVersion.split('.').map(Number);
+        const meetsMinVersion = major! > 11 || (major === 11 && (minor! > 5 || (minor === 5 && patch! >= 1)));
+        if (!meetsMinVersion) {
+          log.warn(`Staged publishing requires npm >= 11.5.1 (found ${npmVersion})`);
+        } else {
+          log.dim(`Staged publishing enabled — packages will require 2FA approval on npmjs.com`);
+        }
+      }
+    }
+  }
+
   // Resolve "auto" pack manager to detected PM
   const packManager = publishConfig.packManager === 'auto' ? detectedPm : publishConfig.packManager;
 
@@ -302,7 +320,9 @@ function buildPublishArgs(
   const args: string[] = [];
 
   // Base command
-  if (publishManager === 'yarn') {
+  if (config.publish.npmStaged && publishManager === 'npm') {
+    args.push('npm', 'stage', 'publish');
+  } else if (publishManager === 'yarn') {
     args.push('yarn', 'npm', 'publish');
   } else {
     args.push(publishManager, 'publish');

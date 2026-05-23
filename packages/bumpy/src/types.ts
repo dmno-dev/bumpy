@@ -79,6 +79,13 @@ export interface PublishConfig {
    * Default: "pack"
    */
   protocolResolution: 'pack' | 'in-place' | 'none';
+  /**
+   * Use npm staged publishing (`npm stage publish`).
+   * Stages the publish on npmjs.com, requiring manual 2FA approval before going live.
+   * Only works with publishManager "npm" and requires npm >= 11.5.1.
+   * Default: false
+   */
+  npmStaged: boolean;
 }
 
 export interface BumpyConfig {
@@ -157,6 +164,7 @@ export const DEFAULT_PUBLISH_CONFIG: PublishConfig = {
   packManager: 'auto',
   publishManager: 'npm',
   publishArgs: [],
+  npmStaged: false,
   protocolResolution: 'pack',
 };
 

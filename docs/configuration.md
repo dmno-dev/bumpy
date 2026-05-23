@@ -68,6 +68,25 @@ The `publish` object controls how packages are packed and published:
 | `publishManager`     | `string`               | `"npm"`  | Which tool runs `publish` (npm supports OIDC/provenance)              |
 | `publishArgs`        | `string[]`             | `[]`     | Extra args passed to publish (e.g., `["--provenance"]`)               |
 | `protocolResolution` | `"pack" \| "in-place"` | `"pack"` | How `workspace:` and `catalog:` protocols are resolved                |
+| `npmStaged`          | `boolean`              | `false`  | Use `npm stage publish` — requires 2FA approval on npmjs.com          |
+
+#### Staged publishing
+
+When `npmStaged` is enabled, bumpy uses `npm stage publish` instead of `npm publish`. This stages packages on npmjs.com, where they must be manually approved with 2FA before going live. This adds an extra security gate to your release process — even if CI credentials are compromised, packages can't be published without maintainer approval.
+
+Requirements:
+
+- `publishManager` must be `"npm"` (the default)
+- npm >= 11.5.1
+- [npm trusted publishing (OIDC)](https://docs.npmjs.com/trusted-publishers/) configured for your repo
+
+```json
+{
+  "publish": {
+    "npmStaged": true
+  }
+}
+```
 
 ### Version PR config
 
@@ -209,6 +228,9 @@ See the [Changelog Formatters](./changelog-formatters.md) docs for full details 
   "privatePackages": { "version": true, "tag": false },
   "dependencyBumpRules": {
     "peerDependencies": { "trigger": "minor", "bumpAs": "match" }
+  },
+  "publish": {
+    "npmStaged": true
   },
   "aggregateRelease": true,
   "packages": {
