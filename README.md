@@ -50,7 +50,7 @@ Fixed locale fallback logic in utils.
 
 - **All package managers** - npm, pnpm, yarn, and bun workspaces
 - **Smart dependency propagation** - configurable rules for how version bumps cascade through your dependency graph (see [version propagation docs](https://github.com/dmno-dev/bumpy/blob/main/docs/version-propagation.md))
-- **Pack-then-publish** - by default, publishes to npm (resolving `workspace:` and `catalog:` protocols, with OIDC/provenance support). Supports [npm staged publishing](https://docs.npmjs.com/about-staged-publishes) for 2FA-gated releases. Per-package custom publish commands let you target anything - VSCode extensions, Docker images, JSR, private registries, etc.
+- **Pack-then-publish** - by default, publishes to npm (resolving `workspace:` and `catalog:` protocols, with OIDC/provenance support). Supports [npm staged publishing](https://docs.npmjs.com/staged-publishing) for 2FA-gated releases. Per-package custom publish commands let you target anything - VSCode extensions, Docker images, JSR, private registries, etc.
 - **Flexible package management** - include/exclude any package individually via per-package config, glob patterns, or `privatePackages` setting
 - **Non-interactive CLI** - `bumpy add` works fully non-interactively for CI/CD and AI-assisted development
 - **Aggregated GitHub releases** - optionally create a single consolidated release instead of one per package
