@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.9.0
+
+<sub>2026-05-23</sub>
+
+- [#76](https://github.com/dmno-dev/bumpy/pull/76) - Add `npmStaged` publish config option for npm staged publishing (`npm stage publish`), which stages packages on npmjs.com requiring manual 2FA approval before going live.
+
 ## 1.8.1
 
 <sub>2026-05-15</sub>
