@@ -66,8 +66,9 @@ The `publish` object controls how packages are packed and published:
 | -------------------- | ---------------------- | -------- | --------------------------------------------------------------------- |
 | `packManager`        | `string`               | `"auto"` | Which package manager packs tarballs (`"auto"` detects from lockfile) |
 | `publishManager`     | `string`               | `"npm"`  | Which tool runs `publish` (npm supports OIDC/provenance)              |
-| `publishArgs`        | `string[]`             | `[]`     | Extra args passed to publish (e.g., `["--provenance"]`)               |
+| `publishArgs`        | `string[]`             | `[]`     | Extra args passed to the publish command                              |
 | `protocolResolution` | `"pack" \| "in-place"` | `"pack"` | How `workspace:` and `catalog:` protocols are resolved                |
+| `provenance`         | `boolean`              | `false`  | Attach provenance attestation via npm (requires OIDC CI environment)  |
 | `npmStaged`          | `boolean`              | `false`  | Use `npm stage publish` — requires 2FA approval on npmjs.com          |
 
 #### Staged publishing
@@ -77,8 +78,8 @@ When `npmStaged` is enabled, bumpy uses `npm stage publish` instead of `npm publ
 Requirements:
 
 - `publishManager` must be `"npm"` (the default)
-- npm >= 11.5.1
-- [npm trusted publishing (OIDC)](https://docs.npmjs.com/trusted-publishers/) configured for your repo
+- npm >= 11.15.0
+- The package must already exist on the npm registry (first publish cannot be staged)
 
 ```json
 {

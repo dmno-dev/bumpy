@@ -279,7 +279,7 @@ describe('publishPackages', () => {
     await setupGitRepo();
 
     // Mock npm --version (for staged validation) and the publish command
-    addMockRule({ match: 'npm --version', response: '11.5.1' });
+    addMockRule({ match: 'npm --version', response: '11.15.0' });
     addMockRule({ match: 'npm stage publish', response: '' });
 
     const packages = new Map<string, WorkspacePackage>();
