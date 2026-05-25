@@ -35,7 +35,7 @@ jobs:
 
 ### Trusted publishing (OIDC ��� recommended)
 
-No `NPM_TOKEN` secret needed. Requires npm >= 11.5.1.
+No `NPM_TOKEN` secret needed. Requires npm >= 11.5.1 (>= 11.15.0 for staged publishing).
 
 ```yaml
 # .github/workflows/bumpy-release.yml

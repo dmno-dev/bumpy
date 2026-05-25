@@ -80,9 +80,16 @@ export interface PublishConfig {
    */
   protocolResolution: 'pack' | 'in-place' | 'none';
   /**
+   * Attach provenance attestation when publishing via npm.
+   * Requires a supported CI environment with OIDC (GitHub Actions, GitLab CI, etc.).
+   * Only works with publishManager "npm".
+   * Default: false
+   */
+  provenance: boolean;
+  /**
    * Use npm staged publishing (`npm stage publish`).
    * Stages the publish on npmjs.com, requiring manual 2FA approval before going live.
-   * Only works with publishManager "npm" and requires npm >= 11.5.1.
+   * Only works with publishManager "npm" and requires npm >= 11.15.0.
    * Default: false
    */
   npmStaged: boolean;
@@ -164,6 +171,7 @@ export const DEFAULT_PUBLISH_CONFIG: PublishConfig = {
   packManager: 'auto',
   publishManager: 'npm',
   publishArgs: [],
+  provenance: false,
   npmStaged: false,
   protocolResolution: 'pack',
 };

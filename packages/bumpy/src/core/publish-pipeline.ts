@@ -43,6 +43,20 @@ const OIDC_NPM_UPGRADE_HINTS: Record<string, string> = {
   circleci: 'Use a Node.js image with npm >= 11.5.1 or run `sudo npm install -g npm@latest`',
 };
 
+/** Compare semver triples: returns true if version >= minimum */
+function npmVersionAtLeast(version: string, minimum: [number, number, number]): boolean {
+  const [major, minor, patch] = version.split('.').map(Number);
+  const [minMajor, minMinor, minPatch] = minimum;
+  if (major! > minMajor) return true;
+  if (major! < minMajor) return false;
+  if (minor! > minMinor) return true;
+  if (minor! < minMinor) return false;
+  return patch! >= minPatch;
+}
+
+const MIN_NPM_OIDC: [number, number, number] = [11, 5, 1];
+const MIN_NPM_STAGED: [number, number, number] = [11, 15, 0];
+
 /**
  * Set up npm authentication for publishing.
  *
@@ -73,10 +87,8 @@ function setupNpmAuth(rootDir: string, publishManager: string): void {
   if (oidcProvider) {
     const npmVersion = tryRunArgs(['npm', '--version']);
     if (npmVersion) {
-      const [major, minor, patch] = npmVersion.split('.').map(Number);
-      const meetsMinVersion = major! > 11 || (major === 11 && (minor! > 5 || (minor === 5 && patch! >= 1)));
-      if (!meetsMinVersion) {
-        log.warn(`  npm ${npmVersion} detected — trusted publishing (OIDC) requires npm >= 11.5.1`);
+      if (!npmVersionAtLeast(npmVersion, MIN_NPM_OIDC)) {
+        log.warn(`  npm ${npmVersion} detected — trusted publishing (OIDC) requires npm >= ${MIN_NPM_OIDC.join('.')}`);
         log.warn(`  ${OIDC_NPM_UPGRADE_HINTS[oidcProvider]}`);
       } else {
         log.dim(`  OIDC detected (${oidcProvider}) — npm ${npmVersion} will authenticate via trusted publishing`);
@@ -132,22 +144,26 @@ export async function publishPackages(
   // Set up npm authentication before publishing
   setupNpmAuth(rootDir, publishConfig.publishManager);
 
-  // Validate staged publishing config
+  // Validate npm-specific publish options
+  if (publishConfig.provenance && publishConfig.publishManager !== 'npm') {
+    throw new Error('provenance requires publishManager "npm" — provenance attestation is an npm-specific feature');
+  }
+
   if (publishConfig.npmStaged) {
     if (publishConfig.publishManager !== 'npm') {
-      log.warn('Staged publishing is only supported with publishManager "npm" — ignoring staged option');
-    } else {
-      const npmVersion = tryRunArgs(['npm', '--version']);
-      if (npmVersion) {
-        const [major, minor, patch] = npmVersion.split('.').map(Number);
-        const meetsMinVersion = major! > 11 || (major === 11 && (minor! > 5 || (minor === 5 && patch! >= 1)));
-        if (!meetsMinVersion) {
-          log.warn(`Staged publishing requires npm >= 11.5.1 (found ${npmVersion})`);
-        } else {
-          log.dim(`Staged publishing enabled — packages will require 2FA approval on npmjs.com`);
-        }
-      }
+      throw new Error('npmStaged requires publishManager "npm" — staged publishing is an npm-specific feature');
     }
+    const npmVersion = tryRunArgs(['npm', '--version']);
+    if (!npmVersion) {
+      throw new Error(`npmStaged is enabled but npm was not found — install npm >= ${MIN_NPM_STAGED.join('.')}`);
+    }
+    if (!npmVersionAtLeast(npmVersion, MIN_NPM_STAGED)) {
+      throw new Error(
+        `npmStaged requires npm >= ${MIN_NPM_STAGED.join('.')} (found ${npmVersion})\n` +
+          `  Upgrade npm: npm install -g npm@latest`,
+      );
+    }
+    log.dim(`Staged publishing enabled — packages will require 2FA approval on npmjs.com`);
   }
 
   // Resolve "auto" pack manager to detected PM
@@ -341,7 +357,12 @@ function buildPublishArgs(
   // Dist tag
   if (opts.tag) args.push('--tag', opts.tag);
 
-  // Extra user-configured args (e.g., --provenance)
+  // Provenance attestation
+  if (config.publish.provenance && publishManager === 'npm') {
+    args.push('--provenance');
+  }
+
+  // Extra user-configured args
   if (config.publish.publishArgs.length > 0) {
     args.push(...config.publish.publishArgs);
   }
