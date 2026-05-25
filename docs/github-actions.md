@@ -33,9 +33,9 @@ jobs:
 
 ## Release workflow
 
-### Trusted publishing (OIDC ��� recommended)
+### Trusted publishing (OIDC — recommended)
 
-No `NPM_TOKEN` secret needed. Requires npm >= 11.5.1 (>= 11.15.0 for staged publishing).
+No `NPM_TOKEN` secret needed. Node LTS ships with an older npm, so an upgrade step is needed for OIDC (>= 11.5.1) and staged publishing (>= 11.15.0).
 
 ```yaml
 # .github/workflows/bumpy-release.yml
@@ -54,7 +54,7 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-      id-token: write # required for npm trusted publishing (OIDC)
+      id-token: write # required for npm trusted publishing (OIDC) and provenance
     steps:
       - uses: actions/checkout@v6
         with:
@@ -63,6 +63,7 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: lts/*
+      - run: npm install -g npm@latest # Node LTS ships with npm 10.x; OIDC/staged needs >= 11.x
       - run: bun install
       - run: bunx @varlock/bumpy ci release
         env:
@@ -72,7 +73,18 @@ jobs:
 
 **Trusted publishing setup:** Configure each package on [npmjs.com](https://docs.npmjs.com/trusted-publishers/) → Package Settings → Trusted Publishers → GitHub Actions. Specify your org/user, repo, and the workflow filename (`bumpy-release.yml`).
 
-> **Staged publishing:** For an extra layer of security, enable `npmStaged` in your [publish config](./configuration.md#staged-publishing). This uses `npm stage publish` to stage packages on npmjs.com, requiring manual 2FA approval before they go live — even if your CI credentials are compromised, nothing gets published without maintainer approval.
+**Recommended publish config** — enable provenance and staged publishing for maximum security:
+
+```json
+{
+  "publish": {
+    "provenance": true,
+    "npmStaged": true
+  }
+}
+```
+
+> **Staged publishing:** With `npmStaged` enabled, bumpy uses `npm stage publish` to stage packages on npmjs.com, requiring manual 2FA approval before they go live — even if your CI credentials are compromised, nothing gets published without maintainer approval. See the [staged publishing docs](./configuration.md#staged-publishing) for details.
 
 ### Token-based auth (NPM_TOKEN)
 
@@ -146,6 +158,7 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: lts/*
+      - run: npm install -g npm@latest
       - run: bun install
 
       - id: plan
