@@ -121,7 +121,7 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-      id-token: write # required for npm trusted publishing (OIDC)
+      id-token: write # required for npm trusted publishing (OIDC) and provenance
     steps:
       - uses: actions/checkout@v6
         with:
@@ -129,7 +129,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - uses: actions/setup-node@v6
         with:
-          node-version: lts/*
+          node-version: latest # Node LTS ships with npm 10.x; latest includes npm >= 11.x for OIDC/staged
       - run: bun install
       - run: bunx @varlock/bumpy ci release
         env:
@@ -137,7 +137,7 @@ jobs:
           BUMPY_GH_TOKEN: ${{ secrets.BUMPY_GH_TOKEN }} # PAT so that version PR triggers CI
 ```
 
-> **Trusted publishing setup:** Configure each package on [npmjs.com](https://docs.npmjs.com/trusted-publishers/) → Package Settings → Trusted Publishers → GitHub Actions. Specify your org/user, repo, and the workflow filename (`bumpy-release.yml`). No `NPM_TOKEN` secret needed. Requires npm >= 11.5.1 - bumpy will warn if your version is too old.
+> **Trusted publishing setup:** Configure each package on [npmjs.com](https://docs.npmjs.com/trusted-publishers/) → Package Settings → Trusted Publishers → GitHub Actions. Specify your org/user, repo, and the workflow filename (`bumpy-release.yml`). No `NPM_TOKEN` secret needed. Enable `provenance` and `npmStaged` in your [publish config](https://github.com/dmno-dev/bumpy/blob/main/docs/configuration.md#staged-publishing) for maximum security.
 
 <details>
 <summary>Alternative: token-based auth (NPM_TOKEN secret)</summary>
