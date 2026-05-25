@@ -129,8 +129,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - uses: actions/setup-node@v6
         with:
-          node-version: lts/*
-      - run: npm install -g npm@latest # Node LTS ships with npm 10.x; OIDC/staged needs >= 11.x
+          node-version: latest # Node LTS ships with npm 10.x; latest includes npm >= 11.x for OIDC/staged
       - run: bun install
       - run: bunx @varlock/bumpy ci release
         env:

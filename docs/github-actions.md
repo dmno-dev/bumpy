@@ -35,7 +35,7 @@ jobs:
 
 ### Trusted publishing (OIDC — recommended)
 
-No `NPM_TOKEN` secret needed. Node LTS ships with an older npm, so an upgrade step is needed for OIDC (>= 11.5.1) and staged publishing (>= 11.15.0).
+No `NPM_TOKEN` secret needed. Use `node-version: latest` (not `lts/*`) since Node LTS ships with npm 10.x, while OIDC requires >= 11.5.1 and staged publishing requires >= 11.15.0.
 
 ```yaml
 # .github/workflows/bumpy-release.yml
@@ -62,8 +62,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - uses: actions/setup-node@v6
         with:
-          node-version: lts/*
-      - run: npm install -g npm@latest # Node LTS ships with npm 10.x; OIDC/staged needs >= 11.x
+          node-version: latest # Node LTS ships with npm 10.x; latest includes npm >= 11.x for OIDC/staged
       - run: bun install
       - run: bunx @varlock/bumpy ci release
         env:
@@ -157,8 +156,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - uses: actions/setup-node@v6
         with:
-          node-version: lts/*
-      - run: npm install -g npm@latest
+          node-version: latest
       - run: bun install
 
       - id: plan

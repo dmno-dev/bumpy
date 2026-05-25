@@ -19,11 +19,10 @@ jobs:
         with:
           fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
-      # Node.js (npm) is needed for npm publish
+      # Node.js (npm) is needed for npm publish — latest includes npm >= 11.x for OIDC/staged
       - uses: actions/setup-node@v6
         with:
-          node-version: lts/*
-      - run: npm install -g npm@latest # npm >= 11.15.0 needed for staged publishing
+          node-version: latest
       - run: bun install
 
       # --- You wont need this part ---
