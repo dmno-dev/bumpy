@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.9.2
+
+<sub>2026-05-25</sub>
+
+- [#81](https://github.com/dmno-dev/bumpy/pull/81) - Add provenance config option, fix staged publishing minimum npm version (>= 11.15.0), and throw errors for invalid publish config
+
 ## 1.9.1
 
 <sub>2026-05-23</sub>
