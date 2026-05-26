@@ -4,10 +4,27 @@ import { discoverWorkspace } from '../core/workspace.ts';
 import { DependencyGraph } from '../core/dep-graph.ts';
 import { pushWithTags, hasUncommittedChanges } from '../core/git.ts';
 import { publishPackages } from '../core/publish-pipeline.ts';
-import { createIndividualReleases, createAggregateRelease } from '../core/github-release.ts';
+import {
+  createIndividualReleases,
+  findReleaseByTag,
+  createDraftRelease,
+  updateReleaseBody,
+  updateReleaseBodyStatus,
+  finalizeRelease,
+  finalizeSupersededDrafts,
+  composeReleaseBody,
+  buildPublishUrl,
+  isGhAvailable,
+  getHeadSha,
+  generateReleaseBody,
+  buildReleaseBody,
+  type ReleaseMetadata,
+  type PublishTargetState,
+} from '../core/github-release.ts';
 import { loadFormatter } from '../core/changelog.ts';
 import { detectWorkspaces } from '../utils/package-manager.ts';
 import { CI_PLAN_CACHE_PATH } from './ci.ts';
+import { tryRunArgs } from '../utils/shell.ts';
 import type { BumpyConfig, PackageConfig, ReleasePlan, PlannedRelease, WorkspacePackage } from '../types.ts';
 
 interface PublishCommandOptions {
@@ -18,6 +35,8 @@ interface PublishCommandOptions {
   filter?: string;
   /** Recovered bump files from a version commit — used for GitHub release body generation */
   recoveredBumpFiles?: import('../types.ts').BumpFile[];
+  /** Package names to exclude from publishing (e.g., packages with pending non-none bumps) */
+  excludePackages?: Set<string>;
 }
 
 /**
@@ -38,6 +57,17 @@ export async function publishCommand(rootDir: string, opts: PublishCommandOption
   // Find packages that need publishing — use cached plan from `ci plan` if available,
   // otherwise query the registry
   let toPublish = await findUnpublishedWithCache(rootDir, packages, config);
+
+  // Exclude packages with pending non-none bumps (they'll be superseded by the next version PR)
+  if (opts.excludePackages && opts.excludePackages.size > 0) {
+    const excluded = toPublish.filter((r) => opts.excludePackages!.has(r.name));
+    if (excluded.length > 0) {
+      for (const r of excluded) {
+        log.dim(`  Skipping ${r.name}@${r.newVersion} — pending bump will supersede this version`);
+      }
+      toPublish = toPublish.filter((r) => !opts.excludePackages!.has(r.name));
+    }
+  }
 
   // Apply filter
   if (opts.filter) {
@@ -78,6 +108,135 @@ export async function publishCommand(rootDir: string, opts: PublishCommandOption
   }
   console.log();
 
+  // Load the changelog formatter for release note generation
+  const formatter = config.changelog !== false ? await loadFormatter(config.changelog, rootDir) : undefined;
+  const ghAvailable = isGhAvailable();
+
+  // Determine publish targets for each package
+  const publishTargetsByPkg = new Map<string, string[]>();
+  for (const release of toPublish) {
+    const pkg = packages.get(release.name)!;
+    const pkgConfig = pkg.bumpy || {};
+    const targets: string[] = [];
+    if (pkgConfig.publishCommand) {
+      targets.push('custom');
+    } else if (!pkgConfig.skipNpmPublish) {
+      targets.push('npm');
+    }
+    publishTargetsByPkg.set(release.name, targets);
+  }
+
+  // For each package, set up draft releases (if gh is available and not dry run)
+  const releaseMetadataByPkg = new Map<
+    string,
+    { tag: string; metadata: ReleaseMetadata; existingBody: string | null }
+  >();
+
+  if (ghAvailable && !opts.dryRun) {
+    for (const release of toPublish) {
+      const tag = `${release.name}@${release.newVersion}`;
+      const targets = publishTargetsByPkg.get(release.name) || [];
+      if (targets.length === 0) continue;
+
+      const existing = await findReleaseByTag(tag, rootDir);
+
+      if (existing && existing.metadata) {
+        // Existing draft/release with metadata — use it for retry logic
+        log.dim(`  Found existing release for ${tag} (${existing.isDraft ? 'draft' : 'published'})`);
+        releaseMetadataByPkg.set(release.name, {
+          tag,
+          metadata: existing.metadata,
+          existingBody: existing.body,
+        });
+      } else if (existing && !existing.metadata) {
+        // Existing release without bumpy metadata — leave it alone (user-created or old-style)
+        log.dim(`  Found existing release for ${tag} without bumpy metadata — skipping draft management`);
+      } else {
+        // No existing release — finalize any stale drafts for older versions, then create a new draft
+        await finalizeSupersededDrafts(release.name, release.newVersion, rootDir);
+
+        const changelogContent = formatter
+          ? await generateReleaseBody(release, releasePlan.bumpFiles, formatter)
+          : buildReleaseBody(release, releasePlan.bumpFiles);
+
+        const initialTargets: Record<string, PublishTargetState> = {};
+        for (const t of targets) {
+          initialTargets[t] = { status: 'pending' };
+        }
+        const metadata: ReleaseMetadata = {
+          version: release.newVersion,
+          targets: initialTargets,
+        };
+        const body = composeReleaseBody(changelogContent, metadata);
+        const title = `${release.name} v${release.newVersion}`;
+        const headSha = getHeadSha(rootDir);
+
+        try {
+          await createDraftRelease(tag, title, body, rootDir, headSha || undefined);
+          log.dim(`  Created draft release: ${title}`);
+          releaseMetadataByPkg.set(release.name, { tag, metadata, existingBody: body });
+        } catch (err) {
+          log.warn(`  Failed to create draft release for ${tag}: ${err instanceof Error ? err.message : err}`);
+        }
+      }
+    }
+
+    // Handle tag movement: if no targets succeeded yet, move tag to HEAD
+    for (const release of toPublish) {
+      const info = releaseMetadataByPkg.get(release.name);
+      if (!info) continue;
+
+      const anySucceeded = Object.values(info.metadata.targets).some((t) => t.status === 'success');
+      if (!anySucceeded) {
+        // Safe to move tag to HEAD
+        const tag = info.tag;
+        const headSha = getHeadSha(rootDir);
+        const tagSha = tryRunArgs(['git', 'rev-parse', tag], { cwd: rootDir });
+        if (headSha && tagSha && headSha !== tagSha) {
+          // Count commits between tag and HEAD
+          const count = tryRunArgs(['git', 'rev-list', '--count', `${tag}..HEAD`], { cwd: rootDir });
+          log.dim(`  Moving version tag ${tag} to HEAD (includes ${count} commit(s) since versioning)`);
+          tryRunArgs(['git', 'tag', '-f', tag], { cwd: rootDir });
+        }
+      } else {
+        // Tag stays — log divergence if any
+        const tag = info.tag;
+        const headSha = getHeadSha(rootDir);
+        const tagSha = tryRunArgs(['git', 'rev-parse', tag], { cwd: rootDir });
+        if (headSha && tagSha && headSha !== tagSha) {
+          const count = tryRunArgs(['git', 'rev-list', '--count', `${tag}..HEAD`], { cwd: rootDir });
+          log.warn(
+            `  HEAD is ${count} commit(s) ahead of version tag ${tag} — some targets already published from tagged commit`,
+          );
+        }
+      }
+    }
+  }
+
+  // Filter out packages where all targets already succeeded (from previous runs)
+  const alreadyPublished: string[] = [];
+  for (const release of toPublish) {
+    const info = releaseMetadataByPkg.get(release.name);
+    if (!info) continue;
+    const targets = publishTargetsByPkg.get(release.name) || [];
+    const allDone = targets.every((t) => info.metadata.targets[t]?.status === 'success');
+    if (allDone) {
+      alreadyPublished.push(release.name);
+    }
+  }
+  if (alreadyPublished.length > 0) {
+    for (const name of alreadyPublished) {
+      log.dim(`  Skipping ${name} — all targets already published (per draft release metadata)`);
+    }
+    toPublish = toPublish.filter((r) => !alreadyPublished.includes(r.name));
+    releasePlan.releases = toPublish;
+  }
+
+  if (toPublish.length === 0) {
+    log.info('All packages already published successfully.');
+    return;
+  }
+
   const result = await publishPackages(
     releasePlan,
     packages,
@@ -99,6 +258,59 @@ export async function publishCommand(rootDir: string, opts: PublishCommandOption
   if (result.skipped.length > 0) {
     log.dim(`Skipped ${result.skipped.length}: ${result.skipped.map((s) => s.name).join(', ')}`);
   }
+
+  // Update draft release metadata with results
+  if (ghAvailable && !opts.dryRun) {
+    for (const release of releasePlan.releases) {
+      const info = releaseMetadataByPkg.get(release.name);
+      if (!info) continue;
+
+      const targets = publishTargetsByPkg.get(release.name) || [];
+      const published = result.published.find((p) => p.name === release.name);
+      const failed = result.failed.find((f) => f.name === release.name);
+
+      let changed = false;
+      for (const targetName of targets) {
+        // Skip already-succeeded targets
+        if (info.metadata.targets[targetName]?.status === 'success') continue;
+
+        if (published) {
+          info.metadata.targets[targetName] = {
+            status: 'success',
+            publishedAt: new Date().toISOString(),
+            url: buildPublishUrl(release.name, release.newVersion, targetName),
+          };
+          changed = true;
+        } else if (failed) {
+          info.metadata.targets[targetName] = {
+            status: 'failed',
+            error: failed.error,
+            lastAttempt: new Date().toISOString(),
+          };
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        try {
+          const updatedBody = info.existingBody
+            ? updateReleaseBodyStatus(info.existingBody, info.metadata)
+            : composeReleaseBody('', info.metadata);
+          await updateReleaseBody(info.tag, updatedBody, rootDir);
+
+          // Finalize if all targets succeeded
+          const allSucceeded = Object.values(info.metadata.targets).every((t) => t.status === 'success');
+          if (allSucceeded) {
+            await finalizeRelease(info.tag, rootDir);
+            log.dim(`  Finalized release: ${info.tag}`);
+          }
+        } catch (err) {
+          log.warn(`  Failed to update release for ${info.tag}: ${err instanceof Error ? err.message : err}`);
+        }
+      }
+    }
+  }
+
   if (result.failed.length > 0) {
     log.error(`Failed ${result.failed.length}: ${result.failed.map((f) => `${f.name} (${f.error})`).join(', ')}`);
     process.exit(1);
@@ -115,28 +327,13 @@ export async function publishCommand(rootDir: string, opts: PublishCommandOption
     }
   }
 
-  // GitHub releases
-  if (result.published.length > 0) {
+  // Fallback: if gh isn't available, we can't use draft releases — use legacy individual releases
+  if (!ghAvailable && result.published.length > 0) {
     const publishedReleases = releasePlan.releases.filter((r) => result.published.some((p) => p.name === r.name));
-    const aggConfig = config.aggregateRelease;
-    const isAggregate = aggConfig === true || (typeof aggConfig === 'object' && aggConfig.enabled);
-    const aggTitle = typeof aggConfig === 'object' ? aggConfig.title : undefined;
-
-    // Load the changelog formatter so GitHub release bodies match CHANGELOG.md
-    const formatter = config.changelog !== false ? await loadFormatter(config.changelog, rootDir) : undefined;
-
-    if (isAggregate) {
-      await createAggregateRelease(publishedReleases, releasePlan.bumpFiles, rootDir, {
-        dryRun: opts.dryRun,
-        title: aggTitle,
-        formatter,
-      });
-    } else {
-      await createIndividualReleases(publishedReleases, releasePlan.bumpFiles, rootDir, {
-        dryRun: opts.dryRun,
-        formatter,
-      });
-    }
+    await createIndividualReleases(publishedReleases, releasePlan.bumpFiles, rootDir, {
+      dryRun: opts.dryRun,
+      formatter,
+    });
   }
 }
 

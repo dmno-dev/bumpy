@@ -18,7 +18,6 @@ Bumpy is configured via `.bumpy/_config.json`, created by `bumpy init`. Per-pack
 | `privatePackages`            | `{ version, tag }`                     | `{ version: false, tag: false }` | Whether to version and/or create git tags for private packages                                   |
 | `updateInternalDependencies` | `"patch" \| "minor" \| "out-of-range"` | `"out-of-range"`                 | When to update internal dependency version ranges                                                |
 | `dependencyBumpRules`        | `object`                               | see below                        | Controls how bumps propagate through dependency types                                            |
-| `aggregateRelease`           | `boolean \| { enabled, title }`        | `false`                          | Create a single GitHub release instead of one per package                                        |
 | `versionCommitMessage`       | `string`                               | —                                | Customize the version commit message (see below)                                                 |
 | `changedFilePatterns`        | `string[]`                             | `["**"]`                         | Glob patterns to filter which changed files count toward marking a package as changed            |
 | `publish`                    | `object`                               | see below                        | Publishing pipeline config                                                                       |
@@ -235,7 +234,6 @@ See the [Changelog Formatters](./changelog-formatters.md) docs for full details 
     "provenance": true,
     "npmStaged": true
   },
-  "aggregateRelease": true,
   "packages": {
     "@myorg/vscode-extension": {
       "publishCommand": "vsce publish",

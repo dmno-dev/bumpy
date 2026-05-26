@@ -1,12 +1,11 @@
 import { tryRunArgs, runArgsAsync } from '../utils/shell.ts';
 import { log } from '../utils/logger.ts';
-import { listTags } from './git.ts';
 import { generateChangelogEntry } from './changelog.ts';
 import type { ChangelogFormatter } from './changelog.ts';
 import type { PlannedRelease, BumpFile } from '../types.ts';
 
 /** Get the current HEAD commit SHA */
-function getHeadSha(rootDir: string): string | null {
+export function getHeadSha(rootDir: string): string | null {
   return tryRunArgs(['git', 'rev-parse', 'HEAD'], { cwd: rootDir });
 }
 
@@ -56,52 +55,8 @@ export async function createIndividualReleases(
   }
 }
 
-/** Create a single aggregated GitHub release for all published packages */
-export async function createAggregateRelease(
-  releases: PlannedRelease[],
-  bumpFiles: BumpFile[],
-  rootDir: string,
-  opts: GitHubReleaseOptions = {},
-): Promise<void> {
-  if (!isGhAvailable()) {
-    log.dim('  gh CLI not found — skipping GitHub release');
-    return;
-  }
-
-  if (releases.length === 0) return;
-
-  const date = new Date().toISOString().split('T')[0];
-  const existing = listTags(`release-${date}*`, { cwd: rootDir });
-  const { tag, title } = resolveAggregateTagAndTitle(date!, existing, opts.title);
-  const body = opts.formatter
-    ? await generateAggregateBody(releases, bumpFiles, opts.formatter)
-    : buildAggregateBody(releases, bumpFiles);
-
-  if (opts.dryRun) {
-    log.dim(`  Would create aggregate GitHub release: ${title}`);
-    log.dim(`  Tag: ${tag}`);
-    return;
-  }
-
-  try {
-    // Create the tag if it doesn't exist
-    tryRunArgs(['git', 'tag', tag], { cwd: rootDir });
-
-    // Use --target so gh can create the tag on the remote if it wasn't pushed yet
-    const headSha = getHeadSha(rootDir);
-    const args = ['gh', 'release', 'create', tag, '--title', title, '--notes', body];
-    if (headSha) args.push('--target', headSha);
-    await runArgsAsync(args, {
-      cwd: rootDir,
-    });
-    log.success(`Created aggregate GitHub release: ${title}`);
-  } catch (err) {
-    log.warn(`Failed to create aggregate GitHub release: ${err instanceof Error ? err.message : err}`);
-  }
-}
-
 /** Generate a release body for a single package using the changelog formatter */
-async function generateReleaseBody(
+export async function generateReleaseBody(
   release: PlannedRelease,
   bumpFiles: BumpFile[],
   formatter: ChangelogFormatter,
@@ -109,48 +64,6 @@ async function generateReleaseBody(
   const entry = await generateChangelogEntry(release, bumpFiles, formatter, undefined, 'github-release');
   // Strip the version heading — the GitHub release title already has the version
   return stripVersionHeading(entry).trim() || 'No changelog entries.';
-}
-
-/** Generate an aggregate release body using the changelog formatter */
-async function generateAggregateBody(
-  releases: PlannedRelease[],
-  bumpFiles: BumpFile[],
-  formatter: ChangelogFormatter,
-): Promise<string> {
-  const lines: string[] = [];
-
-  // Group by bump type
-  const groups: [string, PlannedRelease[]][] = [
-    ['Major Changes', releases.filter((r) => r.type === 'major')],
-    ['Minor Changes', releases.filter((r) => r.type === 'minor')],
-    ['Patch Changes', releases.filter((r) => r.type === 'patch')],
-  ];
-
-  for (const [heading, group] of groups) {
-    if (group.length === 0) continue;
-    lines.push(`## ${heading}\n`);
-
-    for (const release of group) {
-      lines.push(`### ${release.name} v${release.newVersion}\n`);
-      const entry = await generateChangelogEntry(release, bumpFiles, formatter, undefined, 'github-release');
-      const body = stripVersionHeading(entry).trim();
-      if (body) {
-        lines.push(body);
-      } else if (release.isDependencyBump) {
-        const sourceList = release.bumpSources.map((s) => `\`${s.name}\` v${s.newVersion}`).join(', ');
-        lines.push(sourceList ? `- Updated dependency ${sourceList}` : '- Updated dependencies');
-      } else if (release.isGroupBump) {
-        const sourceList = release.bumpSources.map((s) => `\`${s.name}\` v${s.newVersion}`).join(', ');
-        lines.push(sourceList ? `- Version bump from group with ${sourceList}` : '- Version bump from group');
-      } else if (release.isCascadeBump) {
-        const sourceList = release.bumpSources.map((s) => `\`${s.name}\` v${s.newVersion}`).join(', ');
-        lines.push(sourceList ? `- Version bump from ${sourceList}` : '- Version bump via cascade rule');
-      }
-      lines.push('');
-    }
-  }
-
-  return lines.join('\n').trim() || 'No changelog entries.';
 }
 
 /** Strip the leading ## version heading and date sub-heading from a changelog entry */
@@ -161,7 +74,7 @@ function stripVersionHeading(entry: string): string {
     .replace(/^_.+_\n/, ''); // remove _date_ line
 }
 
-function buildReleaseBody(release: PlannedRelease, bumpFiles: BumpFile[]): string {
+export function buildReleaseBody(release: PlannedRelease, bumpFiles: BumpFile[]): string {
   const lines: string[] = [];
   const relevant = bumpFiles.filter((bf) => release.bumpFiles.includes(bf.id));
 
@@ -187,60 +100,261 @@ function buildReleaseBody(release: PlannedRelease, bumpFiles: BumpFile[]): strin
   return lines.join('\n') || 'No changelog entries.';
 }
 
-function buildAggregateBody(releases: PlannedRelease[], bumpFiles: BumpFile[]): string {
-  const lines: string[] = [];
+export function isGhAvailable(): boolean {
+  return tryRunArgs(['gh', '--version']) !== null;
+}
 
-  // Group by bump type
-  const groups: [string, PlannedRelease[]][] = [
-    ['Major Changes', releases.filter((r) => r.type === 'major')],
-    ['Minor Changes', releases.filter((r) => r.type === 'minor')],
-    ['Patch Changes', releases.filter((r) => r.type === 'patch')],
-  ];
+// ---- Draft release / publish tracking system ----
 
-  for (const [heading, group] of groups) {
-    if (group.length === 0) continue;
-    lines.push(`## ${heading}\n`);
+const METADATA_START = '<!-- bumpy-metadata';
+const METADATA_END = 'bumpy-metadata -->';
 
-    for (const release of group) {
-      lines.push(`### ${release.name} v${release.newVersion}\n`);
-      const relevant = bumpFiles.filter((bf) => release.bumpFiles.includes(bf.id));
-      if (relevant.length > 0) {
-        for (const bf of relevant) {
-          if (bf.summary) {
-            lines.push(`- ${bf.summary.split('\n')[0]}`);
-          }
-        }
-      } else {
-        const sourceList = release.bumpSources.map((s) => `\`${s.name}\` v${s.newVersion}`).join(', ');
-        if (release.isDependencyBump) {
-          lines.push(sourceList ? `- Updated dependency ${sourceList}` : '- Updated dependencies');
-        } else if (release.isGroupBump) {
-          lines.push(sourceList ? `- Version bump from group with ${sourceList}` : '- Version bump from group');
-        } else if (release.isCascadeBump) {
-          lines.push(sourceList ? `- Version bump from ${sourceList}` : '- Version bump via cascade rule');
-        }
-      }
-      lines.push('');
+export type PublishTargetStatus = 'pending' | 'success' | 'failed' | 'skipped';
+
+export interface PublishTargetState {
+  status: PublishTargetStatus;
+  publishedAt?: string;
+  error?: string;
+  lastAttempt?: string;
+  reason?: string;
+  supersededBy?: string;
+  url?: string;
+}
+
+export interface ReleaseMetadata {
+  version: string;
+  targets: Record<string, PublishTargetState>;
+}
+
+export interface DraftReleaseInfo {
+  tag: string;
+  title: string;
+  body: string;
+  isDraft: boolean;
+  metadata: ReleaseMetadata | null;
+}
+
+/** Parse bumpy metadata from a release body */
+export function parseReleaseMetadata(body: string): ReleaseMetadata | null {
+  const startIdx = body.indexOf(METADATA_START);
+  const endIdx = body.indexOf(METADATA_END);
+  if (startIdx === -1 || endIdx === -1) return null;
+
+  const jsonStr = body.slice(startIdx + METADATA_START.length, endIdx).trim();
+  try {
+    return JSON.parse(jsonStr);
+  } catch {
+    return null;
+  }
+}
+
+/** Serialize metadata into an HTML comment */
+function serializeMetadata(metadata: ReleaseMetadata): string {
+  return `${METADATA_START}\n${JSON.stringify(metadata, null, 2)}\n${METADATA_END}`;
+}
+
+/** Build the "Published to" section from target states */
+export function formatPublishedToSection(targets: Record<string, PublishTargetState>): string {
+  const lines: string[] = ['#### Published to'];
+  for (const [name, state] of Object.entries(targets)) {
+    switch (state.status) {
+      case 'success':
+        lines.push(state.url ? `- ✅ [${name}](${state.url})` : `- ✅ ${name}`);
+        break;
+      case 'failed':
+        lines.push(`- ❌ ${name} — will retry on next CI run`);
+        break;
+      case 'skipped':
+        lines.push(
+          state.supersededBy
+            ? `- ⏭️ ${name} — skipped (superseded by ${state.supersededBy})`
+            : `- ⏭️ ${name} — skipped`,
+        );
+        break;
+      case 'pending':
+        lines.push(`- ⏳ ${name}`);
+        break;
     }
   }
-
-  return lines.join('\n').trim() || 'No changelog entries.';
+  return lines.join('\n');
 }
 
-/** Compute the aggregate release tag and title, appending -n suffix if a tag for the same date already exists */
-export function resolveAggregateTagAndTitle(
-  date: string,
-  existingTags: string[],
-  titleTemplate?: string,
-): { tag: string; title: string } {
-  const baseTag = `release-${date}`;
-  const suffix = existingTags.length === 0 ? '' : `-${existingTags.length + 1}`;
-  const tag = `${baseTag}${suffix}`;
-  const template = titleTemplate || 'Release {{date}}';
-  const title = template.replace('{{date}}', `${date}${suffix}`);
-  return { tag, title };
+/** Build a URL for a published package on a registry */
+export function buildPublishUrl(
+  name: string,
+  version: string,
+  targetType: string,
+  _registry?: string,
+): string | undefined {
+  switch (targetType) {
+    case 'npm':
+      return `https://www.npmjs.com/package/${name}/v/${version}`;
+    case 'jsr': {
+      // JSR uses @scope/name format
+      const parts = name.startsWith('@') ? name.slice(1).split('/') : [name];
+      return parts.length === 2
+        ? `https://jsr.io/@${parts[0]}/${parts[1]}@${version}`
+        : `https://jsr.io/${name}@${version}`;
+    }
+    default:
+      return undefined;
+  }
 }
 
-function isGhAvailable(): boolean {
-  return tryRunArgs(['gh', '--version']) !== null;
+/**
+ * Compose a full release body from changelog content + publish status + metadata.
+ * Preserves existing changelog content when updating (only replaces the status/metadata sections).
+ */
+export function composeReleaseBody(changelogContent: string, metadata: ReleaseMetadata): string {
+  const publishSection = formatPublishedToSection(metadata.targets);
+  const metadataComment = serializeMetadata(metadata);
+  return `${changelogContent}\n\n${publishSection}\n\n${metadataComment}`;
+}
+
+/**
+ * Update just the status/metadata sections of an existing release body,
+ * preserving the changelog content above.
+ */
+export function updateReleaseBodyStatus(existingBody: string, metadata: ReleaseMetadata): string {
+  // Find where the "Published to" section starts
+  const publishIdx = existingBody.indexOf('#### Published to');
+  const metaIdx = existingBody.indexOf(METADATA_START);
+
+  // Determine where changelog content ends
+  let changelogContent: string;
+  if (publishIdx !== -1) {
+    changelogContent = existingBody.slice(0, publishIdx).trimEnd();
+  } else if (metaIdx !== -1) {
+    changelogContent = existingBody.slice(0, metaIdx).trimEnd();
+  } else {
+    changelogContent = existingBody.trimEnd();
+  }
+
+  return composeReleaseBody(changelogContent, metadata);
+}
+
+/** Look up an existing GitHub release (draft or published) by tag */
+export async function findReleaseByTag(tag: string, rootDir: string): Promise<DraftReleaseInfo | null> {
+  if (!isGhAvailable()) return null;
+
+  try {
+    const json = await runArgsAsync(['gh', 'release', 'view', tag, '--json', 'tagName,name,body,isDraft'], {
+      cwd: rootDir,
+    });
+    const data = JSON.parse(json);
+    return {
+      tag: data.tagName,
+      title: data.name,
+      body: data.body,
+      isDraft: data.isDraft,
+      metadata: parseReleaseMetadata(data.body),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Create a draft GitHub release */
+export async function createDraftRelease(
+  tag: string,
+  title: string,
+  body: string,
+  rootDir: string,
+  targetSha?: string,
+): Promise<void> {
+  const args = ['gh', 'release', 'create', tag, '--title', title, '--notes', body, '--draft'];
+  if (targetSha) args.push('--target', targetSha);
+  await runArgsAsync(args, { cwd: rootDir });
+}
+
+/** Update an existing GitHub release's body */
+export async function updateReleaseBody(tag: string, body: string, rootDir: string): Promise<void> {
+  await runArgsAsync(['gh', 'release', 'edit', tag, '--notes', body], { cwd: rootDir });
+}
+
+/** Finalize a draft release (remove draft status) */
+export async function finalizeRelease(tag: string, rootDir: string): Promise<void> {
+  await runArgsAsync(['gh', 'release', 'edit', tag, '--draft=false'], { cwd: rootDir });
+}
+
+/** Delete a GitHub release */
+export async function deleteRelease(tag: string, rootDir: string): Promise<void> {
+  await runArgsAsync(['gh', 'release', 'delete', tag, '--yes'], { cwd: rootDir });
+}
+
+/** Find draft releases for a package (by name prefix) that are older than the current version */
+export async function findStaleDraftReleases(
+  packageName: string,
+  currentVersion: string,
+  rootDir: string,
+): Promise<Array<{ tag: string; body: string; metadata: ReleaseMetadata | null }>> {
+  if (!isGhAvailable()) return [];
+
+  const currentTag = `${packageName}@${currentVersion}`;
+  try {
+    const json = await runArgsAsync(['gh', 'release', 'list', '--json', 'tagName,isDraft,name', '--limit', '20'], {
+      cwd: rootDir,
+    });
+    const releases: Array<{ tagName: string; isDraft: boolean; name: string }> = JSON.parse(json);
+
+    const stale: Array<{ tag: string; body: string; metadata: ReleaseMetadata | null }> = [];
+    for (const r of releases) {
+      // Only look at drafts for the same package with a different version
+      if (!r.isDraft) continue;
+      if (!r.tagName.startsWith(`${packageName}@`)) continue;
+      if (r.tagName === currentTag) continue;
+
+      // Fetch full body to check metadata
+      const info = await findReleaseByTag(r.tagName, rootDir);
+      if (info) {
+        stale.push({ tag: r.tagName, body: info.body, metadata: info.metadata });
+      }
+    }
+    return stale;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Finalize stale draft releases as superseded.
+ * Updates their metadata targets to "skipped" and marks them as non-draft.
+ */
+export async function finalizeSupersededDrafts(
+  packageName: string,
+  newVersion: string,
+  rootDir: string,
+): Promise<void> {
+  const staleDrafts = await findStaleDraftReleases(packageName, newVersion, rootDir);
+
+  for (const draft of staleDrafts) {
+    log.dim(`  Finalizing draft release ${draft.tag} — superseded by ${newVersion}`);
+
+    if (draft.metadata) {
+      // Update all non-success targets to "skipped"
+      for (const [targetName, state] of Object.entries(draft.metadata.targets)) {
+        if (state.status !== 'success') {
+          draft.metadata.targets[targetName] = {
+            status: 'skipped',
+            reason: 'superseded',
+            supersededBy: newVersion,
+          };
+        }
+      }
+      const updatedBody = updateReleaseBodyStatus(draft.body, draft.metadata);
+      try {
+        await updateReleaseBody(draft.tag, updatedBody, rootDir);
+        await finalizeRelease(draft.tag, rootDir);
+      } catch (err) {
+        log.warn(`  Failed to finalize superseded release ${draft.tag}: ${err instanceof Error ? err.message : err}`);
+      }
+    } else {
+      // No metadata — just finalize the draft as-is
+      try {
+        await finalizeRelease(draft.tag, rootDir);
+      } catch (err) {
+        log.warn(`  Failed to finalize superseded release ${draft.tag}: ${err instanceof Error ? err.message : err}`);
+      }
+    }
+  }
 }

@@ -155,28 +155,6 @@
       },
       "additionalProperties": false
     },
-    "aggregateRelease": {
-      "description": "GitHub release creation (requires gh CLI). false = individual release per package, true = single aggregated release, or an object with enabled and optional title (supports {{date}}).",
-      "default": false,
-      "oneOf": [
-        { "type": "boolean" },
-        {
-          "type": "object",
-          "properties": {
-            "enabled": {
-              "type": "boolean",
-              "description": "Whether to create an aggregated release"
-            },
-            "title": {
-              "type": "string",
-              "description": "Custom title for the aggregated release (supports {{date}})"
-            }
-          },
-          "required": ["enabled"],
-          "additionalProperties": false
-        }
-      ]
-    },
     "gitUser": {
       "type": "object",
       "description": "Git identity used for CI commits",
