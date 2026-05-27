@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.10.0
+
+<sub>2026-05-27</sub>
+
+- [#84](https://github.com/dmno-dev/bumpy/pull/84) - feat: publish recovery with draft GitHub releases and removal of aggregate release mode
+- [#85](https://github.com/dmno-dev/bumpy/pull/85) _(patch)_ - Use `BUMPY_GH_TOKEN` for GitHub release creation so releases trigger downstream workflows. Also adds token redaction to error messages in `withPatToken` and the new `withReleaseToken` helper to prevent leakage in CI logs.
+
 ## 1.9.2
 
 <sub>2026-05-25</sub>
