@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.10.2
+
+<sub>2026-05-27</sub>
+
+- [#89](https://github.com/dmno-dev/bumpy/pull/89) _(patch)_ - Always show bump type label on each changelog item instead of only when it differs from the release type
+
 ## 1.10.1
 
 <sub>2026-05-27</sub>
