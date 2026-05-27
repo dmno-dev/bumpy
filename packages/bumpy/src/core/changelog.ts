@@ -55,9 +55,8 @@ export const defaultFormatter: ChangelogFormatter = (ctx) => {
   for (const bf of sorted) {
     if (!bf.summary) continue;
     const type = getBumpTypeForPackage(bf, release.name);
-    const tag = type !== release.type ? `*(${type})* ` : '';
     const summaryLines = bf.summary.split('\n');
-    lines.push(`- ${tag}${summaryLines[0]}`);
+    lines.push(`- *(${type})* ${summaryLines[0]}`);
     for (let i = 1; i < summaryLines.length; i++) {
       if (summaryLines[i]!.trim()) {
         lines.push(`  ${summaryLines[i]}`);
@@ -73,16 +72,24 @@ export const defaultFormatter: ChangelogFormatter = (ctx) => {
       (max, s) => maxBump(max, s.bumpType),
       undefined,
     );
-    const tag = depBumpType && depBumpType !== release.type ? `*(${depBumpType})* ` : '';
-    lines.push(`- ${tag}Updated dependency ${sourceList || '(internal)'}`);
+    const depBumpTag = depBumpType ? `*(${depBumpType})* ` : '';
+    lines.push(`- ${depBumpTag}Updated dependency ${sourceList || '(internal)'}`);
   }
 
   if (release.isGroupBump) {
-    lines.push(sourceList ? `- Version bump from group with ${sourceList}` : '- Version bump from group');
+    lines.push(
+      sourceList
+        ? `- *(${release.type})* Version bump from group with ${sourceList}`
+        : `- *(${release.type})* Version bump from group`,
+    );
   }
 
   if (release.isCascadeBump && !release.isDependencyBump && !release.isGroupBump) {
-    lines.push(sourceList ? `- Version bump from ${sourceList}` : '- Version bump via cascade rule');
+    lines.push(
+      sourceList
+        ? `- *(${release.type})* Version bump from ${sourceList}`
+        : `- *(${release.type})* Version bump via cascade rule`,
+    );
   }
 
   lines.push('');

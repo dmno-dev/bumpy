@@ -69,7 +69,7 @@ export interface PublishConfig {
   packManager: 'auto' | 'npm' | 'pnpm' | 'bun' | 'yarn';
   /** Command to use for publishing. "npm" uses npm publish (supports OIDC). Default: "npm" */
   publishManager: 'npm' | 'pnpm' | 'bun' | 'yarn';
-  /** Extra args appended to the publish command (e.g., "--provenance") */
+  /** Extra args appended to the publish command (e.g., "--tag next") */
   publishArgs: string[];
   /**
    * How to handle workspace:/catalog: protocol resolution.

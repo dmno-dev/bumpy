@@ -145,7 +145,7 @@ describe('createGithubFormatter', () => {
 
     const result = await formatter({ release, bumpFiles: [], date: '2026-04-14' });
 
-    expect(result).toContain('Updated dependency `core` v2.0.0');
+    expect(result).toContain('*(patch)* Updated dependency `core` v2.0.0');
   });
 
   test('handles dependency bump without source packages (fallback)', async () => {
@@ -170,7 +170,7 @@ describe('createGithubFormatter', () => {
 
     const result = await formatter({ release, bumpFiles: [], date: '2026-04-14' });
 
-    expect(result).toContain('- Version bump from `core` v1.1.0');
+    expect(result).toContain('- *(patch)* Version bump from `core` v1.1.0');
   });
 
   test('handles cascade bump without source packages (fallback)', async () => {
@@ -182,7 +182,7 @@ describe('createGithubFormatter', () => {
 
     const result = await formatter({ release, bumpFiles: [], date: '2026-04-14' });
 
-    expect(result).toContain('- Version bump via cascade rule');
+    expect(result).toContain('- *(patch)* Version bump via cascade rule');
   });
 
   test('handles group bump with source packages', async () => {
@@ -196,7 +196,7 @@ describe('createGithubFormatter', () => {
 
     const result = await formatter({ release, bumpFiles: [], date: '2026-04-14' });
 
-    expect(result).toContain('- Version bump from group with `core` v1.1.0');
+    expect(result).toContain('- *(minor)* Version bump from group with `core` v1.1.0');
   });
 
   test('handles group bump without source packages (fallback)', async () => {
@@ -209,7 +209,7 @@ describe('createGithubFormatter', () => {
 
     const result = await formatter({ release, bumpFiles: [], date: '2026-04-14' });
 
-    expect(result).toContain('- Version bump from group');
+    expect(result).toContain('- *(minor)* Version bump from group');
   });
 
   test('resolves bump file info from git log', async () => {
