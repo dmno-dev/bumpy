@@ -291,22 +291,22 @@ export async function createDraftRelease(
 ): Promise<void> {
   const args = ['gh', 'release', 'create', tag, '--title', title, '--notes', body, '--draft'];
   if (targetSha) args.push('--target', targetSha);
-  await runArgsAsync(args, { cwd: rootDir });
+  await withReleaseToken(() => runArgsAsync(args, { cwd: rootDir }));
 }
 
 /** Update an existing GitHub release's body */
 export async function updateReleaseBody(tag: string, body: string, rootDir: string): Promise<void> {
-  await runArgsAsync(['gh', 'release', 'edit', tag, '--notes', body], { cwd: rootDir });
+  await withReleaseToken(() => runArgsAsync(['gh', 'release', 'edit', tag, '--notes', body], { cwd: rootDir }));
 }
 
 /** Finalize a draft release (remove draft status) */
 export async function finalizeRelease(tag: string, rootDir: string): Promise<void> {
-  await runArgsAsync(['gh', 'release', 'edit', tag, '--draft=false'], { cwd: rootDir });
+  await withReleaseToken(() => runArgsAsync(['gh', 'release', 'edit', tag, '--draft=false'], { cwd: rootDir }));
 }
 
 /** Delete a GitHub release */
 export async function deleteRelease(tag: string, rootDir: string): Promise<void> {
-  await runArgsAsync(['gh', 'release', 'delete', tag, '--yes'], { cwd: rootDir });
+  await withReleaseToken(() => runArgsAsync(['gh', 'release', 'delete', tag, '--yes'], { cwd: rootDir }));
 }
 
 /** Find draft releases for a package (by name prefix) that are older than the current version */

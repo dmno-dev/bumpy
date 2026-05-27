@@ -10,7 +10,6 @@
   // narrows down which files are considered changes
   "changedFilePatterns": ["src/**", "skills/**", "package.json", "tsconfig.json", "tsdown.config.ts"],
   "publish": {
-    "provenance": true,
-    "npmStaged": true
+    "provenance": true
   }
 }
