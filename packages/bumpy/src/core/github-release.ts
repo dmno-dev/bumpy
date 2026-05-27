@@ -10,6 +10,35 @@ function getHeadSha(rootDir: string): string | null {
   return tryRunArgs(['git', 'rev-parse', 'HEAD'], { cwd: rootDir });
 }
 
+/**
+ * Run an async function with BUMPY_GH_TOKEN as GH_TOKEN if available.
+ *
+ * GitHub releases created with the default GITHUB_TOKEN won't trigger
+ * downstream workflows.  Using BUMPY_GH_TOKEN (a PAT or App token)
+ * allows `release` events to fire follow-up workflows.
+ *
+ * Any errors are scrubbed so the token never appears in CI logs.
+ */
+async function withReleaseToken<T>(fn: () => Promise<T>): Promise<T> {
+  const token = process.env.BUMPY_GH_TOKEN;
+  if (!token) return fn();
+  const original = process.env.GH_TOKEN;
+  process.env.GH_TOKEN = token;
+  try {
+    return await fn();
+  } catch (err) {
+    // Redact token from error messages to prevent leakage in CI logs
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(msg.replaceAll(token, '***'));
+  } finally {
+    if (original !== undefined) {
+      process.env.GH_TOKEN = original;
+    } else {
+      delete process.env.GH_TOKEN;
+    }
+  }
+}
+
 export interface GitHubReleaseOptions {
   dryRun?: boolean;
   title?: string;
@@ -46,9 +75,7 @@ export async function createIndividualReleases(
       // Use --target so gh can create the tag on the remote if it wasn't pushed yet
       const args = ['gh', 'release', 'create', tag, '--title', title, '--notes', body];
       if (headSha) args.push('--target', headSha);
-      await runArgsAsync(args, {
-        cwd: rootDir,
-      });
+      await withReleaseToken(() => runArgsAsync(args, { cwd: rootDir }));
       log.dim(`  Created GitHub release: ${title}`);
     } catch (err) {
       log.warn(`  Failed to create GitHub release for ${tag}: ${err instanceof Error ? err.message : err}`);
@@ -91,9 +118,7 @@ export async function createAggregateRelease(
     const headSha = getHeadSha(rootDir);
     const args = ['gh', 'release', 'create', tag, '--title', title, '--notes', body];
     if (headSha) args.push('--target', headSha);
-    await runArgsAsync(args, {
-      cwd: rootDir,
-    });
+    await withReleaseToken(() => runArgsAsync(args, { cwd: rootDir }));
     log.success(`Created aggregate GitHub release: ${title}`);
   } catch (err) {
     log.warn(`Failed to create aggregate GitHub release: ${err instanceof Error ? err.message : err}`);

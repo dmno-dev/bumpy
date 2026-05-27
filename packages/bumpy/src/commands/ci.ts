@@ -31,6 +31,10 @@ async function withPatToken<T>(fn: () => Promise<T>): Promise<T> {
   process.env.GH_TOKEN = token;
   try {
     return await fn();
+  } catch (err) {
+    // Redact token from error messages to prevent leakage in CI logs
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(msg.replaceAll(token, '***'));
   } finally {
     if (originalGhToken !== undefined) {
       process.env.GH_TOKEN = originalGhToken;
