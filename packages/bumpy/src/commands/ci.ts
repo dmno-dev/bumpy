@@ -266,9 +266,11 @@ export async function ciPlanCommand(rootDir: string): Promise<void> {
 
   let output: PlanOutput;
 
-  if (bumpFiles.length > 0) {
-    // Bump files exist → version-pr mode
-    const plan = assembleReleasePlan(bumpFiles, packages, depGraph, config);
+  // Assemble plan from bump files (if any)
+  const plan = bumpFiles.length > 0 ? assembleReleasePlan(bumpFiles, packages, depGraph, config) : null;
+
+  if (plan && plan.releases.length > 0) {
+    // Bump files produce actual releases → version-pr mode
     output = {
       mode: 'version-pr',
       bumpFiles: plan.bumpFiles.map((bf) => ({
@@ -280,7 +282,7 @@ export async function ciPlanCommand(rootDir: string): Promise<void> {
       packageNames: plan.releases.map((r) => r.name),
     };
   } else {
-    // No bump files → check for unpublished packages
+    // No releases from bump files (none-only or no bump files) → check for unpublished packages
     const { findUnpublishedPackages } = await import('./publish.ts');
     const unpublished = await findUnpublishedPackages(packages, config);
 
@@ -410,7 +412,12 @@ export async function ciReleaseCommand(rootDir: string, opts: ReleaseOptions): P
 
   const plan = assembleReleasePlan(bumpFiles, packages, depGraph, config);
   if (plan.releases.length === 0) {
-    log.info('Bump files found but no packages would be released.');
+    // None-only bump files — ignore them for mode decisions and fall through to publish check.
+    // They'll be cleaned up when the next real version PR runs applyReleasePlan.
+    log.info('Bump files found but no packages would be released — checking for unpublished packages...');
+    const recoveredBumpFiles = recoverDeletedBumpFiles(rootDir);
+    const { publishCommand } = await import('./publish.ts');
+    await publishCommand(rootDir, { tag: opts.tag, recoveredBumpFiles });
     return;
   }
 

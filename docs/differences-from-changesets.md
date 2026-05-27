@@ -98,15 +98,6 @@ Bumpy defaults to `"access": "public"` since most open-source packages are publi
 
 - [changesets#1160](https://github.com/changesets/changesets/issues/1160) — filtered publish (34 thumbs-up)
 
-### Aggregated GitHub releases
-
-`aggregateRelease: true` in config creates a single consolidated GitHub release instead of one per package.
-
-- [changesets#264](https://github.com/changesets/changesets/issues/264) — aggregated changelog (34 thumbs-up)
-- [changesets#683](https://github.com/changesets/changesets/issues/683) — single changelog for fixed groups (16 thumbs-up)
-- [changesets#1059](https://github.com/changesets/changesets/issues/1059) — aggregated GitHub releases (21 thumbs-up)
-- [changesets#885](https://github.com/changesets/changesets/issues/885) — GitHub releases from CLI publish (19 thumbs-up)
-
 ### Lockfile update after version
 
 `bumpy version` automatically runs `pnpm install --lockfile-only` / `bun install` / etc. to keep the lockfile in sync with bumped versions.

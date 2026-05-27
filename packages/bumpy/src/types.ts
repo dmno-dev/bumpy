@@ -130,13 +130,6 @@ export interface BumpyConfig {
   allowCustomCommands: boolean | string[];
   packages: Record<string, PackageConfig>;
   publish: PublishConfig;
-  /**
-   * GitHub release creation (requires `gh` CLI).
-   * false = individual release per package (default)
-   * true = single aggregated release for all packages
-   * { enabled: true, title: "..." } = aggregate with custom title (supports {{date}})
-   */
-  aggregateRelease: boolean | { enabled: boolean; title?: string };
   /** Git identity used for CI commits. Defaults to bumpy-bot. */
   gitUser: { name: string; email: string };
   /** Version PR settings */
@@ -192,7 +185,6 @@ export const DEFAULT_CONFIG: BumpyConfig = {
   allowCustomCommands: false,
   packages: {},
   publish: { ...DEFAULT_PUBLISH_CONFIG },
-  aggregateRelease: false,
   gitUser: { name: 'bumpy-bot', email: '276066384+bumpy-bot@users.noreply.github.com' },
   versionPr: {
     title: '🐸 Versioned release',
