@@ -1,0 +1,15 @@
+name: On Release
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Release event triggered successfully!"
+      - run: |
+          echo "Release tag: ${{ github.event.release.tag_name }}"
+          echo "Release name: ${{ github.event.release.name }}"
+          echo "Created by: ${{ github.event.release.author.login }}"
