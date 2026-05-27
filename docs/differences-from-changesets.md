@@ -68,9 +68,9 @@ Changesets uses `npm publish` even in Yarn/pnpm workspaces, so `workspace:^` and
 - [changesets#979](https://github.com/changesets/changesets/issues/979) — non-interactive mode (15 thumbs-up)
 - [changesets#1118](https://github.com/changesets/changesets/discussions/1118) — CLI automation support
 
-### Provenance and custom publish args
+### Provenance, staged publishing, and custom publish args
 
-Bumpy supports passing extra args (like `--provenance`) to the publish command via config.
+Bumpy has first-class `provenance` and `npmStaged` config options, plus support for passing extra args to the publish command.
 
 - [changesets#1152](https://github.com/changesets/changesets/issues/1152) — provenance support (36 thumbs-up, 26 comments)
 

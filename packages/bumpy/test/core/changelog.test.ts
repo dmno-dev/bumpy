@@ -24,9 +24,9 @@ describe('defaultFormatter', () => {
 
     expect(result).toContain('## 1.1.0');
     expect(result).toContain('<sub>2026-04-14</sub>');
-    expect(result).toContain('- Added new feature');
+    expect(result).toContain('- *(minor)* Added new feature');
     expect(result).toContain('- *(patch)* Fixed a bug');
-    // Minor (matching release type, no tag) should come before patch
+    // Major should come before minor, before patch
     expect(result.indexOf('Added new feature')).toBeLessThan(result.indexOf('Fixed a bug'));
   });
 
@@ -39,7 +39,7 @@ describe('defaultFormatter', () => {
 
     const result = await defaultFormatter({ release, bumpFiles: [], date: '2026-04-14' });
 
-    expect(result).toContain('- Updated dependency `core` v2.0.0');
+    expect(result).toContain('*(patch)* Updated dependency `core` v2.0.0');
   });
 
   test('formats dependency bump without source packages (fallback)', async () => {
@@ -50,7 +50,7 @@ describe('defaultFormatter', () => {
 
     const result = await defaultFormatter({ release, bumpFiles: [], date: '2026-04-14' });
 
-    expect(result).toContain('- Updated dependency (internal)');
+    expect(result).toContain('Updated dependency (internal)');
   });
 
   test('formats cascade bump with source packages', async () => {
@@ -62,7 +62,7 @@ describe('defaultFormatter', () => {
 
     const result = await defaultFormatter({ release, bumpFiles: [], date: '2026-04-14' });
 
-    expect(result).toContain('- Version bump from `core` v1.1.0');
+    expect(result).toContain('- *(patch)* Version bump from `core` v1.1.0');
   });
 
   test('formats cascade bump without source packages (fallback)', async () => {
@@ -73,7 +73,7 @@ describe('defaultFormatter', () => {
 
     const result = await defaultFormatter({ release, bumpFiles: [], date: '2026-04-14' });
 
-    expect(result).toContain('- Version bump via cascade rule');
+    expect(result).toContain('- *(patch)* Version bump via cascade rule');
   });
 
   test('formats group bump with source packages', async () => {
@@ -86,7 +86,7 @@ describe('defaultFormatter', () => {
 
     const result = await defaultFormatter({ release, bumpFiles: [], date: '2026-04-14' });
 
-    expect(result).toContain('- Version bump from group with `core` v1.1.0');
+    expect(result).toContain('- *(minor)* Version bump from group with `core` v1.1.0');
   });
 
   test('formats group bump without source packages (fallback)', async () => {
@@ -98,7 +98,7 @@ describe('defaultFormatter', () => {
 
     const result = await defaultFormatter({ release, bumpFiles: [], date: '2026-04-14' });
 
-    expect(result).toContain('- Version bump from group');
+    expect(result).toContain('- *(minor)* Version bump from group');
   });
 
   test('dependency + cascade shows only dependency message', async () => {
@@ -111,7 +111,7 @@ describe('defaultFormatter', () => {
 
     const result = await defaultFormatter({ release, bumpFiles: [], date: '2026-04-14' });
 
-    expect(result).toContain('- Updated dependency `core` v2.0.0');
+    expect(result).toContain('*(patch)* Updated dependency `core` v2.0.0');
     expect(result).not.toContain('cascade');
   });
 
@@ -130,7 +130,7 @@ describe('defaultFormatter', () => {
     const result = await defaultFormatter({ release, bumpFiles: [], date: '2026-04-14' });
 
     expect(result).toContain('Updated dependency');
-    expect(result).toContain('Version bump from group with');
+    expect(result).toContain('*(minor)* Version bump from group with');
   });
 
   test('direct changes + group upgrade shows both', async () => {
@@ -145,7 +145,7 @@ describe('defaultFormatter', () => {
     const result = await defaultFormatter({ release, bumpFiles, date: '2026-04-14' });
 
     expect(result).toContain('*(patch)* Fixed a typo');
-    expect(result).toContain('Version bump from group with `pkg-a` v1.1.0');
+    expect(result).toContain('*(minor)* Version bump from group with `pkg-a` v1.1.0');
   });
 
   test('handles multi-line bump file summaries', async () => {
@@ -157,7 +157,7 @@ describe('defaultFormatter', () => {
 
     const result = await defaultFormatter({ release, bumpFiles, date: '2026-04-14' });
 
-    expect(result).toContain('- First line');
+    expect(result).toContain('- *(minor)* First line');
     expect(result).toContain('  Second paragraph');
   });
 
@@ -183,7 +183,7 @@ describe('generateChangelogEntry', () => {
     const result = await generateChangelogEntry(release, bumpFiles);
 
     expect(result).toContain('## 1.0.1');
-    expect(result).toContain('- Fix');
+    expect(result).toContain('- *(patch)* Fix');
   });
 
   test('uses custom formatter', async () => {
@@ -291,6 +291,6 @@ describe('loadFormatter', () => {
     const result = await formatter({ release, bumpFiles, date: '2026-04-14' });
 
     expect(result).toContain('## 1.0.0');
-    expect(result).toContain('- A fix');
+    expect(result).toContain('- *(patch)* A fix');
   });
 });

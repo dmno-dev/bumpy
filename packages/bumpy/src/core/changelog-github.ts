@@ -64,7 +64,7 @@ export function createGithubFormatter(options: GithubChangelogOptions = {}): Cha
       if (!bf.summary) continue;
 
       const type = getBumpTypeForPackage(bf, release.name);
-      const tag = type !== release.type ? ` *(${type})*` : '';
+      const tag = ` *(${type})*`;
 
       // Extract metadata overrides from summary (pr, commit, author lines)
       const { cleanSummary, overrides } = extractSummaryMeta(bf.summary);
@@ -106,16 +106,24 @@ export function createGithubFormatter(options: GithubChangelogOptions = {}): Cha
         (max, s) => maxBump(max, s.bumpType),
         undefined,
       );
-      const depTag = depBumpType && depBumpType !== release.type ? ` *(${depBumpType})* -` : '';
+      const depTag = depBumpType ? ` *(${depBumpType})*` : '';
       lines.push(`-${depTag} Updated dependency ${sourceList || '(internal)'}`);
     }
 
     if (release.isGroupBump) {
-      lines.push(sourceList ? `- Version bump from group with ${sourceList}` : '- Version bump from group');
+      lines.push(
+        sourceList
+          ? `- *(${release.type})* Version bump from group with ${sourceList}`
+          : `- *(${release.type})* Version bump from group`,
+      );
     }
 
     if (release.isCascadeBump && !release.isDependencyBump && !release.isGroupBump) {
-      lines.push(sourceList ? `- Version bump from ${sourceList}` : '- Version bump via cascade rule');
+      lines.push(
+        sourceList
+          ? `- *(${release.type})* Version bump from ${sourceList}`
+          : `- *(${release.type})* Version bump via cascade rule`,
+      );
     }
 
     lines.push('');
