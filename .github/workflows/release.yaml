@@ -83,6 +83,7 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: latest
+      - run: npm install -g npm@latest # ensure npm >= 11.15.0 for staged publishing
       - run: bun install
 
       # --- You wont need this part ---
