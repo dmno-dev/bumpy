@@ -117,9 +117,19 @@ async function main() {
           await ciPlanCommand(rootDir);
         } else if (subcommand === 'release') {
           const { ciReleaseCommand } = await import('./commands/ci.ts');
-          const mode = ciFlags['auto-publish'] === true ? ('auto-publish' as const) : ('version-pr' as const);
+          const assertModeFlag = ciFlags.mode;
+          const autoPublishFlag = ciFlags['auto-publish'] === true;
+          if (assertModeFlag !== undefined && assertModeFlag !== 'version-pr' && assertModeFlag !== 'publish') {
+            log.error(`Invalid --mode value: "${assertModeFlag}". Must be "version-pr" or "publish".`);
+            process.exit(1);
+          }
+          if (assertModeFlag !== undefined && autoPublishFlag) {
+            log.error('--mode and --auto-publish cannot be used together.');
+            process.exit(1);
+          }
           await ciReleaseCommand(rootDir, {
-            mode,
+            autoPublish: autoPublishFlag,
+            assertMode: assertModeFlag as 'version-pr' | 'publish' | undefined,
             tag: ciFlags.tag as string | undefined,
             branch: ciFlags.branch as string | undefined,
           });
@@ -240,6 +250,7 @@ function printHelp() {
     --no-fail               Warn only, never exit 1
 
   CI release options:
+    --mode <mode>           Assert detected mode: "version-pr" or "publish" (errors if mismatched)
     --auto-publish          Version + publish directly (default: create version PR)
     --tag <tag>             npm dist-tag for auto-publish
     --branch <name>         Branch name for version PR (default: bumpy/version-packages)
