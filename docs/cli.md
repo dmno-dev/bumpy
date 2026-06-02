@@ -223,7 +223,7 @@ CI command for releases. Has two modes:
 
 **Version PR mode (default):** If pending bump files exist, creates or updates a "Version Packages" PR with all version bumps and changelog updates. If the current push is the Version Packages PR being merged, publishes the new versions, creates git tags, and creates GitHub releases.
 
-**Auto-publish mode (`--auto-publish`):** Versions and publishes directly on merge without an intermediate PR.
+**Auto-publish mode (`--auto-publish`):** Versions and publishes directly on merge without an intermediate PR. **Not recommended** — you lose the version-PR preview/review gate, so every merge to main with a bump file ships immediately. It's also incompatible with the [split-job workflow](github-actions.md#release-workflow-recommended-split-jobs) (since both paths happen in one run). The credential surface itself is the same as a single-job non-auto-publish workflow — the cost here is purely the loss of the preview gate.
 
 ```bash
 bumpy ci release
@@ -231,11 +231,12 @@ bumpy ci release --auto-publish
 bumpy ci release --auto-publish --tag beta
 ```
 
-| Flag              | Description                                                |
-| ----------------- | ---------------------------------------------------------- |
-| `--auto-publish`  | Version + publish directly instead of creating a PR        |
-| `--tag <tag>`     | npm dist-tag (for `--auto-publish`)                        |
-| `--branch <name>` | Version PR branch name (default: `bumpy/version-packages`) |
+| Flag                   | Description                                                                                                                                                             |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--expect-mode <mode>` | Assert detected mode: `version-pr` or `publish`. Errors if the detected mode differs. Use to gate split-job workflows so a job can't silently fall into the wrong path. |
+| `--auto-publish`       | Version + publish directly instead of creating a PR                                                                                                                     |
+| `--tag <tag>`          | npm dist-tag (for `--auto-publish`)                                                                                                                                     |
+| `--branch <name>`      | Version PR branch name (default: `bumpy/version-packages`)                                                                                                              |
 
 Requires `GH_TOKEN`. When `BUMPY_GH_TOKEN` is set, it is automatically used to push the version branch and create/edit the PR so that PR workflows trigger (see [GitHub Actions setup](github-actions.md#token-setup)).
 

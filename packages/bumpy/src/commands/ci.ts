@@ -375,14 +375,17 @@ function writeGitHubOutput(key: string, value: string): void {
 // ---- ci release ----
 
 interface ReleaseOptions {
-  mode: 'auto-publish' | 'version-pr';
+  autoPublish?: boolean; // skip the version-PR step and version+publish in one shot
+  assertMode?: 'version-pr' | 'publish'; // refuse to run if detected mode doesn't match — see CiPlanMode
   tag?: string; // npm dist-tag for auto-publish
   branch?: string; // branch name for version PR (default: "bumpy/version-packages")
 }
 
 /**
- * CI release: either auto-publish or create a version PR.
- * Designed for merge-to-main workflows.
+ * CI release: either create a version PR (bump files present) or publish unpublished
+ * packages (no bump files — i.e. a version PR was just merged). Pass `autoPublish` to
+ * collapse both steps into a single push-to-main, or `assertMode` to refuse running
+ * when the detected state doesn't match expectations (used by split-job workflows).
  */
 export async function ciReleaseCommand(rootDir: string, opts: ReleaseOptions): Promise<void> {
   const config = await loadConfig(rootDir);
@@ -398,39 +401,56 @@ export async function ciReleaseCommand(rootDir: string, opts: ReleaseOptions): P
     throw new Error('Bump file parse errors must be fixed before releasing.');
   }
 
-  if (bumpFiles.length === 0) {
-    // No bump files — check if there are unpublished packages to publish
-    // (this handles the case where a version PR was just merged)
-    log.info('No pending bump files — checking for unpublished packages...');
+  // Determine detected mode. "version-pr" = bump files exist with real releases.
+  // "publish" = no bump files, or only none-only files (version PR just merged).
+  const plan = bumpFiles.length > 0 ? assembleReleasePlan(bumpFiles, packages, depGraph, config) : null;
+  const detectedMode: 'version-pr' | 'publish' = plan && plan.releases.length > 0 ? 'version-pr' : 'publish';
+
+  if (opts.assertMode && opts.assertMode !== detectedMode) {
+    throw new Error(
+      `Expected mode "${opts.assertMode}" but detected "${detectedMode}". ` +
+        `Either remove --expect-mode, or gate this step on the output of "bumpy ci plan".`,
+    );
+  }
+
+  if (detectedMode === 'publish') {
+    // No bump files (or only none-only) — check for unpublished packages.
     // Recover bump files deleted in the version commit so the formatter
-    // can generate proper GitHub release bodies
+    // can generate proper GitHub release bodies.
+    const msg =
+      bumpFiles.length === 0
+        ? 'No pending bump files — checking for unpublished packages...'
+        : 'Bump files found but no packages would be released — checking for unpublished packages...';
+    log.info(msg);
     const recoveredBumpFiles = recoverDeletedBumpFiles(rootDir);
     const { publishCommand } = await import('./publish.ts');
     await publishCommand(rootDir, { tag: opts.tag, recoveredBumpFiles });
     return;
   }
 
-  const plan = assembleReleasePlan(bumpFiles, packages, depGraph, config);
-  if (plan.releases.length === 0) {
-    // None-only bump files — ignore them for mode decisions and fall through to publish check.
-    // They'll be cleaned up when the next real version PR runs applyReleasePlan.
-    log.info('Bump files found but no packages would be released — checking for unpublished packages...');
-    const recoveredBumpFiles = recoverDeletedBumpFiles(rootDir);
-    const { publishCommand } = await import('./publish.ts');
-    await publishCommand(rootDir, { tag: opts.tag, recoveredBumpFiles });
-    return;
-  }
-
-  if (opts.mode === 'auto-publish') {
-    await autoPublish(rootDir, config, plan, opts.tag);
+  // detectedMode === 'version-pr' — plan is non-null with releases
+  if (opts.autoPublish) {
+    await autoPublish(rootDir, config, plan!, opts.tag);
   } else {
     const packageDirs = new Map([...packages.values()].map((p) => [p.name, p.relativeDir]));
-    await createVersionPr(rootDir, plan, config, packageDirs, opts.branch);
+    await createVersionPr(rootDir, plan!, config, packageDirs, opts.branch);
   }
 }
 
 // ---- auto-publish mode ----
 
+/**
+ * "Auto-publish" mode: skip the Version Packages PR and ship version+publish in one run.
+ *
+ * The only thing forfeited vs. the default flow is the preview/review gate on version
+ * bumps. Credentials are NOT a differentiator — a single-job non-auto-publish workflow
+ * also carries both PR-write and publish creds, just split across two runs. The real
+ * credential separation comes from the split-job pattern, which is orthogonal to (and
+ * incompatible with) this flag, since this collapses both paths into one execution.
+ *
+ * That incompatibility is also why --auto-publish and --expect-mode are mutually exclusive:
+ * --expect-mode is for split-job workflows where each job runs exactly one path.
+ */
 async function autoPublish(rootDir: string, config: BumpyConfig, plan: ReleasePlan, tag?: string): Promise<void> {
   log.step('Running bumpy version...');
   const { versionCommand } = await import('./version.ts');

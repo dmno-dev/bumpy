@@ -117,9 +117,22 @@ async function main() {
           await ciPlanCommand(rootDir);
         } else if (subcommand === 'release') {
           const { ciReleaseCommand } = await import('./commands/ci.ts');
-          const mode = ciFlags['auto-publish'] === true ? ('auto-publish' as const) : ('version-pr' as const);
+          const expectModeFlag = ciFlags['expect-mode'];
+          const autoPublishFlag = ciFlags['auto-publish'] === true;
+          if (expectModeFlag !== undefined && expectModeFlag !== 'version-pr' && expectModeFlag !== 'publish') {
+            log.error(`Invalid --expect-mode value: "${expectModeFlag}". Must be "version-pr" or "publish".`);
+            process.exit(1);
+          }
+          // --expect-mode is for split-job workflows where each job runs exactly one path
+          // (version-pr or publish). --auto-publish does both in one run, so there's no
+          // single "mode" to assert against.
+          if (expectModeFlag !== undefined && autoPublishFlag) {
+            log.error('--expect-mode and --auto-publish cannot be used together.');
+            process.exit(1);
+          }
           await ciReleaseCommand(rootDir, {
-            mode,
+            autoPublish: autoPublishFlag,
+            assertMode: expectModeFlag as 'version-pr' | 'publish' | undefined,
             tag: ciFlags.tag as string | undefined,
             branch: ciFlags.branch as string | undefined,
           });
@@ -240,6 +253,7 @@ function printHelp() {
     --no-fail               Warn only, never exit 1
 
   CI release options:
+    --expect-mode <mode>    Assert detected mode: "version-pr" or "publish" (errors if mismatched)
     --auto-publish          Version + publish directly (default: create version PR)
     --tag <tag>             npm dist-tag for auto-publish
     --branch <name>         Branch name for version PR (default: bumpy/version-packages)
