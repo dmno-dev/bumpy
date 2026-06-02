@@ -80,7 +80,7 @@ jobs:
           fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
       - run: bun install
-      - run: bunx @varlock/bumpy ci release --mode version-pr
+      - run: bunx @varlock/bumpy ci release --expect-mode version-pr
         env:
           GH_TOKEN: ${{ github.token }}
           BUMPY_GH_TOKEN: ${{ secrets.BUMPY_GH_TOKEN }} # so the version PR triggers CI
@@ -106,7 +106,7 @@ jobs:
       - run: bun install
       # Expensive build steps that only matter before publish go here:
       # - run: bun run build
-      - run: bunx @varlock/bumpy ci release --mode publish
+      - run: bunx @varlock/bumpy ci release --expect-mode publish
         env:
           GH_TOKEN: ${{ github.token }}
           BUMPY_GH_TOKEN: ${{ secrets.BUMPY_GH_TOKEN }} # so `release: published` workflows trigger
@@ -116,14 +116,22 @@ jobs:
 
 - `plan` runs `bumpy ci plan` to determine whether the current push should update the Version Packages PR (`version-pr`), publish unpublished packages (`publish`), or do nothing.
 - Only one of `version-pr` or `publish` runs per push. The other is skipped via the `if:` condition.
-- The `--mode` flag on `ci release` asserts that the detected mode matches what each job expects — if the runtime state ever drifts, the job fails loudly instead of silently doing the wrong thing.
+- The `--expect-mode` flag on `ci release` asserts that the detected mode matches what each job expects — if the runtime state ever drifts, the job fails loudly instead of silently doing the wrong thing.
 - Expensive build steps (compilation, tests, bundling) only run inside the `publish` job, so PR merges that just maintain the version PR stay cheap.
 
-### One-time setup
+### Required setup
 
-1. **Create the `publish` environment** in repo Settings → Environments. GitHub auto-creates it on the first run, but creating it manually lets you add protection rules (required reviewers, branch restrictions to `main` only) before any release runs.
-2. **Pin the npm trusted publisher to environment `publish`** on each package's npmjs.com settings → Trusted Publishers → GitHub Actions. Set the environment field to `publish`. This binds the OIDC trust to that specific environment — even if someone adds a rogue workflow file, npm will reject any token request that doesn't carry the `publish` environment claim.
-3. **Set `BUMPY_GH_TOKEN`** — see [Token setup](#token-setup) below.
+1. **Pin the npm trusted publisher to environment `publish`** on each package's npmjs.com settings → Trusted Publishers → GitHub Actions. Set the environment field to `publish`. This binds the OIDC trust to that specific environment — even if someone adds a rogue workflow file, npm will reject any token request that doesn't carry the `publish` environment claim.
+2. **Set `BUMPY_GH_TOKEN`** — see [Token setup](#token-setup) below.
+
+That's it — the `publish` environment auto-creates on the first publish run, so no manual GitHub setup is required.
+
+### Optional hardening: protection rules on the `publish` environment
+
+If you create the environment manually in repo Settings → Environments _before_ the first publish, you can attach protection rules:
+
+- **Restrict deployment branches to `main`** — recommended. Cheap defense in depth: non-`main` refs can never request an OIDC token from this environment, even if a workflow trigger is accidentally widened later.
+- **Required reviewers** — optional. Adds a manual approval gate before each publish. Usually redundant if `npmStaged: true` is enabled (below), since you already have a 2FA approval gate on npmjs.com.
 
 **Recommended publish config** — enable provenance and staged publishing for maximum security:
 
@@ -152,7 +160,7 @@ publish:
     contents: write
   steps:
     # ... checkout/setup-bun/setup-node/install steps ...
-    - run: bunx @varlock/bumpy ci release --mode publish
+    - run: bunx @varlock/bumpy ci release --expect-mode publish
       env:
         GH_TOKEN: ${{ github.token }}
         NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

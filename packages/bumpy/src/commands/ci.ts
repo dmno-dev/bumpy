@@ -409,7 +409,7 @@ export async function ciReleaseCommand(rootDir: string, opts: ReleaseOptions): P
   if (opts.assertMode && opts.assertMode !== detectedMode) {
     throw new Error(
       `Expected mode "${opts.assertMode}" but detected "${detectedMode}". ` +
-        `Either remove --mode, or gate this step on the output of "bumpy ci plan".`,
+        `Either remove --expect-mode, or gate this step on the output of "bumpy ci plan".`,
     );
   }
 

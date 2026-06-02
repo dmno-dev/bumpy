@@ -231,12 +231,12 @@ bumpy ci release --auto-publish
 bumpy ci release --auto-publish --tag beta
 ```
 
-| Flag              | Description                                                                                                                                                             |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--mode <mode>`   | Assert detected mode: `version-pr` or `publish`. Errors if the detected mode differs. Use to gate split-job workflows so a job can't silently fall into the wrong path. |
-| `--auto-publish`  | Version + publish directly instead of creating a PR                                                                                                                     |
-| `--tag <tag>`     | npm dist-tag (for `--auto-publish`)                                                                                                                                     |
-| `--branch <name>` | Version PR branch name (default: `bumpy/version-packages`)                                                                                                              |
+| Flag                   | Description                                                                                                                                                             |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--expect-mode <mode>` | Assert detected mode: `version-pr` or `publish`. Errors if the detected mode differs. Use to gate split-job workflows so a job can't silently fall into the wrong path. |
+| `--auto-publish`       | Version + publish directly instead of creating a PR                                                                                                                     |
+| `--tag <tag>`          | npm dist-tag (for `--auto-publish`)                                                                                                                                     |
+| `--branch <name>`      | Version PR branch name (default: `bumpy/version-packages`)                                                                                                              |
 
 Requires `GH_TOKEN`. When `BUMPY_GH_TOKEN` is set, it is automatically used to push the version branch and create/edit the PR so that PR workflows trigger (see [GitHub Actions setup](github-actions.md#token-setup)).
 
