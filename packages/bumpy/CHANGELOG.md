@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.11.0
+
+<sub>2026-06-02</sub>
+
+- [#91](https://github.com/dmno-dev/bumpy/pull/91) _(minor)_ - Add `--expect-mode` flag to `bumpy ci release` for asserting the detected release mode (`version-pr` or `publish`). Enables split-job release workflows where each job fails loudly if the runtime state doesn't match what the job expects. Refactored `ReleaseOptions` to rename the existing `mode` field to `autoPublish: boolean` and add `assertMode`. `--expect-mode` and `--auto-publish` cannot be combined.
+
 ## 1.10.2
 
 <sub>2026-05-27</sub>
