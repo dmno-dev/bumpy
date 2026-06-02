@@ -171,8 +171,6 @@ jobs:
 
 </details>
 
-You can also use `bumpy ci release --auto-publish` to version + publish directly on merge without the intermediate PR.
-
 ### Token setup
 
 The default `github.token` works for basic functionality, but GitHub's anti-recursion guard means PRs created by the default token won't trigger other workflows - so your regular CI (tests, linting, etc.) won't run automatically on the Version Packages PR. To fix this, provide a `BUMPY_GH_TOKEN` secret using either a **fine-grained PAT** or a **GitHub App token**. See the [full token setup guide](https://github.com/dmno-dev/bumpy/blob/main/docs/github-actions.md#token-setup) for details.

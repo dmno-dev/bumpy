@@ -123,6 +123,9 @@ async function main() {
             log.error(`Invalid --expect-mode value: "${expectModeFlag}". Must be "version-pr" or "publish".`);
             process.exit(1);
           }
+          // --expect-mode is for split-job workflows where each job runs exactly one path
+          // (version-pr or publish). --auto-publish does both in one run, so there's no
+          // single "mode" to assert against.
           if (expectModeFlag !== undefined && autoPublishFlag) {
             log.error('--expect-mode and --auto-publish cannot be used together.');
             process.exit(1);

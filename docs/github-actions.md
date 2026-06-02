@@ -209,18 +209,7 @@ jobs:
 
 ## Auto-publish mode (not recommended)
 
-Instead of the two-step flow (version PR → merge → publish), you can version and publish directly on merge:
-
-```yaml
-- run: bunx @varlock/bumpy ci release --auto-publish
-```
-
-This is **not recommended** for two reasons:
-
-- You lose the preview/review step. Every merge to main with a bump file ships immediately — no chance to catch a wrong bump level or unintended release in the Version Packages PR.
-- The job needs `pull-requests: write` _and_ publish credentials (OIDC / `NPM_TOKEN`) in the same step. This rules out the split-job pattern that scopes publish credentials to a dedicated job/environment.
-
-If you want fewer steps in your release flow, prefer the [split-job workflow](#release-workflow-recommended-split-jobs) — it's not more code on your side, and it keeps the security boundary intact.
+`bumpy ci release --auto-publish` collapses version + publish into a single run, skipping the Version Packages PR. This forfeits the preview/review gate on version bumps — every merge to main with a bump file ships immediately. It's also incompatible with the [split-job pattern](#release-workflow-recommended-split-jobs) above, since both paths run in one command. Prefer the default flow. See [the CLI reference](cli.md#bumpy-ci-release) if you still need it.
 
 ## Advanced: per-package conditional builds
 

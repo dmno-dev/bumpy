@@ -439,6 +439,18 @@ export async function ciReleaseCommand(rootDir: string, opts: ReleaseOptions): P
 
 // ---- auto-publish mode ----
 
+/**
+ * "Auto-publish" mode: skip the Version Packages PR and ship version+publish in one run.
+ *
+ * The only thing forfeited vs. the default flow is the preview/review gate on version
+ * bumps. Credentials are NOT a differentiator — a single-job non-auto-publish workflow
+ * also carries both PR-write and publish creds, just split across two runs. The real
+ * credential separation comes from the split-job pattern, which is orthogonal to (and
+ * incompatible with) this flag, since this collapses both paths into one execution.
+ *
+ * That incompatibility is also why --auto-publish and --expect-mode are mutually exclusive:
+ * --expect-mode is for split-job workflows where each job runs exactly one path.
+ */
 async function autoPublish(rootDir: string, config: BumpyConfig, plan: ReleasePlan, tag?: string): Promise<void> {
   log.step('Running bumpy version...');
   const { versionCommand } = await import('./version.ts');
