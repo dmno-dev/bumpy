@@ -113,19 +113,32 @@ export function tagExists(tag: string, opts?: { cwd?: string }): boolean {
   return tryRunArgs(['git', 'tag', '-l', tag], opts) === tag;
 }
 
-/** Get files changed on this branch compared to a base branch */
-export function getChangedFiles(rootDir: string, baseBranch: string): string[] {
-  // Ensure we have the base branch ref (may need fetching in shallow CI clones)
+/**
+ * Resolve the ref to use as the comparison base for "this branch vs main".
+ * Prefers the merge-base, falls back to `origin/<baseBranch>`.
+ */
+export function getBaseCompareRef(rootDir: string, baseBranch: string): string {
   if (!tryRunArgs(['git', 'rev-parse', '--verify', `origin/${baseBranch}`], { cwd: rootDir })) {
     tryRunArgs(['git', 'fetch', 'origin', baseBranch, '--depth=1'], { cwd: rootDir });
   }
-
-  // Try merge-base for the most accurate comparison
   const mergeBase = tryRunArgs(['git', 'merge-base', 'HEAD', `origin/${baseBranch}`], { cwd: rootDir });
-  const ref = mergeBase || `origin/${baseBranch}`;
+  return mergeBase || `origin/${baseBranch}`;
+}
+
+/** Get files changed on this branch compared to a base branch */
+export function getChangedFiles(rootDir: string, baseBranch: string): string[] {
+  const ref = getBaseCompareRef(rootDir, baseBranch);
   const diff = tryRunArgs(['git', 'diff', '--name-only', ref], { cwd: rootDir });
   if (!diff) return [];
   return diff.split('\n').filter(Boolean);
+}
+
+/**
+ * Read a file's contents at a given git ref.
+ * Returns null if the file does not exist at that ref.
+ */
+export function readFileAtRef(rootDir: string, ref: string, path: string): string | null {
+  return tryRunArgs(['git', 'show', `${ref}:${path}`], { cwd: rootDir });
 }
 
 /** Get commits on the current branch since it diverged from baseBranch */

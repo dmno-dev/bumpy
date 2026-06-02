@@ -1,13 +1,12 @@
-import { relative, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import pc from 'picocolors';
 import { log } from '../utils/logger.ts';
 import { p, unwrap } from '../utils/clack.ts';
 import { ensureDir, exists } from '../utils/fs.ts';
 import { randomName, slugify } from '../utils/names.ts';
 import { writeBumpFile, readBumpFiles, filterBranchBumpFiles } from '../core/bump-file.ts';
-import picomatch from 'picomatch';
-import { getBumpyDir, loadConfig, loadPackageConfig } from '../core/config.ts';
-import { discoverPackages, discoverWorkspace } from '../core/workspace.ts';
+import { getBumpyDir, loadConfig } from '../core/config.ts';
+import { discoverWorkspace } from '../core/workspace.ts';
 import { findChangedPackages } from './check.ts';
 import { getChangedFiles } from '../core/git.ts';
 import { bumpSelectPrompt } from '../prompts/bump-select.ts';
@@ -78,35 +77,15 @@ export async function addCommand(rootDir: string, opts: AddOptions): Promise<voi
     // Interactive mode
     p.intro(pc.bgCyan(pc.black(' bumpy add ')));
 
-    const pkgs = await discoverPackages(rootDir, config);
+    const { packages: pkgs } = await discoverWorkspace(rootDir, config);
     if (pkgs.size === 0) {
       p.cancel('No managed packages found in this workspace.');
       process.exit(1);
     }
 
     // Detect which packages have changed on this branch
-    const baseBranch = config.baseBranch;
-    const changedFiles = getChangedFiles(rootDir, baseBranch);
-    // Build per-package matchers (per-package patterns override root patterns)
-    const matchers = new Map<string, picomatch.Matcher>();
-    for (const [name, pkg] of pkgs) {
-      const pkgConfig = await loadPackageConfig(pkg.dir, config, name);
-      const patterns = pkgConfig.changedFilePatterns ?? config.changedFilePatterns;
-      matchers.set(name, picomatch(patterns));
-    }
-
-    const changedPackageNames = new Set<string>();
-    for (const file of changedFiles) {
-      for (const [name, pkg] of pkgs) {
-        const pkgRelDir = relative(rootDir, pkg.dir);
-        if (file.startsWith(pkgRelDir + '/')) {
-          const relToPackage = file.slice(pkgRelDir.length + 1);
-          if (matchers.get(name)!(relToPackage)) {
-            changedPackageNames.add(name);
-          }
-        }
-      }
-    }
+    const changedFiles = getChangedFiles(rootDir, config.baseBranch);
+    const changedPackageNames = new Set(await findChangedPackages(changedFiles, pkgs, rootDir, config));
 
     // Load existing bump files on this branch to avoid re-defaulting already-covered packages
     const { bumpFiles: allBumpFiles } = await readBumpFiles(rootDir);
