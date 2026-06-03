@@ -78,9 +78,25 @@ async function getWorkspaceGlobs(rootDir: string, pm: PackageManager): Promise<s
  */
 export const CATALOG_FILES = ['pnpm-workspace.yaml', 'package.json'] as const;
 
+/**
+ * Normalize a catalog name to its canonical form.
+ * pnpm/bun treat "default" and the unnamed top-level catalog interchangeably,
+ * so we store and look up the default catalog under "" regardless of which alias
+ * the user wrote.
+ */
+function normalizeCatalogName(name: string): string {
+  return name === 'default' ? '' : name;
+}
+
 /** Parse catalog definitions from the raw contents of pnpm-workspace.yaml and root package.json */
 export function parseCatalogs(pnpmWorkspaceYaml: string | null, rootPackageJson: string | null): CatalogMap {
   const catalogs: CatalogMap = new Map();
+
+  const addNamed = (raw: Record<string, Record<string, string>>): void => {
+    for (const [name, deps] of Object.entries(raw)) {
+      catalogs.set(normalizeCatalogName(name), deps);
+    }
+  };
 
   if (pnpmWorkspaceYaml) {
     try {
@@ -93,9 +109,7 @@ export function parseCatalogs(pnpmWorkspaceYaml: string | null, rootPackageJson:
         catalogs.set('', parsed.catalog); // default catalog
       }
       if (parsed?.catalogs) {
-        for (const [name, deps] of Object.entries(parsed.catalogs)) {
-          catalogs.set(name, deps);
-        }
+        addNamed(parsed.catalogs);
       }
     } catch {
       // ignore malformed yaml
@@ -111,9 +125,7 @@ export function parseCatalogs(pnpmWorkspaceYaml: string | null, rootPackageJson:
         catalogs.set('', pkg.catalog as Record<string, string>);
       }
       if (pkg.catalogs && typeof pkg.catalogs === 'object') {
-        for (const [name, deps] of Object.entries(pkg.catalogs as Record<string, Record<string, string>>)) {
-          catalogs.set(name, deps);
-        }
+        addNamed(pkg.catalogs as Record<string, Record<string, string>>);
       }
 
       // Inside workspaces object (bun style)
@@ -124,9 +136,7 @@ export function parseCatalogs(pnpmWorkspaceYaml: string | null, rootPackageJson:
           catalogs.set('', ws.catalog as Record<string, string>);
         }
         if (ws.catalogs && typeof ws.catalogs === 'object') {
-          for (const [name, deps] of Object.entries(ws.catalogs as Record<string, Record<string, string>>)) {
-            catalogs.set(name, deps);
-          }
+          addNamed(ws.catalogs as Record<string, Record<string, string>>);
         }
       }
     } catch {
@@ -157,11 +167,15 @@ async function loadCatalogs(rootDir: string, pm: PackageManager): Promise<Catalo
   return parseCatalogs(pnpmYaml, pkgJsonText);
 }
 
+/** Extract the catalog name from a `catalog:` / `catalog:<name>` range, normalizing the default alias */
+function catalogNameFromRange(range: string): string {
+  return normalizeCatalogName(range.slice('catalog:'.length).trim());
+}
+
 /** Resolve a specific dependency's catalog: reference */
 export function resolveCatalogDep(depName: string, range: string, catalogs: CatalogMap): string | null {
   if (!range.startsWith('catalog:')) return null;
-  const catalogName = range.slice('catalog:'.length).trim() || '';
-  const catalog = catalogs.get(catalogName);
+  const catalog = catalogs.get(catalogNameFromRange(range));
   if (!catalog) return null;
   return catalog[depName] ?? null;
 }
@@ -203,6 +217,5 @@ export function isCatalogRefAffected(
   catalogChanges: Map<string, Set<string>>,
 ): boolean {
   if (!range.startsWith('catalog:')) return false;
-  const catalogName = range.slice('catalog:'.length).trim() || '';
-  return catalogChanges.get(catalogName)?.has(depName) ?? false;
+  return catalogChanges.get(catalogNameFromRange(range))?.has(depName) ?? false;
 }

@@ -76,6 +76,26 @@ catalogs:
   test('tolerates malformed json', () => {
     expect(() => parseCatalogs(null, '{not valid json')).not.toThrow();
   });
+
+  test('catalogs.default is stored under "" so it merges with the top-level catalog', () => {
+    // pnpm treats top-level `catalog` and `catalogs.default` as aliases of the same default catalog
+    const yaml = `
+catalogs:
+  default:
+    react: ^19.0.0
+`;
+    const catalogs = parseCatalogs(yaml, null);
+    expect(catalogs.get('')).toEqual({ react: '^19.0.0' });
+    expect(catalogs.has('default')).toBe(false);
+  });
+
+  test('catalogs.default in package.json also normalizes to ""', () => {
+    const pkg = JSON.stringify({ catalogs: { default: { react: '^19.0.0' }, testing: { jest: '^30.0.0' } } });
+    const catalogs = parseCatalogs(null, pkg);
+    expect(catalogs.get('')).toEqual({ react: '^19.0.0' });
+    expect(catalogs.get('testing')).toEqual({ jest: '^30.0.0' });
+    expect(catalogs.has('default')).toBe(false);
+  });
 });
 
 describe('diffCatalogMaps', () => {
@@ -153,6 +173,11 @@ describe('isCatalogRefAffected', () => {
   test('returns false when depName is not in changes', () => {
     expect(isCatalogRefAffected('catalog:', 'lodash', changes)).toBe(false);
   });
+
+  test('catalog:default is an alias for catalog: (default catalog)', () => {
+    expect(isCatalogRefAffected('catalog:default', 'react', changes)).toBe(true);
+    expect(isCatalogRefAffected('catalog:default', 'jest', changes)).toBe(false);
+  });
 });
 
 describe('resolveCatalogDep (sanity check after refactor)', () => {
@@ -174,5 +199,10 @@ describe('resolveCatalogDep (sanity check after refactor)', () => {
   test('returns null for missing entry', () => {
     const catalogs: CatalogMap = new Map([['', {}]]);
     expect(resolveCatalogDep('react', 'catalog:', catalogs)).toBeNull();
+  });
+
+  test('resolves catalog:default to the default catalog', () => {
+    const catalogs: CatalogMap = new Map([['', { react: '^19.0.0' }]]);
+    expect(resolveCatalogDep('react', 'catalog:default', catalogs)).toBe('^19.0.0');
   });
 });
