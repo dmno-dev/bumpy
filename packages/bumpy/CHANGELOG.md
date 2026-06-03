@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.12.0
+
+<sub>2026-06-03</sub>
+
+- [#94](https://github.com/dmno-dev/bumpy/pull/94) _(minor)_ - Detect catalog entry changes as package changes. When a catalog version in `pnpm-workspace.yaml` (pnpm) or root `package.json` (bun/yarn `catalog`/`catalogs`, plus `workspaces.catalog`/`workspaces.catalogs`) is modified, `bumpy add` and `bumpy check` now flag every package that references the changed entry via `catalog:` / `catalog:<name>` as changed. Closes [#92](https://github.com/dmno-dev/bumpy/issues/92).
+
 ## 1.11.0
 
 <sub>2026-06-02</sub>
