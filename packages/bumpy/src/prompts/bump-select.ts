@@ -20,6 +20,11 @@ export interface BumpSelectResult {
   type: BumpTypeWithNone;
 }
 
+type Row =
+  | { kind: 'header'; text: string }
+  | { kind: 'separator' }
+  | { kind: 'item'; itemIdx: number; displayIdx: number };
+
 /**
  * Custom interactive prompt for selecting bump levels for multiple packages.
  * - Up/Down arrows to navigate between packages
@@ -27,6 +32,10 @@ export interface BumpSelectResult {
  * - Changed packages default to "patch", unchanged to "none"
  * - Enter to confirm
  * - Ctrl+C / Escape to cancel
+ *
+ * Renders a viewport that fits within the terminal so the list scrolls instead of
+ * overflowing — otherwise large package counts cause the redraw cursor-up to lose
+ * its anchor once content scrolls off-screen.
  */
 export async function bumpSelectPrompt(items: BumpSelectItem[]): Promise<BumpSelectResult[] | symbol> {
   // Build display order: changed first, then unchanged
@@ -34,8 +43,35 @@ export async function bumpSelectPrompt(items: BumpSelectItem[]): Promise<BumpSel
   const unchangedEntries = items.map((item, idx) => ({ item, idx })).filter(({ item }) => !item.changed);
   const displayOrder = [...changedEntries, ...unchangedEntries];
 
+  // Build a flat list of rows (headers, separators, items) — static structure used for windowing.
+  const rows: Row[] = [];
+  const itemRowIndex: number[] = []; // displayIdx -> index into rows
+  {
+    let displayIdx = 0;
+    if (changedEntries.length > 0) {
+      rows.push({ kind: 'header', text: 'Changed' });
+      for (const { idx } of changedEntries) {
+        itemRowIndex.push(rows.length);
+        rows.push({ kind: 'item', itemIdx: idx, displayIdx });
+        displayIdx++;
+      }
+      if (unchangedEntries.length > 0) {
+        rows.push({ kind: 'separator' });
+      }
+    }
+    if (unchangedEntries.length > 0) {
+      rows.push({ kind: 'header', text: 'Unchanged' });
+      for (const { idx } of unchangedEntries) {
+        itemRowIndex.push(rows.length);
+        rows.push({ kind: 'item', itemIdx: idx, displayIdx });
+        displayIdx++;
+      }
+    }
+  }
+
   // State
   let cursor = 0;
+  let scroll = 0;
   const levels: BumpLevel[] = items.map((item) =>
     item.initialLevel !== undefined ? item.initialLevel : item.changed ? 'patch' : 'skip',
   );
@@ -65,50 +101,108 @@ export async function bumpSelectPrompt(items: BumpSelectItem[]): Promise<BumpSel
           lines.push(`${pc.dim('│')}  ${pc.dim('(none selected)')}`);
         } else {
           for (const { item, idx } of selected) {
-            lines.push(`${pc.dim('│')}  ${pc.cyan(item.name)} ${pc.dim('→')} ${pc.bold(levels[idx])}`);
+            lines.push(`${pc.dim('│')}  ${pc.cyan(item.name)} ${pc.dim('→')} ${pc.bold(levels[idx]!)}`);
           }
         }
         lines.push(pc.dim('│'));
-      } else {
-        lines.push(`${pc.cyan('◆')}  Select bump levels`);
-        lines.push(`${pc.dim('│')}  ${pc.dim('↑/↓ navigate · ←/→ change level · enter to confirm')}`);
-        lines.push(`${pc.dim('│')}  ${pc.dim('0 skip current · x skip all · r reset all to defaults')}`);
-        lines.push(pc.dim('│'));
 
-        let displayIdx = 0;
-
-        if (changedEntries.length > 0) {
-          lines.push(`${pc.dim('│')}  ${pc.underline('Changed')}`);
-          for (const { item, idx } of changedEntries) {
-            lines.push(formatRow(item, levels[idx]!, cursor === displayIdx));
-            displayIdx++;
-          }
-          if (unchangedEntries.length > 0) {
-            lines.push(pc.dim('│'));
-          }
-        }
-
-        if (unchangedEntries.length > 0) {
-          lines.push(`${pc.dim('│')}  ${pc.underline('Unchanged')}`);
-          for (const { item, idx } of unchangedEntries) {
-            lines.push(formatRow(item, levels[idx]!, cursor === displayIdx));
-            displayIdx++;
-          }
-        }
-
-        lines.push(pc.dim('│'));
-        const selectedCount = levels.filter((l) => l !== 'skip').length;
-        lines.push(`${pc.dim('│')}  ${pc.dim(`${selectedCount} package${selectedCount !== 1 ? 's' : ''} selected`)}`);
-        lines.push(`${pc.dim('└')}`);
+        const output = lines.join('\n') + '\n';
+        stdout.write(output);
+        renderedLines = lines.length;
+        return;
       }
+
+      const headerChrome = [
+        `${pc.cyan('◆')}  Select bump levels`,
+        `${pc.dim('│')}  ${pc.dim('↑/↓ navigate · ←/→ change level · enter to confirm')}`,
+        `${pc.dim('│')}  ${pc.dim('0 skip current · x skip all · r reset all to defaults')}`,
+        pc.dim('│'),
+      ];
+
+      const selectedCount = levels.filter((l) => l !== 'skip').length;
+      const footerChrome = [
+        pc.dim('│'),
+        `${pc.dim('│')}  ${pc.dim(`${selectedCount} package${selectedCount !== 1 ? 's' : ''} selected`)}`,
+        pc.dim('└'),
+      ];
+
+      // Determine viewport size: how many body lines fit in the terminal.
+      const termRows = stdout.rows || 24;
+      const chromeLines = headerChrome.length + footerChrome.length;
+      const MIN_BODY = 3;
+      const availableBody = Math.max(MIN_BODY, termRows - chromeLines - 1);
+
+      let visibleRows: Row[];
+      let topIndicator: string | null = null;
+      let bottomIndicator: string | null = null;
+      let stickyHeader: string | null = null;
+
+      if (rows.length <= availableBody) {
+        visibleRows = rows;
+        scroll = 0;
+      } else {
+        // Reserve up to 2 lines for scroll indicators (one above, one below).
+        let windowSize = Math.max(MIN_BODY, availableBody - 2);
+        const focusedRowIdx = itemRowIndex[cursor]!;
+
+        const adjustScroll = () => {
+          if (focusedRowIdx < scroll) {
+            scroll = focusedRowIdx;
+          } else if (focusedRowIdx >= scroll + windowSize) {
+            scroll = focusedRowIdx - windowSize + 1;
+          }
+          scroll = Math.max(0, Math.min(scroll, rows.length - windowSize));
+        };
+
+        adjustScroll();
+
+        // Sticky section header — if the focused item's section header has scrolled
+        // out of view above the window, pin it just below the ▲ indicator so the
+        // user always sees which section they're in.
+        const section = getCurrentSection(cursor, changedEntries.length, unchangedEntries.length);
+        if (section !== null && section.headerRowIdx < scroll) {
+          // Reserve one more line for the sticky header and re-adjust scroll
+          windowSize = Math.max(MIN_BODY, windowSize - 1);
+          adjustScroll();
+          stickyHeader = `${pc.dim('│')}  ${pc.underline(section.name)}`;
+        }
+
+        visibleRows = rows.slice(scroll, scroll + windowSize);
+        const above = scroll;
+        const below = rows.length - (scroll + windowSize);
+        if (above > 0) topIndicator = `${pc.dim('│')}  ${pc.dim(`▲ ${above} more`)}`;
+        if (below > 0) bottomIndicator = `${pc.dim('│')}  ${pc.dim(`▼ ${below} more`)}`;
+      }
+
+      lines.push(...headerChrome);
+      if (topIndicator !== null) lines.push(topIndicator);
+      if (stickyHeader !== null) lines.push(stickyHeader);
+      for (const row of visibleRows) {
+        if (row.kind === 'separator') {
+          lines.push(pc.dim('│'));
+        } else if (row.kind === 'header') {
+          lines.push(`${pc.dim('│')}  ${pc.underline(row.text)}`);
+        } else {
+          const item = items[row.itemIdx]!;
+          const isFocused = row.displayIdx === cursor;
+          lines.push(formatRow(item, levels[row.itemIdx]!, isFocused));
+        }
+      }
+      if (bottomIndicator !== null) lines.push(bottomIndicator);
+      lines.push(...footerChrome);
 
       const output = lines.join('\n') + '\n';
       stdout.write(output);
       renderedLines = lines.length;
     }
 
+    function onResize() {
+      render();
+    }
+
     function cleanup() {
       stdin.removeListener('keypress', onKeypress);
+      stdout.removeListener('resize', onResize);
       rl.close();
       stdout.write('\x1B[?25h'); // Show cursor
       if (stdin.isTTY) stdin.setRawMode(false);
@@ -192,7 +286,24 @@ export async function bumpSelectPrompt(items: BumpSelectItem[]): Promise<BumpSel
     }
 
     stdin.on('keypress', onKeypress);
+    stdout.on('resize', onResize);
   });
+}
+
+/** Returns the section the focused item is in, plus the row index of its header. */
+function getCurrentSection(
+  cursor: number,
+  changedCount: number,
+  unchangedCount: number,
+): { headerRowIdx: number; name: string } | null {
+  if (cursor < changedCount) {
+    if (changedCount === 0) return null;
+    return { headerRowIdx: 0, name: 'Changed' };
+  }
+  if (unchangedCount === 0) return null;
+  // Unchanged header is at row 0 if there's no Changed section, otherwise
+  // it follows: [Changed header (1)] + [changed items (N)] + [separator (1)]
+  return { headerRowIdx: changedCount > 0 ? changedCount + 2 : 0, name: 'Unchanged' };
 }
 
 function formatRow(item: BumpSelectItem, level: BumpLevel, focused: boolean): string {
