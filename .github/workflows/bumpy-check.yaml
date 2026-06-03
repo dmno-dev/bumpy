@@ -1,0 +1,30 @@
+# 🐸 Bumpy CI check
+# checks for missing bump files and posts/updates a PR comment with the release plan
+
+# ⚠️ NOTE - DO NOT COPY THIS FILE
+# instead look at the recommended workflow in the docs
+# ➡️ https://bumpy.varlock.dev/blob/main/docs/github-actions.md ⬅️
+
+name: Bumpy Check
+
+on: pull_request_target # < necessary so it can post comments on fork PRs
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  bumpy-check:
+    runs-on: ubuntu-latest
+    steps:
+      # Check out the PR head so bumpy can read the PR's bump files, config, and package.json
+      # We never execute this code!
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: oven-sh/setup-bun@v2
+
+      # reads json/yaml files only, so it's safe to run on fork PRs
+      - run: bunx @varlock/bumpy@latest ci check
+        env:
+          GH_TOKEN: ${{ github.token }}

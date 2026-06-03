@@ -14,23 +14,5 @@ jobs:
       - run: git config --global user.name "CI" && git config --global user.email "ci@example.com"
       - run: bun run test
 
-  bumpy-check:
-    runs-on: ubuntu-latest
-    permissions:
-      pull-requests: write
-    steps:
-      - uses: actions/checkout@v6
-      - uses: oven-sh/setup-bun@v2
-      - run: bun install
-
-      # --- You wont need this part ---
-      # Build first since we use the local built version of bumpy instead of the published one
-      - run: bun run --filter @varlock/bumpy build
-      # run bun install again to make the now built CLI available
-      - run: bun install
-      # -------------------------------
-
-      # 🐸 This is the important part - checks for missing bump files and posts/updates a PR comment with the release plan
-      - run: bunx @varlock/bumpy ci check
-        env:
-          GH_TOKEN: ${{ github.token }}
+      # NOTE: `bumpy ci check` lives in .github/workflows/bumpy-check.yaml
+      # see ➡️ https://bumpy.varlock.dev/blob/main/docs/github-actions.md ⬅️

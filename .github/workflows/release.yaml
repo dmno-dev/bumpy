@@ -1,3 +1,10 @@
+# 🐸 Bumpy CI release
+# when changes are made to main, it either creates/updates release PR, or triggers release
+
+# ⚠️ NOTE - DO NOT COPY THIS FILE
+# instead look at the recommended workflow in the docs
+# ➡️ https://bumpy.varlock.dev/blob/main/docs/github-actions.md ⬅️
+
 name: Release
 on:
   push:
@@ -8,7 +15,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Detect what `ci release` would do and gate downstream jobs accordingly.
+  # Detect what `bumpy ci release` would do and gate downstream jobs accordingly.
   # Runs with no write permissions and no publish credentials.
   plan:
     runs-on: ubuntu-latest
