@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 jobs:
-  check:
+  bumpy-check:
     runs-on: ubuntu-latest
     steps:
       # Check out the PR head so bumpy can read the PR's bump files, config, and package.json
