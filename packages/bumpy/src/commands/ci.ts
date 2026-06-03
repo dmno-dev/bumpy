@@ -10,7 +10,7 @@ import { runArgs, runArgsAsync, tryRunArgs } from '../utils/shell.ts';
 import { randomName } from '../utils/names.ts';
 import { detectPackageManager } from '../utils/package-manager.ts';
 import { createHash } from 'node:crypto';
-import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolveCommitMessage } from '../core/commit-message.ts';
 import type { BumpyConfig, BumpFile, PackageConfig, PackageManager, ReleasePlan, PlannedRelease } from '../types.ts';
 
@@ -940,6 +940,16 @@ async function postOrUpdatePrComment(prNumber: string, body: string, rootDir: st
     }
   } catch (err) {
     log.warn(`  Failed to comment on PR: ${err instanceof Error ? err.message : err}`);
+    // Most common cause: the workflow is on `pull_request` and this is a fork PR,
+    // so GITHUB_TOKEN is read-only. Surface that explicitly — otherwise contributors
+    // see a red check with no comment and no clue why.
+    if (process.env.GITHUB_EVENT_NAME === 'pull_request' && isForkPr()) {
+      log.warn(
+        '  This PR is from a fork. Fork PRs running on `pull_request` get a read-only token\n' +
+          '  and cannot post comments. Switch the workflow to `pull_request_target` —\n' +
+          '  see https://bumpy.varlock.dev/docs/github-actions',
+      );
+    }
   }
 }
 
@@ -952,11 +962,19 @@ function detectPrBranch(rootDir: string): string | null {
 }
 
 function detectPrNumber(): string | null {
-  // GitHub Actions
-  if (process.env.GITHUB_EVENT_NAME === 'pull_request') {
-    // PR number is in GITHUB_REF: refs/pull/123/merge
-    const match = process.env.GITHUB_REF?.match(/refs\/pull\/(\d+)\//);
-    if (match) return match[1]!;
+  // GitHub Actions: read PR number from the event payload — same shape for
+  // both `pull_request` and `pull_request_target` (under `pull_request_target`,
+  // GITHUB_REF points at the base branch, not refs/pull/N/merge).
+  const eventName = process.env.GITHUB_EVENT_NAME;
+  if (eventName === 'pull_request' || eventName === 'pull_request_target') {
+    const event = readGitHubEventPayload();
+    const num = event?.pull_request?.number;
+    if (typeof num === 'number') return String(num);
+    // Fallback for `pull_request`: parse GITHUB_REF if payload wasn't readable.
+    if (eventName === 'pull_request') {
+      const match = process.env.GITHUB_REF?.match(/refs\/pull\/(\d+)\//);
+      if (match) return match[1]!;
+    }
   }
   // Also check for explicit env var — validate it's numeric
   const envPr = process.env.BUMPY_PR_NUMBER || process.env.PR_NUMBER || null;
@@ -965,4 +983,30 @@ function detectPrNumber(): string | null {
     return null;
   }
   return envPr;
+}
+
+interface GitHubEventPayload {
+  pull_request?: {
+    number?: number;
+    head?: { repo?: { id?: number } };
+    base?: { repo?: { id?: number } };
+  };
+}
+
+function readGitHubEventPayload(): GitHubEventPayload | null {
+  const path = process.env.GITHUB_EVENT_PATH;
+  if (!path) return null;
+  try {
+    return JSON.parse(readFileSync(path, 'utf-8')) as GitHubEventPayload;
+  } catch {
+    return null;
+  }
+}
+
+/** True when running on a PR whose head repo differs from the base repo (i.e. a fork). */
+function isForkPr(): boolean {
+  const event = readGitHubEventPayload();
+  const headId = event?.pull_request?.head?.repo?.id;
+  const baseId = event?.pull_request?.base?.repo?.id;
+  return typeof headId === 'number' && typeof baseId === 'number' && headId !== baseId;
 }

@@ -88,20 +88,40 @@ _examples use bun, but works with Node.js_
 ### PR check workflow
 
 ```yaml
-# .github/workflows/bumpy-check.yml
+# .github/workflows/bumpy-check.yaml
+#
+# ⚠️ Uses `pull_request_target` so fork PR comments work — runs with write
+# perms and secrets, so it MUST NOT execute PR code (no `bun install`, no
+# PR-defined scripts). Bumpy only reads files; its version is resolved from
+# the base branch's package.json. See docs/github-actions.md for details.
 name: Bumpy Check
-on: pull_request
+on: pull_request_target
+
+permissions:
+  pull-requests: write
+  contents: read
 
 jobs:
   check:
     runs-on: ubuntu-latest
-    permissions:
-      pull-requests: write
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
       - uses: oven-sh/setup-bun@v2
-      - run: bun install
-      - run: bunx @varlock/bumpy ci check
+
+      # Resolve bumpy's version from the base branch (trusted) — not the PR's
+      # package.json (which a fork PR could swap to a malicious version).
+      # Change "main" to your base branch if different.
+      - name: Resolve bumpy version from base
+        run: |
+          git fetch origin main --depth=1
+          VERSION=$(git show "origin/main:package.json" \
+            | jq -r '.devDependencies["@varlock/bumpy"] // .dependencies["@varlock/bumpy"]' \
+            | sed 's/[\^~]//')
+          echo "BUMPY_VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - run: bunx "@varlock/bumpy@$BUMPY_VERSION" ci check
         env:
           GH_TOKEN: ${{ github.token }}
 ```

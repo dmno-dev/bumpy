@@ -1,3 +1,6 @@
+# simple workflow that runs after a release is published
+# used only to verify "release workflow -> further actions" is working
+
 name: On Release
 
 on:
