@@ -17,6 +17,21 @@ export function pushWithTags(opts?: { cwd?: string }): void {
 }
 
 /**
+ * Force-push a single tag to origin, using BUMPY_GH_TOKEN if available.
+ *
+ * Force is required because `gh release create --draft --target SHA` creates
+ * the tag on the remote at draft-creation time. If a previous publish attempt
+ * failed and HEAD has since moved, the remote tag points at the stale SHA —
+ * `git push --tags` would reject. The caller is responsible for ensuring the
+ * local tag is at the correct SHA (i.e. only call after a successful publish).
+ */
+export function forcePushTag(tag: string, opts?: { cwd?: string }): void {
+  withGitToken(opts?.cwd, () => {
+    runArgs(['git', 'push', 'origin', `refs/tags/${tag}`, '--force'], opts);
+  });
+}
+
+/**
  * Temporarily configure git credentials using BUMPY_GH_TOKEN (or GH_TOKEN),
  * execute a callback, then restore the original config.
  *
