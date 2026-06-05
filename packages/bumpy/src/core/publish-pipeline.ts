@@ -30,11 +30,28 @@ export interface PublishResult {
  * - GitLab CI: `GITLAB_CI` + `NPM_ID_TOKEN`
  * - CircleCI: `CIRCLECI` + `NPM_ID_TOKEN`
  */
-function detectOidcProvider(): 'github-actions' | 'gitlab' | 'circleci' | null {
+export function detectOidcProvider(): 'github-actions' | 'gitlab' | 'circleci' | null {
   if (process.env.ACTIONS_ID_TOKEN_REQUEST_URL) return 'github-actions';
   if (process.env.GITLAB_CI && process.env.NPM_ID_TOKEN) return 'gitlab';
   if (process.env.CIRCLECI && process.env.NPM_ID_TOKEN) return 'circleci';
   return null;
+}
+
+/**
+ * Returns true when OIDC trusted publishing is the only available npm auth path:
+ * an OIDC provider is detected AND no token env vars or .npmrc auth are present.
+ *
+ * Used to gate checks that only matter when OIDC will definitely be used — e.g.
+ * erroring when a brand-new package can't be bootstrapped via trusted publishing.
+ * Detection alone is leaky (id-token: write is also set for provenance), so this
+ * helper avoids false positives when a token fallback exists.
+ */
+export function willUseOidcExclusively(rootDir: string): boolean {
+  if (!detectOidcProvider()) return false;
+  if (process.env.NPM_TOKEN || process.env.NODE_AUTH_TOKEN) return false;
+  const npmrcPath = resolve(rootDir, '.npmrc');
+  const existingNpmrc = existsSync(npmrcPath) ? readFileSync(npmrcPath, 'utf-8') : '';
+  return !existingNpmrc.includes(':_authToken=');
 }
 
 const OIDC_NPM_UPGRADE_HINTS: Record<string, string> = {

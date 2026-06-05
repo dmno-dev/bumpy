@@ -2,8 +2,8 @@ import { log, colorize } from '../utils/logger.ts';
 import { loadConfig } from '../core/config.ts';
 import { discoverWorkspace } from '../core/workspace.ts';
 import { DependencyGraph } from '../core/dep-graph.ts';
-import { pushWithTags, hasUncommittedChanges } from '../core/git.ts';
-import { publishPackages } from '../core/publish-pipeline.ts';
+import { forcePushTag, hasUncommittedChanges, tagExists } from '../core/git.ts';
+import { publishPackages, willUseOidcExclusively } from '../core/publish-pipeline.ts';
 import {
   createIndividualReleases,
   findReleaseByTag,
@@ -24,7 +24,7 @@ import {
 import { loadFormatter } from '../core/changelog.ts';
 import { detectWorkspaces } from '../utils/package-manager.ts';
 import { CI_PLAN_CACHE_PATH } from './ci.ts';
-import { tryRunArgs } from '../utils/shell.ts';
+import { runArgsAsync, tryRunArgs } from '../utils/shell.ts';
 import type { BumpyConfig, PackageConfig, ReleasePlan, PlannedRelease, WorkspacePackage } from '../types.ts';
 
 interface PublishCommandOptions {
@@ -107,6 +107,22 @@ export async function publishCommand(rootDir: string, opts: PublishCommandOption
     console.log(`  ${r.name}@${colorize(r.newVersion, 'cyan')}`);
   }
   console.log();
+
+  // Trusted publishing (OIDC) cannot bootstrap a new package — fail early if any
+  // package being published doesn't exist on npm yet, before we create draft releases.
+  // Only checks when OIDC is the only available auth (no token fallback), to avoid
+  // false positives for users with id-token: write enabled solely for provenance.
+  if (willUseOidcExclusively(rootDir)) {
+    const newPackages = await findPackagesMissingFromNpm(toPublish, packages);
+    if (newPackages.length > 0) {
+      const logFn = opts.dryRun ? log.warn : log.error;
+      logFn(`Trusted publishing (OIDC) cannot create a new package. The following don't exist on npm yet:`);
+      for (const name of newPackages) logFn(`  • ${name}`);
+      logFn(`Publish a 0.0.0 placeholder version manually to claim the name, then configure`);
+      logFn(`trusted publishing on npmjs.com. Bumpy will then publish the real version via OIDC.`);
+      if (!opts.dryRun) process.exit(1);
+    }
+  }
 
   // Load the changelog formatter for release note generation
   const formatter = config.changelog !== false ? await loadFormatter(config.changelog, rootDir) : undefined;
@@ -316,15 +332,37 @@ export async function publishCommand(rootDir: string, opts: PublishCommandOption
     process.exit(1);
   }
 
-  // Push tags
+  // Push tags — per-tag force push only for releases handled this run.
+  //
+  // We use `releasePlan.releases` (not result.published) so that packages with
+  // skipNpmPublish or private packages with `privatePackages.tag` enabled are
+  // covered too — their local tags are created in publish-pipeline regardless of
+  // whether npm publish ran. Failed packages are skipped (their local tag was
+  // not created). The `alreadyPublished` filter above has already stripped
+  // packages whose targets all succeeded in prior runs, so we never touch tags
+  // tied to a previously-published SHA.
+  //
+  // Force-push is necessary because `gh release create --draft --target SHA`
+  // creates the tag on the remote at draft-creation time. If a previous attempt
+  // failed and HEAD has since moved, the remote tag is at a stale SHA and a
+  // plain `git push --tags` would reject. Force is safe here because the local
+  // tag was just created at the SHA we successfully published from.
   if (!opts.dryRun && !opts.noPush && result.published.length > 0) {
-    try {
-      log.step('Pushing tags...');
-      pushWithTags({ cwd: rootDir });
-      log.success('Pushed tags to remote');
-    } catch (err) {
-      log.warn(`Failed to push tags: ${err instanceof Error ? err.message : err}`);
+    const failed = new Set(result.failed.map((f) => f.name));
+    const pushed: string[] = [];
+    log.step('Pushing tags...');
+    for (const release of releasePlan.releases) {
+      if (failed.has(release.name)) continue;
+      const tag = `${release.name}@${release.newVersion}`;
+      if (!tagExists(tag, { cwd: rootDir })) continue;
+      try {
+        forcePushTag(tag, { cwd: rootDir });
+        pushed.push(tag);
+      } catch (err) {
+        log.warn(`  Failed to push tag ${tag}: ${err instanceof Error ? err.message : err}`);
+      }
     }
+    if (pushed.length > 0) log.success(`Pushed ${pushed.length} tag(s) to remote`);
   }
 
   // Fallback: if gh isn't available, we can't use draft releases — use legacy individual releases
@@ -477,4 +515,41 @@ async function checkIfPublished(name: string, version: string, pkgConfig?: Packa
   } catch {
     return false;
   }
+}
+
+/**
+ * Check whether a package exists on npm at all (any version).
+ * Returns true if the package is registered, false if it doesn't exist or the query fails.
+ */
+async function packageExistsOnNpm(name: string, registry?: string): Promise<boolean> {
+  const args = ['npm', 'info', name, 'name'];
+  if (registry) args.push('--registry', registry);
+  try {
+    const result = await runArgsAsync(args);
+    return result.trim() === name;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Filter `toPublish` to package names that don't exist on npm yet.
+ * Skips packages not going through the standard npm publish flow.
+ */
+async function findPackagesMissingFromNpm(
+  toPublish: PlannedRelease[],
+  packages: Map<string, WorkspacePackage>,
+): Promise<string[]> {
+  const missing: string[] = [];
+  await Promise.all(
+    toPublish.map(async (release) => {
+      const pkg = packages.get(release.name)!;
+      const pkgConfig = pkg.bumpy || {};
+      if (pkgConfig.publishCommand || pkgConfig.skipNpmPublish) return;
+      if (pkg.private && !pkgConfig.publishCommand) return;
+      const exists = await packageExistsOnNpm(release.name, pkgConfig.registry);
+      if (!exists) missing.push(release.name);
+    }),
+  );
+  return missing;
 }
