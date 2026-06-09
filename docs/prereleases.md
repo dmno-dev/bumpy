@@ -227,55 +227,47 @@ After the hotfix lands on `main`, rebase or merge `main` → `next` to pick it u
 
 ## Dependency handling in prerelease channels
 
-Bumpy never automatically cascades a prerelease through your dependency graph. You decide which packages belong in each cycle through explicit declarations — bump files, `linked` / `fixed` groups, or `cascadeTo` rules. Whatever ends up in the cycle is then exact-pinned together.
+Prereleases interact with semver differently from stable releases in one key way:
+
+> A range like `"@org/core": "^1.0.0"` continues to satisfy through `1.1.0`, `1.99.0`, etc. **But it doesn't satisfy any prerelease** — `^1.0.0` matches `1.5.0` but not `1.5.0-rc.0`. Semver only resolves a prerelease against a range when major.minor.patch matches exactly.
+
+This means **every prerelease of an upstream package breaks every dependent's range.** For stable releases, bumpy's `updateInternalDependencies: "out-of-range"` default rarely fires (ranges stay satisfied). On a channel, that same rule causes a wide cascade — broken ranges are fixed by pulling dependents into the cycle.
+
+That's intentional: without it, dependent packages can't actually consume the new upstream prerelease (their published ranges don't match it). A "tighter" prerelease that left dependents on stable would force users to add `overrides` / `resolutions` by hand to install anything from the cycle.
+
+### How bumpy's propagation applies on a channel
+
+The phases ([docs/version-propagation.md](./version-propagation.md)) run unchanged:
+
+- **Phase A** detects broken ranges and bumps dependents at **proportional levels** — `patch` for `dependencies`, match-the-trigger for `peerDependencies`, etc. Prerelease cascades are wide but version movement stays sane (no 1.0.0 jumps from 0.x packages, which is the actual complaint behind changesets [#960](https://github.com/changesets/changesets/issues/960)).
+- **Phase B** keeps `linked` / `fixed` groups in lockstep.
+- **Phase C** applies `cascadeTo` and `dependencyBumpRules` as usual.
+
+So a single bump file on `@org/core` in a 50-package monorepo can produce up to 50 prereleased packages. Wide, but required — the cycle is exactly the set of packages a tester can mix and match via `@next`.
 
 ### The exact-pin rule
 
-Within a prerelease cycle, any inter-cycle dependency is **exact-pinned** at publish time:
+Within the cycle, every inter-cycle dependency is **exact-pinned** at publish time:
 
-> If `@org/plugin@1.1.0-rc.0` is in the same cycle as `@org/core@2.0.0-rc.0`, the published `@org/plugin@1.1.0-rc.0` has `"@org/core": "2.0.0-rc.0"` — not `"^2.0.0-rc.0"`.
+> If `@org/plugin@1.0.1-rc.0` is in the same cycle as `@org/core@2.0.0-rc.0`, the published `@org/plugin@1.0.1-rc.0` has `"@org/core": "2.0.0-rc.0"` — not `"^2.0.0-rc.0"`.
 
-This guarantees that any package from the cycle, installed via `@next`, works with the other packages it was published against. Channel-internal consistency is built into the artifact, not relied on at install time.
+This guarantees that any combination of packages from the cycle, installed via `@next`, works against the exact set it was published with. Channel-internal consistency is built into the artifact, not relied on at install time.
 
-Dependencies pointing **outside** the cycle keep their stable ranges. Their existing `@latest` install continues to work; nothing in their published `package.json` points at a prerelease.
+Dependencies pointing **outside** the cycle (e.g., to a package excluded via `ignore`) keep their stable ranges.
 
 ### `workspace:` protocol resolution
 
 `workspace:^` / `workspace:*` on an in-cycle dep resolves to the exact prerelease version. On an out-of-cycle dep, it resolves normally (the stable range bumpy would produce on `main`).
 
-### Why no automatic cascade
+### Limiting cascade scope
 
-Changesets force-bumps every dependent whose range gets broken by a prerelease — including dependents that didn't otherwise need to change. This is the source of many of its prerelease pain points ([#960](https://github.com/changesets/changesets/issues/960), [#1228](https://github.com/changesets/changesets/issues/1228), [#1287](https://github.com/changesets/changesets/issues/1287)).
+If the default — "every dependent comes along" — is too wide for your monorepo, the standard bumpy controls bound the cycle:
 
-Bumpy already takes the "explicit propagation" stance for stable releases (`updateInternalDependencies: "out-of-range"` is the default). Channels apply the same principle: bumpy does what you asked it to do, nothing more. The trade-off — that you can ship a stranded prerelease if you forget to coordinate — is addressed by the next section.
+- `ignore` / `include` in `_config.json` constrain which packages are managed at all
+- Per-package `managed: false` excludes individual packages
+- `linked` / `fixed` / `cascadeTo` declarations don't _narrow_ the cascade, but they make wider propagation more predictable when you want it
 
----
-
-## Coordinating multi-package prereleases
-
-If you prerelease an upstream package without bringing its dependents along, those dependents won't be able to consume the prerelease.
-
-Concrete failure mode:
-
-- `@org/core@1.0.0` and `@org/plugin@1.0.0` (both on `@latest`)
-- `@org/plugin`'s package.json: `"@org/core": "^1.0.0"`
-- You author one bump file: `@org/core` → major
-- Cycle ships `@org/core@2.0.0-rc.0` to `@next`. `@org/plugin` stays at `1.0.0`.
-
-A tester running `npm install @org/core@next @org/plugin` hits a peer dep mismatch (or npm hoists two copies of core). The prerelease is "stranded" — usable on its own but not in combination with the rest of the ecosystem.
-
-To make the prerelease usable, declare the relationship so `@org/plugin` joins the cycle. Pick whichever fits your situation:
-
-| Declaration                                     | When to use                                             |
-| ----------------------------------------------- | ------------------------------------------------------- |
-| **Multi-package bump file**                     | Ad-hoc — this specific PR ships both packages together  |
-| **`linked` group** in config                    | Two packages should always share the highest bump level |
-| **`fixed` group** in config                     | Two packages should always share an exact version       |
-| **`cascadeTo: ["@org/plugin"]`** on `@org/core` | Any change to core should always bump plugin            |
-
-If you genuinely want a stranded prerelease (the package has no in-monorepo dependents that need it), no declaration is needed — bumpy will ship it as written.
-
-> See [docs/version-propagation.md](./version-propagation.md) for the full propagation model and how `linked` / `fixed` / `cascadeTo` interact.
+There's no channel-specific opt-out for Phase A's range-fixing — disabling it would produce stranded prereleases that consumers couldn't actually use together.
 
 ---
 
@@ -355,18 +347,18 @@ The directory used to hold shipped bump files matches the channel name: `.bumpy/
 
 ## Comparison with changesets pre mode
 
-|                                    | changesets pre mode                                                                                                                                | bumpy channels                                                                                                                           |
-| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| Entering                           | `changeset pre enter beta` writes `.changeset/pre.json`                                                                                            | Push to the channel branch                                                                                                               |
-| Exiting                            | `changeset pre exit` + `version` + `publish` + delete `pre.json`                                                                                   | Merge channel branch → main; bumpy strips suffix and consolidates                                                                        |
-| State file                         | `.changeset/pre.json` committed to repo                                                                                                            | None — file location in `.bumpy/` is the state                                                                                           |
-| Wrong-branch hazard                | Merging while pre mode is active accidentally turns stable releases into prereleases ([#239](https://github.com/changesets/changesets/issues/239)) | Impossible — channel state lives in the branch and the file layout, not in a global mode                                                 |
-| Dist-tag control                   | Locked to mode tag, `--tag` is rejected ([#786](https://github.com/changesets/changesets/issues/786))                                              | Per-channel `tag` config, independent of suffix                                                                                          |
-| Dependent force-bumping            | Always on, can't be disabled ([#960](https://github.com/changesets/changesets/issues/960))                                                         | Never automatic — cycle membership is declared (bump files, `linked`/`fixed`, `cascadeTo`); inter-cycle deps are exact-pinned at publish |
-| Counter                            | Requires committed `package.json` increments ([#381](https://github.com/changesets/changesets/issues/381))                                         | Derived from current state; resets cleanly when target moves                                                                             |
-| Exit re-bumps everything           | Yes ([#729](https://github.com/changesets/changesets/issues/729))                                                                                  | No — promotion strips suffixes and consumes pre-shipped bump files into one consolidated entry                                           |
-| First publish during pre mode      | Silently goes to `@latest`                                                                                                                         | Always goes to channel's dist-tag                                                                                                        |
-| Stable changelog after prereleases | Lossy — only the `pre exit` step's diff                                                                                                            | Lossless — consolidated entry built from every bump file in the cycle                                                                    |
+|                                    | changesets pre mode                                                                                                                                | bumpy channels                                                                                                            |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Entering                           | `changeset pre enter beta` writes `.changeset/pre.json`                                                                                            | Push to the channel branch                                                                                                |
+| Exiting                            | `changeset pre exit` + `version` + `publish` + delete `pre.json`                                                                                   | Merge channel branch → main; bumpy strips suffix and consolidates                                                         |
+| State file                         | `.changeset/pre.json` committed to repo                                                                                                            | None — file location in `.bumpy/` is the state                                                                            |
+| Wrong-branch hazard                | Merging while pre mode is active accidentally turns stable releases into prereleases ([#239](https://github.com/changesets/changesets/issues/239)) | Impossible — channel state lives in the branch and the file layout, not in a global mode                                  |
+| Dist-tag control                   | Locked to mode tag, `--tag` is rejected ([#786](https://github.com/changesets/changesets/issues/786))                                              | Per-channel `tag` config, independent of suffix                                                                           |
+| Dependent force-bumping            | Cascades to **major** on peer deps by default ([#960](https://github.com/changesets/changesets/issues/960))                                        | Cascades at **proportional levels** (patch on deps, match-trigger on peer deps); inter-cycle deps exact-pinned at publish |
+| Counter                            | Requires committed `package.json` increments ([#381](https://github.com/changesets/changesets/issues/381))                                         | Derived from current state; resets cleanly when target moves                                                              |
+| Exit re-bumps everything           | Yes ([#729](https://github.com/changesets/changesets/issues/729))                                                                                  | No — promotion strips suffixes and consumes pre-shipped bump files into one consolidated entry                            |
+| First publish during pre mode      | Silently goes to `@latest`                                                                                                                         | Always goes to channel's dist-tag                                                                                         |
+| Stable changelog after prereleases | Lossy — only the `pre exit` step's diff                                                                                                            | Lossless — consolidated entry built from every bump file in the cycle                                                     |
 
 ---
 
