@@ -10,6 +10,22 @@ No `pre enter` / `pre exit` commands. No mode files in your repo. No hidden stat
 
 > If you're coming from changesets, see [Comparison with changesets pre mode](#comparison-with-changesets-pre-mode) at the bottom for a side-by-side.
 
+## When to use channels — and when not to
+
+Channels are designed for **long-lived release lines** — an ongoing `next` / `beta` / `rc` cycle that accumulates changes over days or weeks before promotion to stable. They carry per-cycle state in your branch and your `.bumpy/<channel>/` directory, and they're worth setting up when you expect to ship multiple prereleases through the same cycle.
+
+**For per-PR preview releases, use [pkg.pr.new](https://pkg.pr.new) instead.**
+
+pkg.pr.new publishes an ephemeral package from any open PR, gives you an install URL pinned to the PR's commit, and disappears when the PR closes. It's purpose-built for "let me try this PR before merging" workflows — no version planning, no branch discipline, no consumed bump files. Bumpy channels would be the wrong tool for that job: you'd be polluting your channel branch with throwaway state for every PR.
+
+Rough rule of thumb:
+
+| You want…                                                 | Use                                   |
+| --------------------------------------------------------- | ------------------------------------- |
+| Preview a single PR for review                            | [pkg.pr.new](https://pkg.pr.new)      |
+| Ship a `1.2.0-rc.N` line for weeks of integration testing | Bumpy channels (this doc)             |
+| One-off canary from `main`                                | (Planned: `bumpy publish --snapshot`) |
+
 ---
 
 ## Mental model
@@ -330,6 +346,7 @@ The directory used to hold shipped bump files matches the channel name: `.bumpy/
 
 These are intentionally out of scope for the initial channel feature. If any of these is a blocker for you, please open an issue.
 
-- **Per-PR snapshot previews** (`0.0.0-pr-123-<sha>` for a single PR) — planned as a separate `bumpy publish --snapshot` flag, not via channels.
+- **Per-PR preview releases** — use [pkg.pr.new](https://pkg.pr.new) instead. It's purpose-built for ephemeral per-PR packages and pairs well with bumpy. See [When to use channels — and when not to](#when-to-use-channels--and-when-not-to) above.
+- **One-off snapshot publishes from `main`** (`0.0.0-snapshot-<sha>`) — planned as a separate `bumpy publish --snapshot` flag, not via channels.
 - **Workflow-dispatch one-off prereleases** — planned as a complement to channels, for teams that want occasional prereleases without a dedicated branch.
 - **Per-bump-file channel routing** — declaring `channel: beta` inside a bump file's frontmatter. Not planned; channels stay branch-derived to keep the mental model simple.
