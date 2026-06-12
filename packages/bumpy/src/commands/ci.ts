@@ -1063,7 +1063,7 @@ export function formatReleasePlanComment(
     const installHint = examplePkg ? ` (e.g. \`npm i ${examplePkg}@${channel.tag}\`)` : '';
     lines.push(
       `> 🔀 Published to the \`@${channel.tag}\` dist-tag${installHint}. ` +
-        `Prerelease versions are derived at publish time — the \`.?\` counter is filled in from the registry. ` +
+        `Prerelease versions are derived at publish time — the \`.x\` counter is filled in from the registry. ` +
         `Promote to a stable release by merging \`${channel.branch}\` into your base branch.`,
     );
     lines.push('');
