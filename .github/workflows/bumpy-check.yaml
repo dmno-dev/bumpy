@@ -4,6 +4,10 @@
 # ⚠️ NOTE - DO NOT COPY THIS FILE
 # instead look at the recommended workflow in the docs
 # ➡️ https://bumpy.varlock.dev/blob/main/docs/github-actions.md ⬅️
+#
+# This repo splits the check into two mutually-exclusive jobs so it can dogfood its
+# OWN unreleased CLI on internal PRs while staying safe for fork PRs. A normal project
+# only needs the single `bunx @varlock/bumpy@latest ci check` job (the fork-safe one).
 
 name: Bumpy Check
 
@@ -14,17 +18,41 @@ permissions:
   contents: read
 
 jobs:
-  bumpy-check:
+  # Fork PRs (untrusted): run the PUBLISHED bumpy and never execute the PR's code.
+  # pull_request_target carries a write token + secrets, so building/running fork
+  # code here would be a privilege-escalation hole. `ci check` reads json/yaml only.
+  check-published:
+    if: github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     steps:
-      # Check out the PR head so bumpy can read the PR's bump files, config, and package.json
+      # Check out the PR head so bumpy can read the PR's bump files, config, and package.json.
       # We never execute this code!
       - uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.head.sha }}
       - uses: oven-sh/setup-bun@v2
-
-      # reads json/yaml files only, so it's safe to run on fork PRs
       - run: bunx @varlock/bumpy@latest ci check
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  # Internal (non-fork) PRs: build and run THIS repo's local bumpy so we dogfood the
+  # unreleased CLI (e.g. channel-aware comments before they're published to @latest).
+  # ⚠️ DO NOT COPY — only safe because the PR head lives in this same repo, so no
+  # untrusted code runs with the privileged token. Forks fall through to check-published.
+  check-local:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0 # need history to diff bump files against the PR base branch
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install
+      # Build first since we run the local built version of bumpy instead of the published one
+      - run: bun run --filter @varlock/bumpy build
+      # run bun install again to make the now-built CLI available
+      - run: bun install
+      - run: bunx @varlock/bumpy ci check
         env:
           GH_TOKEN: ${{ github.token }}
