@@ -44,3 +44,21 @@ describe('formatReleasePlanComment — prerelease channel', () => {
     expect(comment).toContain('Promote to a stable release by merging `next`');
   });
 });
+
+describe('formatReleasePlanComment — promotion PR (channel-dir bump files, stable target)', () => {
+  // On a promotion PR (next → main) the pending bump files live in `.bumpy/next/`
+  const promotionPlan = makeReleasePlan(
+    [makeRelease('@myorg/core', '1.2.0', { type: 'minor', oldVersion: '1.1.0', bumpFiles: ['feat'] })],
+    [{ ...makeBumpFile('feat', [{ name: '@myorg/core', type: 'minor' }], 'Add a feature'), channel: 'next' }],
+  );
+  const comment = formatReleasePlanComment(promotionPlan, promotionPlan.bumpFiles, '1', 'next', 'npm');
+
+  test('renders channel-dir bump files with their subdir path', () => {
+    expect(comment).toContain('`next/feat.md`');
+  });
+
+  test('shows the stable plan (no channel banner, no preid suffix)', () => {
+    expect(comment).toContain('1.1.0 → **1.2.0**');
+    expect(comment).not.toContain('prerelease channel');
+  });
+});
