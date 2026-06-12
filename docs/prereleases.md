@@ -137,6 +137,8 @@ on:
 
 That's the only workflow change. `bumpy ci release` reads the current branch, looks up the channel in `_config.json`, and behaves accordingly.
 
+> **If your publish job runs in a GitHub Environment with deployment branch restrictions** (the [recommended hardening](github-actions.md#optional-hardening-protection-rules-on-the-publish-environment) restricts it to `main`), add each channel branch to the environment's allowed deployment branches (repo Settings → Environments → publish → Deployment branches). Otherwise the publish job can't run from the channel branch — with npm trusted publishing this means OIDC token requests are rejected and channel publishes fail.
+
 > Make sure the checkout step uses `fetch-depth: 0` (the [release workflow](github-actions.md) already requires this) — the channel publish trigger diffs the triggering push to detect release PR merges.
 
 > The PR check workflow (`bumpy-check.yaml`) needs no changes — it runs on `pull_request_target` and handles any base branch.
