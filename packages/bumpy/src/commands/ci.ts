@@ -120,6 +120,9 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
   // For PRs targeting a channel branch, compare against that branch (GITHUB_BASE_REF),
   // not baseBranch — otherwise the whole cycle's changes would show up.
   const compareBranch = process.env.GITHUB_BASE_REF || config.baseBranch;
+  // If this PR targets a channel branch, the comment makes that explicit (prerelease,
+  // dist-tag) rather than implying a normal stable release.
+  const prChannel = matchChannelByBranch(config, process.env.GITHUB_BASE_REF || null);
   const changedFiles = getChangedFiles(rootDir, compareBranch);
   const { branchBumpFiles: prBumpFiles, emptyBumpFileIds } = filterBranchBumpFiles(
     allBumpFiles,
@@ -180,13 +183,25 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
     return;
   }
 
-  const plan = assembleReleasePlan(prBumpFiles, packages, depGraph, config);
+  // On a channel-targeted PR, plan with the prerelease preid so the wider cascade
+  // (every dependent joins the cycle) is reflected accurately in the preview.
+  const plan = assembleReleasePlan(
+    prBumpFiles,
+    packages,
+    depGraph,
+    config,
+    prChannel ? { prereleasePreid: prChannel.preid } : {},
+  );
 
   // Pretty output for logs
-  log.bold(`${prBumpFiles.length} bump file(s) → ${plan.releases.length} package(s) to release\n`);
+  const releaseSuffix = prChannel ? `-${prChannel.preid}.?` : '';
+  log.bold(
+    `${prBumpFiles.length} bump file(s) → ${plan.releases.length} package(s) to release` +
+      `${prChannel ? ` on the "${prChannel.name}" channel (@${prChannel.tag})` : ''}\n`,
+  );
   for (const r of plan.releases) {
     const tag = r.isDependencyBump ? ' (dep)' : r.isCascadeBump ? ' (cascade)' : '';
-    console.log(`  ${r.name}: ${r.oldVersion} → ${colorize(r.newVersion, 'cyan')}${tag}`);
+    console.log(`  ${r.name}: ${r.oldVersion} → ${colorize(`${r.newVersion}${releaseSuffix}`, 'cyan')}${tag}`);
   }
   if (plan.warnings.length > 0) {
     for (const w of plan.warnings) {
@@ -206,6 +221,7 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
       plan.warnings,
       parseErrors,
       emptyBumpFileIds,
+      prChannel,
     );
     await postOrUpdatePrComment(prNumber, comment, rootDir);
   }
@@ -1007,7 +1023,7 @@ function pmRunCommand(pm: PackageManager): string {
   return 'npx bumpy';
 }
 
-function formatReleasePlanComment(
+export function formatReleasePlanComment(
   plan: ReleasePlan,
   bumpFiles: BumpFile[],
   prNumber: string,
@@ -1016,14 +1032,22 @@ function formatReleasePlanComment(
   warnings: string[] = [],
   parseErrors: string[] = [],
   emptyBumpFileIds: string[] = [],
+  channel: ResolvedChannel | null = null,
 ): string {
   const repo = process.env.GITHUB_REPOSITORY;
   const lines: string[] = [];
 
+  // When targeting a prerelease channel, the version display carries the `-<preid>.?`
+  // suffix (the exact counter is derived from the registry at publish time).
+  const versionSuffix = channel ? `-${channel.preid}.?` : '';
+
+  const headline = channel
+    ? `**This PR targets the \`${channel.name}\` prerelease channel** — merging it ships these packages as a **prerelease** to the \`@${channel.tag}\` dist-tag, not a stable release.`
+    : '**The changes in this PR will be included in the next version bump.**';
   const preamble = [
     `<a href="https://bumpy.varlock.dev"><img src="${FROG_IMG_BASE}/frog-clipboard.png" alt="bumpy-frog" width="60" align="left" style="image-rendering: pixelated;" title="Hi! I'm bumpy!" /></a>`,
     '',
-    '**The changes in this PR will be included in the next version bump.**',
+    headline,
     '<br clear="left" />',
   ].join('\n');
   lines.push(preamble);
@@ -1043,8 +1067,20 @@ function formatReleasePlanComment(
     lines.push('');
     for (const r of releases) {
       const suffix = r.isDependencyBump ? ' _(dep)_' : r.isCascadeBump ? ' _(cascade)_' : '';
-      lines.push(`- \`${r.name}\` ${r.oldVersion} → **${r.newVersion}**${suffix}`);
+      lines.push(`- \`${r.name}\` ${r.oldVersion} → **${r.newVersion}${versionSuffix}**${suffix}`);
     }
+    lines.push('');
+  }
+
+  if (channel) {
+    const examplePkg =
+      plan.releases.find((r) => !r.isDependencyBump && !r.isCascadeBump)?.name ?? plan.releases[0]?.name;
+    const installHint = examplePkg ? ` (e.g. \`npm i ${examplePkg}@${channel.tag}\`)` : '';
+    lines.push(
+      `> 🔀 Published to the \`@${channel.tag}\` dist-tag${installHint}. ` +
+        `Prerelease versions are derived at publish time — the \`.?\` counter is filled in from the registry. ` +
+        `Promote to a stable release by merging \`${channel.branch}\` into your base branch.`,
+    );
     lines.push('');
   }
 
