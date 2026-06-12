@@ -202,6 +202,49 @@
         }
       },
       "additionalProperties": false
+    },
+    "channels": {
+      "type": "object",
+      "description": "Prerelease channels, keyed by channel name. Each maps a long-lived branch to a prerelease line (version suffix + npm dist-tag). Prerelease versions are derived at publish time and never committed.",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "branch": {
+            "type": "string",
+            "description": "Branch that triggers this channel (required)"
+          },
+          "preid": {
+            "type": "string",
+            "description": "Version suffix (preid), e.g. \"rc\" produces 1.2.0-rc.0. Defaults to the channel name."
+          },
+          "tag": {
+            "type": "string",
+            "description": "npm dist-tag for publishes. Defaults to the channel name."
+          },
+          "versionPr": {
+            "type": "object",
+            "description": "Release PR overrides for this channel",
+            "properties": {
+              "title": {
+                "type": "string",
+                "description": "Release PR title. Defaults to \"<base title> (<channel name>)\"."
+              },
+              "branch": {
+                "type": "string",
+                "description": "Release PR branch. Defaults to \"<base branch>-<channel name>\"."
+              },
+              "automerge": {
+                "type": "boolean",
+                "description": "Enable auto-merge on the release PR",
+                "default": false
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "required": ["branch"],
+        "additionalProperties": false
+      }
     }
   },
   "additionalProperties": false,

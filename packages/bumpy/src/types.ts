@@ -95,9 +95,32 @@ export interface PublishConfig {
   npmStaged: boolean;
 }
 
+export interface ChannelConfig {
+  /** Branch that triggers this channel (required) */
+  branch: string;
+  /** Version suffix (preid), e.g. "rc" → 1.2.0-rc.0. Defaults to the channel name. */
+  preid?: string;
+  /** npm dist-tag for publishes. Defaults to the channel name. */
+  tag?: string;
+  /** Release PR overrides for this channel */
+  versionPr?: {
+    title?: string;
+    branch?: string;
+    /** Enable auto-merge on the release PR */
+    automerge?: boolean;
+  };
+}
+
 export interface BumpyConfig {
   baseBranch: string;
   access: 'public' | 'restricted';
+  /**
+   * Prerelease channels, keyed by channel name. Each maps a long-lived branch
+   * to a prerelease line (version suffix + npm dist-tag). Shipped bump files
+   * are tracked in `.bumpy/<name>/`. Prerelease versions are never committed —
+   * they are derived from bump files, the registry, and git tags at publish time.
+   */
+  channels: Record<string, ChannelConfig>;
   /**
    * Customize the commit message used when versioning.
    * A string starting with "./" is treated as a path to a module that exports
@@ -172,6 +195,7 @@ export const DEFAULT_PUBLISH_CONFIG: PublishConfig = {
 export const DEFAULT_CONFIG: BumpyConfig = {
   baseBranch: 'main',
   access: 'public',
+  channels: {},
   versionCommitMessage: undefined,
   changedFilePatterns: ['**'],
   changelog: 'default',
@@ -221,6 +245,8 @@ export interface BumpFile {
   id: string; // filename without .md
   releases: BumpFileRelease[];
   summary: string; // markdown body
+  /** Channel directory this file lives in (`.bumpy/<channel>/`), if any. Undefined = `.bumpy/` root. */
+  channel?: string;
 }
 
 // ---- Workspace ----

@@ -54,6 +54,7 @@ Fixed locale fallback logic in utils.
 - **Flexible package management** - include/exclude any package individually via per-package config, glob patterns, or `privatePackages` setting
 - **Non-interactive CLI** - `bumpy add` works fully non-interactively for CI/CD and AI-assisted development
 - **Aggregated GitHub releases** - optionally create a single consolidated release instead of one per package
+- **Prerelease channels** - branch-based `@next` / `@beta` release lines where prerelease versions are derived at publish time, never committed to git (see [prerelease channels docs](https://github.com/dmno-dev/bumpy/blob/main/docs/prereleases.md))
 - **Auto-generate from commits** - `bumpy generate` creates bump files from branch commits - works with any commit style, with enhanced detection for conventional commits
 - **Pluggable changelog formatters** - built-in `"default"` and `"github"` formatters, or write your own
 - **Zero runtime dependencies** - dependencies are minimal and bundled at release time
@@ -119,6 +120,7 @@ The skill teaches the AI to examine git changes, identify affected packages, cho
 - [CLI reference](https://github.com/dmno-dev/bumpy/blob/main/docs/cli.md) - every command with flags and examples
 - [GitHub Actions setup](https://github.com/dmno-dev/bumpy/blob/main/docs/github-actions.md) - CI workflows, token setup, trusted publishing
 - [Version propagation](https://github.com/dmno-dev/bumpy/blob/main/docs/version-propagation.md) - how dependency bumps cascade through your graph
+- [Prerelease channels](https://github.com/dmno-dev/bumpy/blob/main/docs/prereleases.md) - branch-based `@next` / `@beta` release lines
 
 ## Why files instead of conventional commits?
 
@@ -133,6 +135,7 @@ Bumpy is built as a successor to [🦋changesets](https://github.com/changesets/
 - **Custom publish commands** - changesets is hardcoded to `npm publish`. Bumpy supports per-package custom publish for VSCode extensions, Docker images, JSR, etc.
 - **Flexible package management** - changesets treats all private packages the same. Bumpy lets you include/exclude any package individually.
 - **CI without a separate action or bot** - changesets requires installing a [GitHub App](https://github.com/apps/changeset-bot) _and_ using a [separate GitHub Action](https://github.com/changesets/action). Bumpy replaces both with two CLI commands (`bumpy ci check` + `bumpy ci release`) that run directly in your workflows - no extra repos to trust, no app installation requiring org admin approval.
+- **Prerelease channels that don't corrupt state** - changesets' prerelease mode is described in [their own docs](https://github.com/changesets/changesets/blob/main/docs/prereleases.md) as "very complicated" with states "very hard to fix." Bumpy uses [branch-based channels](https://github.com/dmno-dev/bumpy/blob/main/docs/prereleases.md) where prerelease versions are never committed - no global mode file to poison unrelated releases.
 - **Automatic migration** - `bumpy init` detects `.changeset/`, renames it to `.bumpy/`, migrates config, keeps pending files, and offers to uninstall `@changesets/cli`.
 
 ## Development
@@ -146,7 +149,6 @@ bunx bumpy --help  # invoke built cli
 
 ## Roadmap
 
-- Prerelease mode (for now, use [pkg.pr.new](https://github.com/stackblitz-labs/pkg.pr.new) for branch preview packages)
 - Standalone binary for use outside of JS projects
 - Better support for versioning non-JS packages and usage without package.json files
 - Plugin system for different publish targets, and support multiple targets per package

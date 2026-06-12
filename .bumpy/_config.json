@@ -12,5 +12,10 @@
   "publish": {
     "provenance": true,
     "npmStaged": true
+  },
+  // prerelease channel — dogfooding our own feature: pushes to `next` publish
+  // `-rc.N` versions to the @next dist-tag (prerelease versions are never committed)
+  "channels": {
+    "next": { "branch": "next", "preid": "rc", "tag": "next" }
   }
 }

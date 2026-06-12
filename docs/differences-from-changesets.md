@@ -147,6 +147,18 @@ Bumpy replaces all of this with two CLI commands you run directly in standard wo
 - [changesets#1242](https://github.com/changesets/changesets/issues/1242) — bot/action version upgrade issues
 - [changesets#43](https://github.com/changesets/changesets/issues/43) — can't customize bot messages
 
+### Prerelease channels that actually work
+
+Changesets' prerelease mode is described in their own docs as "very complicated" with "mistakes that can lead to repository and publish states that are very hard to fix." Key problems: global mode state poisons unrelated merges, exiting pre bumps ALL packages, counters require committed state, dist-tags can't be controlled.
+
+Bumpy replaces the mode with **branch-based channels** ([docs/prereleases.md](./prereleases.md)): a long-lived branch (e.g. `next`) maps to a prerelease line. Bump file location (`.bumpy/<channel>/`) is the only state; prerelease versions are never committed — targets derive from bump files, counters from the registry. Promotion to stable is just a merge.
+
+- [changesets#729](https://github.com/changesets/changesets/issues/729) — exiting pre mode bumps all versions (14 comments)
+- [changesets#786](https://github.com/changesets/changesets/issues/786) — can't control dist-tag in pre mode (13 comments)
+- [changesets#635](https://github.com/changesets/changesets/issues/635) — prerelease workflow problems
+- [changesets#239](https://github.com/changesets/changesets/issues/239) — prerelease mode design issues
+- [changesets#381](https://github.com/changesets/changesets/issues/381) — prerelease counters require committed state
+
 ### Local bump file verification
 
 `bumpy check` verifies that changed packages on the current branch have corresponding bump files. Compares your branch to the base branch, maps changed files to packages. By default it only fails if no bump files exist at all (matching changesets behavior). Use `--strict` to require every changed package to be covered, `--no-fail` for advisory-only mode, or `--hook pre-commit`/`--hook pre-push` to control which bump files count based on their git status. No GitHub API needed.
@@ -156,15 +168,6 @@ Changesets has no built-in equivalent — users rely on the CI bot comment to ca
 ---
 
 ## Planned / Not Yet Implemented
-
-### Prerelease mode that actually works
-
-Changesets' prerelease mode is described in their own docs as "very complicated" with "mistakes that can lead to repository and publish states that are very hard to fix." Key problems: no target on bump files, multi-branch corruption, exiting pre bumps ALL packages, bad interactions with linked/fixed groups.
-
-- [changesets#729](https://github.com/changesets/changesets/issues/729) — exiting pre mode bumps all versions (14 comments)
-- [changesets#786](https://github.com/changesets/changesets/issues/786) — can't control dist-tag in pre mode (13 comments)
-- [changesets#635](https://github.com/changesets/changesets/issues/635) — prerelease workflow problems
-- [changesets#239](https://github.com/changesets/changesets/issues/239) — prerelease mode design issues
 
 ### Root workspace / non-package changes
 

@@ -31,17 +31,47 @@ export interface ReadBumpFilesResult {
   errors: string[];
 }
 
-/** Read all bump files from .bumpy/ directory, sorted by git creation order */
-export async function readBumpFiles(rootDir: string): Promise<ReadBumpFilesResult> {
+export interface ReadBumpFilesOptions {
+  /**
+   * Channel names whose `.bumpy/<name>/` subdirectories should also be read.
+   * Files from those dirs get their `channel` field set; root files don't.
+   */
+  channels?: string[];
+}
+
+/** Read all bump files from .bumpy/ (and optionally channel subdirs), sorted by git creation order */
+export async function readBumpFiles(rootDir: string, opts: ReadBumpFilesOptions = {}): Promise<ReadBumpFilesResult> {
   const dir = getBumpyDir(rootDir);
-  const files = await listFiles(dir, '.md');
   const bumpFiles: BumpFile[] = [];
   const errors: string[] = [];
+
+  const files = await listFiles(dir, '.md');
   for (const file of files) {
     if (file === 'README.md') continue;
     const result = await parseBumpFileFromPath(resolve(dir, file));
     if (result.bumpFile) bumpFiles.push(result.bumpFile);
     errors.push(...result.errors);
+  }
+
+  for (const channel of opts.channels ?? []) {
+    const channelDir = resolve(dir, channel);
+    const channelFiles = await listFiles(channelDir, '.md');
+    for (const file of channelFiles) {
+      if (file === 'README.md') continue;
+      const result = await parseBumpFileFromPath(resolve(channelDir, file));
+      if (result.bumpFile) {
+        const duplicate = bumpFiles.find((bf) => bf.id === result.bumpFile!.id);
+        if (duplicate) {
+          errors.push(
+            `Bump file "${result.bumpFile.id}" exists both ${duplicate.channel ? `in .bumpy/${duplicate.channel}/` : 'at .bumpy/ root'} and in .bumpy/${channel}/ — ` +
+              'remove one copy (the change likely already shipped on one of them).',
+          );
+          continue;
+        }
+        bumpFiles.push({ ...result.bumpFile, channel });
+      }
+      errors.push(...result.errors);
+    }
   }
 
   // Sort by the commit date when each bump file was first added to git.
@@ -80,7 +110,10 @@ function getBumpFileCreationOrder(rootDir: string): Map<string, number> {
     if (/^\d+$/.test(trimmed)) {
       currentTimestamp = parseInt(trimmed, 10);
     } else if (trimmed.startsWith('.bumpy/') && trimmed.endsWith('.md')) {
-      const id = trimmed.replace(/^\.bumpy\//, '').replace(/\.md$/, '');
+      // Use the basename as the ID — bump files keep their ID when moved into
+      // a channel subdir, and the move shows up as a new "A" entry, so taking
+      // the oldest timestamp below preserves the original creation order.
+      const id = fileToId(trimmed);
       // Only record the first (oldest) commit — git log is newest-first,
       // so later entries overwrite with earlier timestamps
       order.set(id, currentTimestamp);
@@ -219,11 +252,27 @@ export function recoverDeletedBumpFiles(rootDir: string): BumpFile[] {
     // Read the file content from the parent commit
     const content = tryRunArgs(['git', 'show', `HEAD~1:${filePath}`], { cwd: rootDir });
     if (!content) continue;
-    const id = filePath.replace(/^\.bumpy\//, '').replace(/\.md$/, '');
-    const { bumpFile } = parseBumpFile(content, id);
+    const { bumpFile } = parseBumpFile(content, fileToId(filePath));
     if (bumpFile) bumpFiles.push(bumpFile);
   }
   return bumpFiles;
+}
+
+/**
+ * Move bump files into a channel's shipped directory (`.bumpy/<channel>/`).
+ * This is the only thing a channel "version" does — prerelease versions are
+ * never written to git. Files already in the target channel dir are left alone.
+ */
+export async function moveBumpFilesToChannel(rootDir: string, bumpFiles: BumpFile[], channel: string): Promise<void> {
+  const { rename, mkdir } = await import('node:fs/promises');
+  const dir = getBumpyDir(rootDir);
+  const channelDir = resolve(dir, channel);
+  await mkdir(channelDir, { recursive: true });
+  for (const bf of bumpFiles) {
+    if (bf.channel === channel) continue;
+    const from = bf.channel ? resolve(dir, bf.channel, `${bf.id}.md`) : resolve(dir, `${bf.id}.md`);
+    await rename(from, resolve(channelDir, `${bf.id}.md`));
+  }
 }
 
 /** Delete consumed bump files */
@@ -244,11 +293,7 @@ function fileToId(filePath: string): string {
  * of bump files that were added/modified. Shared by `check` and `ci check`.
  */
 export function extractBumpFileIdsFromChangedFiles(changedFiles: string[]): Set<string> {
-  return new Set(
-    changedFiles
-      .filter((f) => /^\.bumpy\/.*\.md$/.test(f) && !f.endsWith('README.md'))
-      .map((f) => f.replace(/^\.bumpy\//, '').replace(/\.md$/, '')),
-  );
+  return new Set(changedFiles.filter((f) => /^\.bumpy\/.*\.md$/.test(f) && !f.endsWith('README.md')).map(fileToId));
 }
 
 /**
