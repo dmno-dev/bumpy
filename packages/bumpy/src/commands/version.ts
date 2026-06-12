@@ -158,7 +158,7 @@ export async function channelVersion(
   log.step('Cycle targets (counters are derived from the registry at publish time):');
   for (const r of cyclePlan.releases) {
     const tag = r.isDependencyBump ? ' (dep)' : r.isCascadeBump ? ' (cascade)' : '';
-    console.log(`  ${r.name}: ${r.oldVersion} → ${colorize(`${r.newVersion}-${channel.preid}.?`, 'cyan')}${tag}`);
+    console.log(`  ${r.name}: ${r.oldVersion} → ${colorize(`${r.newVersion}-${channel.preid}.x`, 'cyan')}${tag}`);
   }
 
   await moveBumpFilesToChannel(rootDir, pending, channel.name);

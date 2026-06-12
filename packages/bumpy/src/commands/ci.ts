@@ -13,7 +13,7 @@ import {
   resolveChannels,
   type ResolvedChannel,
 } from '../core/channels.ts';
-import { buildChannelReleasePlan, formatChannelVersionSummary } from '../core/prerelease.ts';
+import { buildChannelReleasePlan, channelDisplayPlan, formatChannelVersionSummary } from '../core/prerelease.ts';
 import { runArgs, runArgsAsync, tryRunArgs } from '../utils/shell.ts';
 import { randomName } from '../utils/names.ts';
 import { detectPackageManager } from '../utils/package-manager.ts';
@@ -194,7 +194,7 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
   );
 
   // Pretty output for logs
-  const releaseSuffix = prChannel ? `-${prChannel.preid}.?` : '';
+  const releaseSuffix = prChannel ? `-${prChannel.preid}.x` : '';
   log.bold(
     `${prBumpFiles.length} bump file(s) → ${plan.releases.length} package(s) to release` +
       `${prChannel ? ` on the "${prChannel.name}" channel (@${prChannel.tag})` : ''}\n`,
@@ -804,8 +804,8 @@ async function ciChannelRelease(
 /**
  * Create or update the channel's release PR. Unlike the stable version PR, its diff
  * is pure file moves (pending bump files → `.bumpy/<channel>/`) — no versions, no
- * changelogs. Computed prerelease versions appear in the PR title and body as
- * point-in-time narrative; the registry wins at publish time.
+ * changelogs. The PR title/body show targets with a wildcard counter (`1.2.0-rc.x`),
+ * derived purely from committed state; the exact counter is assigned at publish time.
  */
 async function createChannelReleasePr(
   rootDir: string,
@@ -840,30 +840,15 @@ async function createChannelReleasePr(
     return;
   }
 
-  // Compute prerelease versions for the PR title/body. Best-effort — these are
-  // narrative (recomputed at publish time); offline we fall back to target-".?".
-  let displayPlan: ReleasePlan = result.cyclePlan;
-  let displayIsExact = false;
-  try {
-    const built = await buildChannelReleasePlan(result.cyclePlan, channel, packages, rootDir, { forDisplay: true });
-    if (built.plan.releases.length > 0) {
-      displayPlan = built.plan;
-      displayIsExact = true;
-    }
-  } catch {
-    // registry unavailable — keep stable targets
-  }
-  if (!displayIsExact) {
-    displayPlan = {
-      ...displayPlan,
-      releases: displayPlan.releases.map((r) => ({ ...r, newVersion: `${r.newVersion}-${channel.preid}.?` })),
-    };
-  }
+  // Versions shown in the PR title/body/commit message are deterministic: targets
+  // come from committed bump files; the counter is a wildcard (`-rc.x`) because the
+  // real one is derived from the registry at publish time and could drift by merge.
+  const displayPlan = channelDisplayPlan(result.cyclePlan, channel, packages);
 
   const versionSummary = formatChannelVersionSummary(displayPlan.releases);
   const prTitle = versionSummary ? `${channel.versionPr.title}: ${versionSummary}` : channel.versionPr.title;
 
-  // Commit the moves — the computed versions live in the commit message, so
+  // Commit the moves — the version summary lives in the commit message, so
   // `git log` on the channel branch reads as a release history
   runArgs(['git', 'add', '-A', '.bumpy/'], { cwd: rootDir });
   const status = tryRunArgs(['git', 'status', '--porcelain'], { cwd: rootDir });
@@ -935,7 +920,7 @@ function buildChannelPrPreamble(config: BumpyConfig, channel: ResolvedChannel): 
     config.versionPr.preamble,
     '',
     `> 🔀 **Prerelease channel \`${channel.name}\`** — merging this PR publishes the versions below to the \`@${channel.tag}\` dist-tag.`,
-    `> The diff only moves bump files into \`.bumpy/${channel.name}/\` — prerelease versions are derived at publish time and never committed. Version numbers shown here are estimates; the registry wins at publish.`,
+    `> The diff only moves bump files into \`.bumpy/${channel.name}/\` — prerelease versions are derived at publish time and never committed. The \`.x\` counter is assigned from the registry at publish time.`,
   ].join('\n');
 }
 
@@ -1037,9 +1022,9 @@ export function formatReleasePlanComment(
   const repo = process.env.GITHUB_REPOSITORY;
   const lines: string[] = [];
 
-  // When targeting a prerelease channel, the version display carries the `-<preid>.?`
-  // suffix (the exact counter is derived from the registry at publish time).
-  const versionSuffix = channel ? `-${channel.preid}.?` : '';
+  // When targeting a prerelease channel, the version display carries a wildcard
+  // `-<preid>.x` suffix (the exact counter is derived from the registry at publish time).
+  const versionSuffix = channel ? `-${channel.preid}.x` : '';
 
   const headline = channel
     ? `**This PR targets the \`${channel.name}\` prerelease channel** — merging it ships these packages as a **prerelease** to the \`@${channel.tag}\` dist-tag, not a stable release.`

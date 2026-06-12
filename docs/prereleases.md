@@ -55,7 +55,7 @@ Rough rule of thumb:
 
 - **Branch = channel.** The `next` branch is the `next` channel. Pushing to it produces prerelease publishes on the `@next` dist-tag.
 - **Same flow as main.** Feature PRs land bump files. A "🐸 Versioned prerelease (next)" PR accumulates the cycle. Merging it triggers a prerelease publish.
-- **The release PR moves files, not versions.** Its diff is bump files moving into `.bumpy/next/`. The computed versions appear in the PR title and merge commit message — so `git log` on the channel reads as a release history — but nothing version-shaped is committed.
+- **The release PR moves files, not versions.** Its diff is bump files moving into `.bumpy/next/`. The cycle's target versions appear in the PR title and merge commit message with a wildcard counter (`1.2.0-rc.x`) — so `git log` on the channel reads as a release history — but nothing version-shaped is committed.
 - **Promotion is a merge.** `next` → `main` carries the accumulated bump files forward (and nothing else release-related — versions never diverged). Main's ordinary stable version PR consumes them.
 
 ---
@@ -164,7 +164,7 @@ When a feature PR merges to `next`:
 
 1. `bumpy ci release` runs on the `next` push.
 2. It sees a pending bump file and creates (or updates) a **release PR** — titled something like **"🐸 Versioned prerelease (next): 1.2.0-rc.4"**, targeting `next`, on the branch `bumpy/version-packages-next`.
-3. The PR's diff is **only file moves**: `.bumpy/feature-x.md` → `.bumpy/next/feature-x.md`. The computed versions live in the PR title and body, and land in git history via the merge commit message.
+3. The PR's diff is **only file moves**: `.bumpy/feature-x.md` → `.bumpy/next/feature-x.md`. The target versions (with a wildcard counter, e.g. `1.2.0-rc.x`) live in the PR title and body, and land in git history via the merge commit message.
 
 When a maintainer merges that PR:
 
@@ -176,7 +176,7 @@ When a maintainer merges that PR:
 npm install my-package@next       # gets 1.2.0-rc.0
 ```
 
-> **The PR title is narrative, not state.** Versions are recomputed at publish time and the registry always wins. If reality moved between PR creation and merge (e.g. `main` shipped a stable release that overtakes the cycle's target), publish uses the recomputed versions and warns about the retarget in its logs. Bumpy never reads versions back out of PR titles or commit messages.
+> **The PR title shows targets, not counters.** The title and body display each version as `1.2.0-rc.x` — the target comes from committed bump files (deterministic), while the `.x` counter is assigned from the registry at publish time. This is why the title can never be out of sync with what publishes: everything it claims is derived from committed state. The exact counter lands in the git tag and GitHub release moments after merge. Bumpy never reads versions back out of PR titles or commit messages.
 
 To skip the manual merge step, set `versionPr.automerge: true` on the channel — the release PR is created with auto-merge enabled, so each feature merge flows to a prerelease publish once checks pass. The PR (and its file-move commit) still exists, keeping the model intact; you just don't click the button.
 
@@ -252,7 +252,7 @@ Instead:
 - **`bumpy status`** on a channel renders the would-be changelog for the whole cycle on demand — the answer to "what has shipped on `@next` so far," including for teams not on GitHub.
 - **The stable `CHANGELOG.md` entry** is written once, at promotion, on `main` — lossless, because it's built from the bump files rather than from intermediate changelogs.
 
-There is deliberately no versions index file or per-channel README either — any committed reflection of registry state can go stale and mislead (failed publishes, retargets, resets). The computed versions appear in the release PR title and merge commit message, which are understood as point-in-time narrative; live truth is always `bumpy status`, the dist-tags, and the git tags.
+There is deliberately no versions index file or per-channel README either — any committed reflection of registry state can go stale and mislead (failed publishes, retargets, resets). The release PR title and merge commit message show only what's derivable from committed state (targets with a wildcard counter, `1.2.0-rc.x`); live truth is always `bumpy status`, the dist-tags, and the git tags.
 
 ---
 
@@ -385,7 +385,7 @@ Defaults applied when a field is omitted:
 
 - `preid` — defaults to the channel name (e.g., `next` → `1.2.0-next.0`).
 - `tag` — defaults to the channel name (so `@next`).
-- `versionPr.title` — defaults to `<base-title> (<channel>): <computed versions>` — the versions in the title are advisory narrative; the registry wins at publish time.
+- `versionPr.title` — defaults to `<base-title> (<channel>)`. A version summary is appended: `name@1.2.0-rc.x` for a single package, or a package count for several. The `.x` counter is assigned from the registry at publish time, so the title only ever claims what's derivable from committed state.
 - `versionPr.branch` — defaults to `<base-branch>-<channel>` (e.g., `bumpy/version-packages-next`).
 - `versionPr.automerge` — defaults to `false`.
 
