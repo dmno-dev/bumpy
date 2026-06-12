@@ -35,8 +35,8 @@ describe('formatReleasePlanComment — prerelease channel', () => {
     expect(comment).toContain('@next');
   });
 
-  test('versions carry the derived "-rc.?" suffix', () => {
-    expect(comment).toContain('1.1.0 → **1.2.0-rc.?**');
+  test('versions carry the wildcard "-rc.x" suffix', () => {
+    expect(comment).toContain('1.1.0 → **1.2.0-rc.x**');
   });
 
   test('includes a dist-tag install hint and promotion note', () => {

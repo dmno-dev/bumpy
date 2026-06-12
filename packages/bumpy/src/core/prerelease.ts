@@ -230,11 +230,30 @@ export async function writeChannelVersionsInPlace(
   };
 }
 
+/**
+ * Derive display versions for a channel cycle without touching the registry:
+ * each target gets a wildcard counter (`1.2.0-rc.x`). Everything here comes from
+ * committed state (bump files + config), so PR titles/bodies and commit messages
+ * can never disagree with what eventually publishes. Unpublishable packages are
+ * dropped, mirroring the filter in `buildChannelReleasePlan`.
+ */
+export function channelDisplayPlan(
+  stablePlan: ReleasePlan,
+  channel: ResolvedChannel,
+  packages: Map<string, WorkspacePackage>,
+): ReleasePlan {
+  const releases = stablePlan.releases
+    .filter((r) => {
+      const pkg = packages.get(r.name);
+      return !!pkg && !(pkg.private && !pkg.bumpy?.publishCommand);
+    })
+    .map((r) => ({ ...r, newVersion: `${r.newVersion}-${channel.preid}.x` }));
+  return { ...stablePlan, releases };
+}
+
 /** One-line summary of a channel plan's versions, for PR titles and commit messages */
 export function formatChannelVersionSummary(releases: PlannedRelease[]): string {
   if (releases.length === 0) return '';
-  const direct = releases.filter((r) => !r.isDependencyBump && !r.isCascadeBump && !r.isGroupBump);
-  const lead = (direct[0] ?? releases[0])!;
-  const rest = releases.length - 1;
-  return rest > 0 ? `${lead.name}@${lead.newVersion} (+${rest} more)` : `${lead.name}@${lead.newVersion}`;
+  if (releases.length === 1) return `${releases[0]!.name}@${releases[0]!.newVersion}`;
+  return `${releases.length} packages`;
 }

@@ -6,6 +6,7 @@ import {
   nextPrereleaseVersion,
   writeChannelVersionsInPlace,
   formatChannelVersionSummary,
+  channelDisplayPlan,
 } from '../../src/core/prerelease.ts';
 import { makePkg, makeRelease, makeReleasePlan, createTempGitRepo, cleanupTempDir } from '../helpers.ts';
 
@@ -112,20 +113,52 @@ describe('writeChannelVersionsInPlace', () => {
 });
 
 describe('formatChannelVersionSummary', () => {
-  test('single release', () => {
-    expect(formatChannelVersionSummary([makeRelease('core', '1.2.0-rc.0')])).toBe('core@1.2.0-rc.0');
+  test('single release shows name@version', () => {
+    expect(formatChannelVersionSummary([makeRelease('core', '1.2.0-rc.x')])).toBe('core@1.2.0-rc.x');
   });
 
-  test('leads with a direct (non-cascade) release and counts the rest', () => {
+  test('multiple releases show a count instead of an arbitrary lead', () => {
     const releases = [
-      makeRelease('plugin', '1.0.1-rc.0', { isDependencyBump: true }),
-      makeRelease('core', '1.2.0-rc.0'),
-      makeRelease('utils', '2.0.1-rc.0', { isDependencyBump: true }),
+      makeRelease('plugin', '1.0.1-rc.x', { isDependencyBump: true }),
+      makeRelease('core', '1.2.0-rc.x'),
+      makeRelease('utils', '2.0.1-rc.x', { isDependencyBump: true }),
     ];
-    expect(formatChannelVersionSummary(releases)).toBe('core@1.2.0-rc.0 (+2 more)');
+    expect(formatChannelVersionSummary(releases)).toBe('3 packages');
   });
 
   test('empty plan', () => {
     expect(formatChannelVersionSummary([])).toBe('');
+  });
+});
+
+describe('channelDisplayPlan', () => {
+  const channel = {
+    name: 'next',
+    branch: 'next',
+    preid: 'rc',
+    tag: 'next',
+    versionPr: { title: '🐸 Versioned prerelease (next)', branch: 'bumpy/release-next', automerge: false },
+  };
+
+  test('appends a wildcard counter to each target', () => {
+    const plan = makeReleasePlan([makeRelease('core', '1.2.0', { oldVersion: '1.1.0' })]);
+    const packages = new Map([['core', makePkg('core', '1.1.0')]]);
+    const display = channelDisplayPlan(plan, channel, packages);
+    expect(display.releases.map((r) => r.newVersion)).toEqual(['1.2.0-rc.x']);
+  });
+
+  test('drops unpublishable packages, keeps private ones with a publishCommand', () => {
+    const plan = makeReleasePlan([
+      makeRelease('core', '1.2.0'),
+      makeRelease('internal', '0.5.0'),
+      makeRelease('cli', '2.0.0'),
+    ]);
+    const packages = new Map([
+      ['core', makePkg('core', '1.1.0')],
+      ['internal', makePkg('internal', '0.4.0', { private: true })],
+      ['cli', makePkg('cli', '1.9.0', { private: true, bumpy: { publishCommand: 'cargo publish' } })],
+    ]);
+    const display = channelDisplayPlan(plan, channel, packages);
+    expect(display.releases.map((r) => r.name)).toEqual(['core', 'cli']);
   });
 });
