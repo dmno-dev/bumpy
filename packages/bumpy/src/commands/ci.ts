@@ -97,7 +97,13 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
   const config = await loadConfig(rootDir);
   const { packages } = await discoverWorkspace(rootDir, config);
   const depGraph = new DependencyGraph(packages);
-  const { bumpFiles: allBumpFiles, errors: parseErrors } = await readBumpFiles(rootDir);
+  // Read channel dirs too: on promotion (channel → main) and graduation (channel →
+  // channel) PRs, the pending bump files live in `.bumpy/<channel>/`. Feature PRs
+  // never have shipped channel files in their diff vs the PR base, so this only
+  // surfaces files where they're genuinely pending.
+  const { bumpFiles: allBumpFiles, errors: parseErrors } = await readBumpFiles(rootDir, {
+    channels: channelNames(config),
+  });
 
   // Skip on the version PR branch (and channel release PR branches) — they move/consume
   // bump files by design
@@ -1073,7 +1079,8 @@ export function formatReleasePlanComment(
   lines.push(`#### Bump files in this PR`);
   lines.push('');
   for (const bf of bumpFiles) {
-    const filename = `${bf.id}.md`;
+    // Channel-dir files (pending on promotion/graduation PRs) live at `.bumpy/<channel>/`
+    const filename = bf.channel ? `${bf.channel}/${bf.id}.md` : `${bf.id}.md`;
     const parts: string[] = [`\`${filename}\``];
     if (repo) {
       parts.push(

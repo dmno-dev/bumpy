@@ -2,7 +2,12 @@ import { describe, test, expect } from 'bun:test';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { readBumpFiles, moveBumpFilesToChannel, recoverDeletedBumpFiles } from '../../src/core/bump-file.ts';
+import {
+  readBumpFiles,
+  moveBumpFilesToChannel,
+  recoverDeletedBumpFiles,
+  filterBranchBumpFiles,
+} from '../../src/core/bump-file.ts';
 import { createTempGitRepo, cleanupTempDir, gitInDir } from '../helpers.ts';
 
 async function writeBumpFileAt(dir: string, relPath: string, pkgName = 'pkg-a', bump = 'minor'): Promise<void> {
@@ -36,6 +41,19 @@ describe('readBumpFiles with channels', () => {
       await writeBumpFileAt(dir, '.bumpy/next/shipped.md');
       const { bumpFiles } = await readBumpFiles(dir);
       expect(bumpFiles).toEqual([]);
+    } finally {
+      await cleanupTempDir(dir);
+    }
+  });
+
+  test('channel-dir files match diff paths in filterBranchBumpFiles (promotion PR shape)', async () => {
+    const dir = await createTempGitRepo();
+    try {
+      await writeBumpFileAt(dir, '.bumpy/next/shipped-feature.md');
+      const { bumpFiles } = await readBumpFiles(dir, { channels: ['next'] });
+      // A promotion PR's diff vs main lists the channel-dir path
+      const { branchBumpFiles } = filterBranchBumpFiles(bumpFiles, ['.bumpy/next/shipped-feature.md'], dir);
+      expect(branchBumpFiles.map((bf) => bf.id)).toEqual(['shipped-feature']);
     } finally {
       await cleanupTempDir(dir);
     }
