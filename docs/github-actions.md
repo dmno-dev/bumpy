@@ -211,7 +211,7 @@ That's it — the `publish` environment auto-creates on the first publish run, s
 
 If you create the environment manually in repo Settings → Environments _before_ the first publish, you can attach protection rules:
 
-- **Restrict deployment branches to `main`** — recommended. Cheap defense in depth: non-`main` refs can never request an OIDC token from this environment, even if a workflow trigger is accidentally widened later.
+- **Restrict deployment branches to `main`** — recommended. Cheap defense in depth: non-`main` refs can never request an OIDC token from this environment, even if a workflow trigger is accidentally widened later. If you use [prerelease channels](prereleases.md), also add each channel branch (e.g. `next`) to the allowed list — otherwise channel publishes fail when the job can't enter the environment.
 - **Required reviewers** — optional. Adds a manual approval gate before each publish. Usually redundant if `npmStaged: true` is enabled (below), since you already have a 2FA approval gate on npmjs.com.
 
 **Recommended publish config** — enable provenance and staged publishing for maximum security:
