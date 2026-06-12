@@ -2,22 +2,35 @@ import { log, colorize } from '../utils/logger.ts';
 import { loadConfig } from '../core/config.ts';
 import { discoverPackages } from '../core/workspace.ts';
 import { DependencyGraph } from '../core/dep-graph.ts';
-import { readBumpFiles } from '../core/bump-file.ts';
+import { readBumpFiles, moveBumpFilesToChannel } from '../core/bump-file.ts';
 import { assembleReleasePlan } from '../core/release-plan.ts';
 import { applyReleasePlan } from '../core/apply-release-plan.ts';
+import { channelNames, resolveActiveChannel, type ResolvedChannel } from '../core/channels.ts';
 import { runArgs, tryRunArgs } from '../utils/shell.ts';
 import { detectWorkspaces } from '../utils/package-manager.ts';
 import { resolveCommitMessage } from '../core/commit-message.ts';
+import type { BumpyConfig, BumpFile, ReleasePlan } from '../types.ts';
 
 interface VersionOptions {
   commit?: boolean;
+  /** Channel name override (otherwise inferred from the current branch) */
+  channel?: string;
 }
 
 export async function versionCommand(rootDir: string, opts: VersionOptions = {}): Promise<void> {
   const config = await loadConfig(rootDir);
+
+  const channel = resolveActiveChannel(rootDir, config, opts.channel);
+  if (channel) {
+    await channelVersion(rootDir, config, channel, { commit: opts.commit });
+    return;
+  }
+
   const packages = await discoverPackages(rootDir, config);
   const depGraph = new DependencyGraph(packages);
-  const { bumpFiles, errors: parseErrors } = await readBumpFiles(rootDir);
+  // Include channel subdirs — bump files that shipped as prereleases are pending
+  // for the stable release (promotion consumes them).
+  const { bumpFiles, errors: parseErrors } = await readBumpFiles(rootDir, { channels: channelNames(config) });
 
   if (parseErrors.length > 0) {
     for (const err of parseErrors) {
@@ -83,6 +96,87 @@ export async function versionCommand(rootDir: string, opts: VersionOptions = {})
       log.warn(`Git commit failed: ${e}`);
     }
   }
+}
+
+export interface ChannelVersionResult {
+  /** The full cycle plan (pending + shipped bump files) with stable target versions */
+  cyclePlan: ReleasePlan;
+  /** Bump files that were moved into the channel dir by this run */
+  movedFiles: BumpFile[];
+}
+
+/**
+ * "Versioning" on a prerelease channel never writes versions or changelogs — those
+ * are derived at publish time. It only moves pending bump files (root + other
+ * channels' dirs) into this channel's `.bumpy/<channel>/` directory, marking them
+ * as shipped on this channel.
+ */
+export async function channelVersion(
+  rootDir: string,
+  config: BumpyConfig,
+  channel: ResolvedChannel,
+  opts: { commit?: boolean } = {},
+): Promise<ChannelVersionResult | null> {
+  const packages = await discoverPackages(rootDir, config);
+  const depGraph = new DependencyGraph(packages);
+  const { bumpFiles, errors: parseErrors } = await readBumpFiles(rootDir, { channels: channelNames(config) });
+
+  if (parseErrors.length > 0) {
+    for (const err of parseErrors) {
+      log.error(err);
+    }
+    throw new Error('Bump file parse errors must be fixed before versioning.');
+  }
+
+  // A bump file is pending for this channel unless it's already in this channel's dir
+  const pending = bumpFiles.filter((bf) => bf.channel !== channel.name);
+
+  if (pending.length === 0) {
+    log.info(`No pending bump files for channel "${channel.name}".`);
+    return null;
+  }
+
+  // The full cycle (pending + shipped) determines the targets — show them, suffixed.
+  // Counters come from the registry at publish time, so they render as ".?" here.
+  const cyclePlan = assembleReleasePlan(bumpFiles, packages, depGraph, config, {
+    prereleasePreid: channel.preid,
+  });
+
+  if (cyclePlan.warnings.length > 0) {
+    for (const w of cyclePlan.warnings) {
+      log.warn(w);
+    }
+    console.log();
+  }
+
+  log.step(`Channel "${channel.name}" — moving ${pending.length} bump file(s) into .bumpy/${channel.name}/:`);
+  for (const bf of pending) {
+    const from = bf.channel ? `.bumpy/${bf.channel}/` : '.bumpy/';
+    console.log(`  ${from}${bf.id}.md → .bumpy/${channel.name}/${bf.id}.md`);
+  }
+  console.log();
+  log.step('Cycle targets (counters are derived from the registry at publish time):');
+  for (const r of cyclePlan.releases) {
+    const tag = r.isDependencyBump ? ' (dep)' : r.isCascadeBump ? ' (cascade)' : '';
+    console.log(`  ${r.name}: ${r.oldVersion} → ${colorize(`${r.newVersion}-${channel.preid}.?`, 'cyan')}${tag}`);
+  }
+
+  await moveBumpFilesToChannel(rootDir, pending, channel.name);
+  log.success(`🐸 Moved ${pending.length} bump file(s) — no versions written (prereleases are derived, not committed)`);
+
+  if (opts.commit) {
+    try {
+      runArgs(['git', 'add', '-A', '.bumpy/'], { cwd: rootDir });
+      const summary = pending.map((bf) => `${bf.id}.md`).join(', ');
+      const msg = `Version prerelease (${channel.name})\n\nShipped: ${summary}`;
+      runArgs(['git', 'commit', '-F', '-'], { cwd: rootDir, input: msg });
+      log.success('Created git commit');
+    } catch (e) {
+      log.warn(`Git commit failed: ${e}`);
+    }
+  }
+
+  return { cyclePlan, movedFiles: pending };
 }
 
 /** Run the package manager's install to update the lockfile */

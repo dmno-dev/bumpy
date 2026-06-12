@@ -53,8 +53,11 @@ bumpy status --verbose
 | `--bump <types>`   | Filter by bump type, e.g. `"major"` or `"minor,patch"`         |
 | `--filter <names>` | Filter by package name or glob                                 |
 | `--verbose`        | Show bump file details and summaries                           |
+| `--channel <name>` | Channel override (default: inferred from the current branch)   |
 
 Exits with code `0` if releases are pending, `1` if none.
+
+On a [prerelease channel](prereleases.md) branch, status shows the cycle instead: shipped vs pending bump files and the derived `-<preid>.N` versions (counters come from the registry; offline they render as `.?`).
 
 ## `bumpy version`
 
@@ -72,9 +75,12 @@ bumpy version
 bumpy version --commit
 ```
 
-| Flag       | Description                       |
-| ---------- | --------------------------------- |
-| `--commit` | Commit the version changes to git |
+| Flag               | Description                                                  |
+| ------------------ | ------------------------------------------------------------ |
+| `--commit`         | Commit the version changes to git                            |
+| `--channel <name>` | Channel override (default: inferred from the current branch) |
+
+On a [prerelease channel](prereleases.md) branch, `bumpy version` does something much smaller: it **moves pending bump files into `.bumpy/<channel>/`** and writes no versions and no changelogs — prerelease versions are derived at publish time and never committed.
 
 ## `bumpy publish`
 
@@ -87,12 +93,15 @@ bumpy publish --tag beta
 bumpy publish --filter "@myorg/*"
 ```
 
-| Flag               | Description                                               |
-| ------------------ | --------------------------------------------------------- |
-| `--dry-run`        | Preview what would be published without actually doing it |
-| `--tag <tag>`      | npm dist-tag (e.g., `next`, `beta`)                       |
-| `--no-push`        | Skip pushing git tags to the remote                       |
-| `--filter <names>` | Only publish matching packages (supports globs)           |
+| Flag               | Description                                                  |
+| ------------------ | ------------------------------------------------------------ |
+| `--dry-run`        | Preview what would be published without actually doing it    |
+| `--tag <tag>`      | npm dist-tag (e.g., `next`, `beta`)                          |
+| `--no-push`        | Skip pushing git tags to the remote                          |
+| `--filter <names>` | Only publish matching packages (supports globs)              |
+| `--channel <name>` | Channel override (default: inferred from the current branch) |
+
+On a [prerelease channel](prereleases.md) branch, publish derives prerelease versions (targets from the cycle's bump files, counters from the registry), transiently writes them into the working tree so pack/build see them, publishes the whole cycle to the channel's dist-tag with exact-pinned inter-cycle deps, then restores the files. Nothing version-shaped is ever committed.
 
 **How bumpy detects unpublished packages:**
 
@@ -114,12 +123,15 @@ bumpy check --hook pre-commit
 bumpy check --hook pre-push
 ```
 
-| Flag                | Description                                                |
-| ------------------- | ---------------------------------------------------------- |
-| `--strict`          | Fail if any changed package is not covered by a bump file  |
-| `--no-fail`         | Warn only, never exit non-zero (useful for advisory hooks) |
-| `--hook pre-commit` | Only count staged + committed bump files                   |
-| `--hook pre-push`   | Only count committed bump files                            |
+| Flag                | Description                                                                                                                           |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `--strict`          | Fail if any changed package is not covered by a bump file                                                                             |
+| `--no-fail`         | Warn only, never exit non-zero (useful for advisory hooks)                                                                            |
+| `--hook pre-commit` | Only count staged + committed bump files                                                                                              |
+| `--hook pre-push`   | Only count committed bump files                                                                                                       |
+| `--base <branch>`   | Branch to compare against (default: `baseBranch`) — use the channel branch for feature branches targeting a [channel](prereleases.md) |
+
+The check is skipped automatically on channel branches and release PR branches (they move/consume bump files by design).
 
 ### Hook context
 
@@ -239,6 +251,8 @@ bumpy ci release --auto-publish --tag beta
 | `--branch <name>`      | Version PR branch name (default: `bumpy/version-packages`)                                                                                                              |
 
 Requires `GH_TOKEN`. When `BUMPY_GH_TOKEN` is set, it is automatically used to push the version branch and create/edit the PR so that PR workflows trigger (see [GitHub Actions setup](github-actions.md#token-setup)).
+
+**Channel branches:** when run on a branch configured as a [prerelease channel](prereleases.md), `ci release` switches to the channel flow — it publishes the cycle when the triggering push moved bump files into `.bumpy/<channel>/` (a release PR merge), and creates/updates the file-move release PR when pending bump files exist. When channels are configured and the branch is neither `baseBranch` nor a channel branch, the command exits with an error instead of guessing.
 
 ## `bumpy ci setup`
 

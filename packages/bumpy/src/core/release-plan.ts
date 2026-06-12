@@ -36,11 +36,25 @@ interface PlannedBump {
  *   Phase B — enforce fixed/linked group constraints
  *   Phase C — apply cascades and proactive propagation rules
  */
+export interface AssemblePlanOptions {
+  /**
+   * Prerelease preid for channel plans (e.g. "rc"). When set, Phase A checks range
+   * satisfaction against `<target>-<preid>.0` instead of the stable target. Since a
+   * prerelease never satisfies a normal range (`^1.0.0` doesn't match `1.5.0-rc.0`),
+   * every dependent of a bumped package goes out of range and joins the cycle —
+   * required so consumers can actually install the cycle together from the dist-tag.
+   * Planned versions remain stable targets; the prerelease suffix is applied later
+   * from the registry floor.
+   */
+  prereleasePreid?: string;
+}
+
 export function assembleReleasePlan(
   bumpFiles: BumpFile[],
   packages: Map<string, WorkspacePackage>,
   depGraph: DependencyGraph,
   config: BumpyConfig,
+  opts: AssemblePlanOptions = {},
 ): ReleasePlan {
   if (bumpFiles.length === 0) {
     return { bumpFiles: [], releases: [], warnings: [] };
@@ -103,6 +117,9 @@ export function assembleReleasePlan(
     for (const [pkgName, bump] of planned) {
       const pkg = packages.get(pkgName)!;
       const newVersion = bumpVersion(pkg.version, bump.type);
+      // On a channel, the published version carries a prerelease suffix — check
+      // range satisfaction against that, since prereleases never satisfy normal ranges
+      const versionForRangeCheck = opts.prereleasePreid ? `${newVersion}-${opts.prereleasePreid}.0` : newVersion;
       const dependents = depGraph.getDependents(pkgName);
 
       for (const dep of dependents) {
@@ -111,7 +128,7 @@ export function assembleReleasePlan(
 
         // Check if new version is out of range
         const currentVersion = pkg.version;
-        if (satisfies(newVersion, dep.versionRange, currentVersion)) continue;
+        if (satisfies(versionForRangeCheck, dep.versionRange, currentVersion)) continue;
 
         // Determine bump level for the dependent
         let depBump: BumpType;

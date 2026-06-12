@@ -1,9 +1,14 @@
+import semver from 'semver';
 import { log, colorize } from '../utils/logger.ts';
 import { loadConfig } from '../core/config.ts';
 import { discoverWorkspace } from '../core/workspace.ts';
 import { DependencyGraph } from '../core/dep-graph.ts';
 import { forcePushTag, hasUncommittedChanges, tagExists } from '../core/git.ts';
 import { publishPackages, willUseOidcExclusively } from '../core/publish-pipeline.ts';
+import { readBumpFiles } from '../core/bump-file.ts';
+import { assembleReleasePlan } from '../core/release-plan.ts';
+import { channelNames, resolveActiveChannel, type ResolvedChannel } from '../core/channels.ts';
+import { buildChannelReleasePlan, writeChannelVersionsInPlace } from '../core/prerelease.ts';
 import {
   createIndividualReleases,
   findReleaseByTag,
@@ -26,6 +31,8 @@ import { detectWorkspaces } from '../utils/package-manager.ts';
 import { CI_PLAN_CACHE_PATH } from './ci.ts';
 import { runArgsAsync, tryRunArgs } from '../utils/shell.ts';
 import type { BumpyConfig, PackageConfig, ReleasePlan, PlannedRelease, WorkspacePackage } from '../types.ts';
+import type { CatalogMap } from '../utils/package-manager.ts';
+import type { PackageManager } from '../types.ts';
 
 interface PublishCommandOptions {
   dryRun?: boolean;
@@ -33,6 +40,8 @@ interface PublishCommandOptions {
   noPush?: boolean;
   /** Filter to specific packages by name/glob (comma-separated) */
   filter?: string;
+  /** Channel name override (otherwise inferred from the current branch) */
+  channel?: string;
   /** Recovered bump files from a version commit — used for GitHub release body generation */
   recoveredBumpFiles?: import('../types.ts').BumpFile[];
   /** Package names to exclude from publishing (e.g., packages with pending non-none bumps) */
@@ -41,7 +50,13 @@ interface PublishCommandOptions {
 
 /**
  * Publish packages that have been versioned but not yet published.
- * Detects unpublished versions by comparing package.json versions against npm registry.
+ *
+ * On the base branch: detects unpublished versions by comparing package.json versions
+ * against the npm registry.
+ *
+ * On a channel branch: prerelease versions are never committed, so they are computed
+ * here — targets from the cycle's bump files, counters from the registry — written
+ * transiently into the working tree, published to the channel's dist-tag, and restored.
  */
 export async function publishCommand(rootDir: string, opts: PublishCommandOptions): Promise<void> {
   const config = await loadConfig(rootDir);
@@ -54,9 +69,29 @@ export async function publishCommand(rootDir: string, opts: PublishCommandOption
     process.exit(1);
   }
 
+  const channel = resolveActiveChannel(rootDir, config, opts.channel);
+  if (channel) {
+    await publishChannel(rootDir, config, packages, catalogs, detectedPm, depGraph, channel, opts);
+    return;
+  }
+
   // Find packages that need publishing — use cached plan from `ci plan` if available,
   // otherwise query the registry
   let toPublish = await findUnpublishedWithCache(rootDir, packages, config);
+
+  // When channels are configured, prerelease versions must never reach the stable
+  // flow (they'd land on @latest). With the no-commit model this can't normally
+  // happen — committed versions are always stable — so a suffixed version here
+  // means something went wrong. Refuse loudly rather than publish it.
+  if (Object.keys(config.channels || {}).length > 0) {
+    const prereleases = toPublish.filter((r) => semver.prerelease(r.newVersion) !== null);
+    if (prereleases.length > 0) {
+      log.error('Refusing to publish prerelease versions outside a channel:');
+      for (const r of prereleases) log.error(`  • ${r.name}@${r.newVersion}`);
+      log.error('Prerelease versions should never be committed — see https://bumpy.varlock.dev/docs/prereleases');
+      process.exit(1);
+    }
+  }
 
   // Exclude packages with pending non-none bumps (they'll be superseded by the next version PR)
   if (opts.excludePackages && opts.excludePackages.size > 0) {
@@ -97,6 +132,115 @@ export async function publishCommand(rootDir: string, opts: PublishCommandOption
     releases: toPublish,
     warnings: [],
   };
+
+  await runPublishFlow(rootDir, config, packages, catalogs, detectedPm, depGraph, releasePlan, {
+    dryRun: opts.dryRun,
+    tag: opts.tag,
+    noPush: opts.noPush,
+  });
+}
+
+/**
+ * Publish a prerelease cycle from a channel branch.
+ *
+ * The cycle = every bump file on the branch (pending at root or in other channels'
+ * dirs, plus shipped in this channel's dir). The whole cycle republishes together
+ * each time so the channel dist-tag always points at one coherent, exact-pinned set.
+ */
+async function publishChannel(
+  rootDir: string,
+  config: BumpyConfig,
+  packages: Map<string, WorkspacePackage>,
+  catalogs: CatalogMap,
+  detectedPm: PackageManager,
+  depGraph: DependencyGraph,
+  channel: ResolvedChannel,
+  opts: PublishCommandOptions,
+): Promise<void> {
+  const { bumpFiles, errors: parseErrors } = await readBumpFiles(rootDir, { channels: channelNames(config) });
+  if (parseErrors.length > 0) {
+    for (const err of parseErrors) log.error(err);
+    process.exit(1);
+  }
+
+  const shipped = bumpFiles.filter((bf) => bf.channel === channel.name);
+  if (shipped.length === 0) {
+    log.info(
+      `Nothing has shipped on channel "${channel.name}" yet (no bump files in .bumpy/${channel.name}/).\n` +
+        `  Run \`bumpy version\` on the channel branch (or merge the release PR) first.`,
+    );
+    return;
+  }
+
+  log.bold(`Channel "${channel.name}" — preid "-${channel.preid}.N", dist-tag @${channel.tag}\n`);
+
+  // Targets from the full cycle's bump files; counters from the registry.
+  const stablePlan = assembleReleasePlan(bumpFiles, packages, depGraph, config, {
+    prereleasePreid: channel.preid,
+  });
+  const { plan, alreadyPublished, warnings } = await buildChannelReleasePlan(stablePlan, channel, packages, rootDir);
+
+  for (const w of warnings) log.warn(w);
+  for (const skip of alreadyPublished) {
+    log.dim(`  Skipping ${skip.name}@${skip.version} — already published from this commit`);
+  }
+
+  if (plan.releases.length === 0) {
+    log.info('All cycle packages already published from this commit.');
+    return;
+  }
+
+  // Filter only restricts what gets *published* — the in-place rewrite below still
+  // covers the whole plan so dependency pins stay consistent (used for partial-failure resume).
+  let toPublish = plan.releases;
+  if (opts.filter) {
+    const { matchGlob } = await import('../core/config.ts');
+    const patterns = opts.filter.split(',').map((p) => p.trim());
+    toPublish = toPublish.filter((r) => patterns.some((p) => matchGlob(r.name, p)));
+    if (toPublish.length === 0) {
+      log.info('No cycle packages match the filter.');
+      return;
+    }
+  }
+
+  // Transiently write computed versions + exact pins into the working tree so
+  // pack/build see them; always restored afterwards — prereleases never land in git.
+  let restore: (() => Promise<void>) | null = null;
+  if (!opts.dryRun) {
+    restore = await writeChannelVersionsInPlace(plan, packages);
+  }
+
+  try {
+    const publishPlan: ReleasePlan = { bumpFiles: plan.bumpFiles, releases: toPublish, warnings: [] };
+    await runPublishFlow(rootDir, config, packages, catalogs, detectedPm, depGraph, publishPlan, {
+      dryRun: opts.dryRun,
+      tag: opts.tag ?? channel.tag,
+      noPush: opts.noPush,
+    });
+  } finally {
+    if (restore) {
+      await restore();
+      log.dim('  Restored package.json files (prerelease versions are not committed)');
+    }
+  }
+}
+
+/**
+ * The shared publish flow: OIDC checks, draft GitHub releases, topological publish,
+ * release metadata updates, tag pushes. Used by both the stable and channel paths.
+ * Mutates `releasePlan.releases` as packages are filtered out (already published, etc.).
+ */
+async function runPublishFlow(
+  rootDir: string,
+  config: BumpyConfig,
+  packages: Map<string, WorkspacePackage>,
+  catalogs: CatalogMap,
+  detectedPm: PackageManager,
+  depGraph: DependencyGraph,
+  releasePlan: ReleasePlan,
+  opts: { dryRun?: boolean; tag?: string; noPush?: boolean },
+): Promise<void> {
+  let toPublish = releasePlan.releases;
 
   if (opts.dryRun) {
     log.bold('Dry run — would publish:');
@@ -188,7 +332,9 @@ export async function publishCommand(rootDir: string, opts: PublishCommandOption
         const headSha = getHeadSha(rootDir);
 
         try {
-          await createDraftRelease(tag, title, body, rootDir, headSha || undefined);
+          await createDraftRelease(tag, title, body, rootDir, headSha || undefined, {
+            prerelease: semver.prerelease(release.newVersion) !== null,
+          });
           log.dim(`  Created draft release: ${title}`);
           releaseMetadataByPkg.set(release.name, { tag, metadata, existingBody: body });
         } catch (err) {

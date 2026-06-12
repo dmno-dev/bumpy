@@ -6,6 +6,14 @@ import { DependencyGraph } from '../core/dep-graph.ts';
 import { readBumpFiles, filterBranchBumpFiles, recoverDeletedBumpFiles } from '../core/bump-file.ts';
 import { getChangedFiles, withGitToken } from '../core/git.ts';
 import { assembleReleasePlan } from '../core/release-plan.ts';
+import {
+  channelNames,
+  detectReleaseBranch,
+  matchChannelByBranch,
+  resolveChannels,
+  type ResolvedChannel,
+} from '../core/channels.ts';
+import { buildChannelReleasePlan, formatChannelVersionSummary } from '../core/prerelease.ts';
 import { runArgs, runArgsAsync, tryRunArgs } from '../utils/shell.ts';
 import { randomName } from '../utils/names.ts';
 import { detectPackageManager } from '../utils/package-manager.ts';
@@ -91,10 +99,15 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
   const depGraph = new DependencyGraph(packages);
   const { bumpFiles: allBumpFiles, errors: parseErrors } = await readBumpFiles(rootDir);
 
-  // Skip on the version PR branch — it has no bump files by design
+  // Skip on the version PR branch (and channel release PR branches) — they move/consume
+  // bump files by design
   const prBranchName = detectPrBranch(rootDir);
-  if (prBranchName === config.versionPr.branch) {
-    log.dim('  Skipping — this is the version PR branch.');
+  const releasePrBranches = new Set([
+    config.versionPr.branch,
+    ...[...resolveChannels(config).values()].map((c) => c.versionPr.branch),
+  ]);
+  if (prBranchName && releasePrBranches.has(prBranchName)) {
+    log.dim('  Skipping — this is a release PR branch.');
     return;
   }
 
@@ -103,8 +116,11 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
   const prNumber = detectPrNumber();
   const pm = await detectPackageManager(rootDir);
 
-  // Filter to only bump files added/modified in this PR
-  const changedFiles = getChangedFiles(rootDir, config.baseBranch);
+  // Filter to only bump files added/modified in this PR.
+  // For PRs targeting a channel branch, compare against that branch (GITHUB_BASE_REF),
+  // not baseBranch — otherwise the whole cycle's changes would show up.
+  const compareBranch = process.env.GITHUB_BASE_REF || config.baseBranch;
+  const changedFiles = getChangedFiles(rootDir, compareBranch);
   const { branchBumpFiles: prBumpFiles, emptyBumpFileIds } = filterBranchBumpFiles(
     allBumpFiles,
     changedFiles,
@@ -255,13 +271,21 @@ export async function ciPlanCommand(rootDir: string): Promise<void> {
   const config = await loadConfig(rootDir);
   const { packages } = await discoverWorkspace(rootDir, config);
   const depGraph = new DependencyGraph(packages);
-  const { bumpFiles, errors: parseErrors } = await readBumpFiles(rootDir);
+  // Channel-dir bump files count as pending on the base branch (promotion consumes them)
+  const { bumpFiles, errors: parseErrors } = await readBumpFiles(rootDir, { channels: channelNames(config) });
 
   if (parseErrors.length > 0) {
     for (const err of parseErrors) {
       log.error(err);
     }
     throw new Error('Bump file parse errors must be fixed before planning.');
+  }
+
+  // On a channel branch, report the channel plan instead
+  const channel = matchChannelByBranch(config, detectReleaseBranch(rootDir));
+  if (channel) {
+    await ciChannelPlan(rootDir, config, channel, packages, depGraph, bumpFiles);
+    return;
   }
 
   let output: PlanOutput;
@@ -390,9 +414,29 @@ interface ReleaseOptions {
 export async function ciReleaseCommand(rootDir: string, opts: ReleaseOptions): Promise<void> {
   const config = await loadConfig(rootDir);
   ensureGitIdentity(rootDir, config);
+
+  // Channel branches get the channel flow; unknown branches are refused (when channels
+  // are configured) so a misconfigured workflow can't publish from a feature branch.
+  const releaseBranch = detectReleaseBranch(rootDir);
+  const channel = matchChannelByBranch(config, releaseBranch);
+  if (channel) {
+    await ciChannelRelease(rootDir, config, channel, opts);
+    return;
+  }
+  if (Object.keys(config.channels || {}).length > 0 && releaseBranch && releaseBranch !== config.baseBranch) {
+    throw new Error(
+      `"bumpy ci release" ran on branch "${releaseBranch}", which is neither the base branch ` +
+        `("${config.baseBranch}") nor a configured channel branch. Refusing to release — ` +
+        'add the branch to "channels" in .bumpy/_config.json or fix the workflow trigger.',
+    );
+  }
+
   const { packages } = await discoverWorkspace(rootDir, config);
   const depGraph = new DependencyGraph(packages);
-  const { bumpFiles, errors: releaseParseErrors } = await readBumpFiles(rootDir);
+  // Channel-dir bump files count as pending on the base branch — merging a channel
+  // into main brings its shipped files along, and the stable release consumes them
+  // (promotion). No special mode needed.
+  const { bumpFiles, errors: releaseParseErrors } = await readBumpFiles(rootDir, { channels: channelNames(config) });
 
   if (releaseParseErrors.length > 0) {
     for (const err of releaseParseErrors) {
@@ -615,6 +659,331 @@ async function createVersionPr(
 
   // Switch back to the base branch
   runArgs(['git', 'checkout', baseBranch], { cwd: rootDir });
+}
+
+// ---- channel (prerelease) release flow ----
+
+/** Read the push event's before/after range, if running on a GitHub Actions push event */
+function getPushEventRange(): { before: string; after: string } | null {
+  if (process.env.GITHUB_EVENT_NAME !== 'push') return null;
+  const path = process.env.GITHUB_EVENT_PATH;
+  if (!path) return null;
+  try {
+    const payload = JSON.parse(readFileSync(path, 'utf-8')) as { before?: string; after?: string };
+    // "before" is all zeros for branch-creation pushes — no usable range
+    if (payload.before && payload.after && !/^0+$/.test(payload.before)) {
+      return { before: payload.before, after: payload.after };
+    }
+  } catch {
+    // fall through
+  }
+  return null;
+}
+
+/**
+ * Bump file IDs added to `.bumpy/<channel>/` by the push that triggered this run.
+ *
+ * This is the channel publish trigger: merging the release PR moves files into the
+ * channel dir; ordinary feature merges don't touch it. Re-running on the same push is
+ * idempotent — packages already published from this commit are skipped via the
+ * gitHead recorded on the registry.
+ */
+function detectChannelMoves(rootDir: string, channel: ResolvedChannel): string[] {
+  const range = getPushEventRange();
+  let diffRange: string;
+  if (range) {
+    diffRange = `${range.before}..${range.after}`;
+  } else {
+    if (!tryRunArgs(['git', 'rev-parse', '--verify', 'HEAD^'], { cwd: rootDir })) {
+      log.warn(
+        'Cannot diff against the previous commit (shallow clone?) — channel publish trigger unavailable.\n' +
+          '  Use `fetch-depth: 0` in your checkout step, or run `bumpy publish` manually on the channel branch.',
+      );
+      return [];
+    }
+    diffRange = 'HEAD^..HEAD';
+  }
+
+  // --no-renames so file moves into the channel dir show up as additions
+  const out = tryRunArgs(
+    ['git', 'diff', '--name-only', '--diff-filter=A', '--no-renames', diffRange, '--', `.bumpy/${channel.name}/`],
+    { cwd: rootDir },
+  );
+  if (!out) return [];
+  return out
+    .split('\n')
+    .filter((f) => f.endsWith('.md') && !f.endsWith('README.md'))
+    .map((f) => f.split('/').pop()!.replace(/\.md$/, ''));
+}
+
+/**
+ * CI release on a channel branch. Two independent steps, both of which can run
+ * in the same invocation:
+ *
+ * 1. **Publish** — if this push moved bump files into `.bumpy/<channel>/` (a release
+ *    PR merge), publish the cycle as prereleases. Versions are derived (targets from
+ *    bump files, counters from the registry) and never committed.
+ * 2. **Release PR** — if pending bump files exist (root or other channels' dirs),
+ *    create/update the file-move release PR.
+ */
+async function ciChannelRelease(
+  rootDir: string,
+  config: BumpyConfig,
+  channel: ResolvedChannel,
+  opts: ReleaseOptions,
+): Promise<void> {
+  log.bold(`Channel "${channel.name}" (branch "${channel.branch}")\n`);
+  const { packages } = await discoverWorkspace(rootDir, config);
+  const { bumpFiles, errors: parseErrors } = await readBumpFiles(rootDir, { channels: channelNames(config) });
+  if (parseErrors.length > 0) {
+    for (const err of parseErrors) log.error(err);
+    throw new Error('Bump file parse errors must be fixed before releasing.');
+  }
+
+  const pending = bumpFiles.filter((bf) => bf.channel !== channel.name);
+
+  if (opts.autoPublish) {
+    // Skip the release PR: move pending files, commit and push directly to the
+    // channel branch, then publish. (The push re-triggers CI; the re-run is a no-op
+    // thanks to the published-from-HEAD skip.)
+    if (pending.length > 0) {
+      const { channelVersion } = await import('./version.ts');
+      const result = await channelVersion(rootDir, config, channel, { commit: true });
+      if (result) {
+        runArgs(['git', 'push', '--no-verify'], { cwd: rootDir });
+      }
+    }
+    const { publishCommand } = await import('./publish.ts');
+    await publishCommand(rootDir, { channel: channel.name, tag: opts.tag });
+    return;
+  }
+
+  // Step 1: publish if this push merged a release PR (moved files into the channel dir)
+  const movedIds = detectChannelMoves(rootDir, channel);
+  const shouldPublish = movedIds.length > 0 && opts.assertMode !== 'version-pr';
+  if (shouldPublish) {
+    log.step(`Release PR merge detected (${movedIds.map((id) => `${id}.md`).join(', ')}) — publishing prereleases...`);
+    const { publishCommand } = await import('./publish.ts');
+    await publishCommand(rootDir, { channel: channel.name, tag: opts.tag });
+  }
+
+  if (opts.assertMode === 'publish') {
+    if (!shouldPublish) {
+      throw new Error(
+        'Expected mode "publish" but this push did not move bump files into the channel dir. ' +
+          'Either remove --expect-mode, or gate this step on the output of "bumpy ci plan".',
+      );
+    }
+    return;
+  }
+
+  // Step 2: create/update the release PR for pending bump files
+  if (pending.length > 0) {
+    await createChannelReleasePr(rootDir, config, channel, packages, opts.branch);
+  } else if (!shouldPublish) {
+    log.info(`Nothing to do on channel "${channel.name}" — no pending bump files, no release PR merge in this push.`);
+  }
+}
+
+/**
+ * Create or update the channel's release PR. Unlike the stable version PR, its diff
+ * is pure file moves (pending bump files → `.bumpy/<channel>/`) — no versions, no
+ * changelogs. Computed prerelease versions appear in the PR title and body as
+ * point-in-time narrative; the registry wins at publish time.
+ */
+async function createChannelReleasePr(
+  rootDir: string,
+  config: BumpyConfig,
+  channel: ResolvedChannel,
+  packages: Map<string, import('../types.ts').WorkspacePackage>,
+  branchOverride?: string,
+): Promise<void> {
+  const branch = validateBranchName(branchOverride || channel.versionPr.branch);
+  const baseBranch = validateBranchName(channel.branch);
+
+  // Check if a release PR already exists
+  const existingPr = tryRunArgs(['gh', 'pr', 'list', '--head', branch, '--json', 'number', '--jq', '.[0].number'], {
+    cwd: rootDir,
+  });
+
+  log.step(`Creating branch ${branch}...`);
+  const branchExists = tryRunArgs(['git', 'rev-parse', '--verify', branch], { cwd: rootDir }) !== null;
+  if (branchExists) {
+    runArgs(['git', 'checkout', branch], { cwd: rootDir });
+    runArgs(['git', 'reset', '--hard', baseBranch], { cwd: rootDir });
+  } else {
+    runArgs(['git', 'checkout', '-b', branch], { cwd: rootDir });
+  }
+
+  // Move pending bump files into the channel dir (the entire "version" step for a channel)
+  const { channelVersion } = await import('./version.ts');
+  const result = await channelVersion(rootDir, config, channel);
+  if (!result) {
+    log.info('No pending bump files to move.');
+    runArgs(['git', 'checkout', baseBranch], { cwd: rootDir });
+    return;
+  }
+
+  // Compute prerelease versions for the PR title/body. Best-effort — these are
+  // narrative (recomputed at publish time); offline we fall back to target-".?".
+  let displayPlan: ReleasePlan = result.cyclePlan;
+  let displayIsExact = false;
+  try {
+    const built = await buildChannelReleasePlan(result.cyclePlan, channel, packages, rootDir, { forDisplay: true });
+    if (built.plan.releases.length > 0) {
+      displayPlan = built.plan;
+      displayIsExact = true;
+    }
+  } catch {
+    // registry unavailable — keep stable targets
+  }
+  if (!displayIsExact) {
+    displayPlan = {
+      ...displayPlan,
+      releases: displayPlan.releases.map((r) => ({ ...r, newVersion: `${r.newVersion}-${channel.preid}.?` })),
+    };
+  }
+
+  const versionSummary = formatChannelVersionSummary(displayPlan.releases);
+  const prTitle = versionSummary ? `${channel.versionPr.title}: ${versionSummary}` : channel.versionPr.title;
+
+  // Commit the moves — the computed versions live in the commit message, so
+  // `git log` on the channel branch reads as a release history
+  runArgs(['git', 'add', '-A', '.bumpy/'], { cwd: rootDir });
+  const status = tryRunArgs(['git', 'status', '--porcelain'], { cwd: rootDir });
+  if (!status) {
+    log.info('No changes to commit.');
+    runArgs(['git', 'checkout', baseBranch], { cwd: rootDir });
+    return;
+  }
+  const commitMsg = `${prTitle}\n\nShipped: ${result.movedFiles.map((bf) => `${bf.id}.md`).join(', ')}`;
+  runArgs(['git', 'commit', '-F', '-'], { cwd: rootDir, input: commitMsg });
+
+  pushWithToken(rootDir, branch, config);
+
+  const repo = process.env.GITHUB_REPOSITORY;
+  const noPatWarning = !process.env.BUMPY_GH_TOKEN && !!repo;
+  const packageDirs = new Map([...packages.values()].map((p) => [p.name, p.relativeDir]));
+  const preamble = buildChannelPrPreamble(config, channel);
+
+  let prNumber: string | null = null;
+  if (existingPr) {
+    prNumber = validatePrNumber(existingPr);
+    const prBody = formatVersionPrBody(displayPlan, preamble, packageDirs, repo, prNumber, noPatWarning);
+    log.step(`Updating existing PR #${prNumber}...`);
+    await withPatToken(() =>
+      runArgsAsync(['gh', 'pr', 'edit', prNumber!, '--title', prTitle, '--body-file', '-'], {
+        cwd: rootDir,
+        input: prBody,
+      }),
+    );
+    log.success(`🐸 Updated PR #${prNumber}`);
+  } else {
+    log.step('Creating release PR...');
+    const prBody = formatVersionPrBody(displayPlan, preamble, packageDirs, repo, null, noPatWarning);
+    const createResult = await withPatToken(() =>
+      runArgsAsync(
+        ['gh', 'pr', 'create', '--title', prTitle, '--body-file', '-', '--base', baseBranch, '--head', branch],
+        { cwd: rootDir, input: prBody },
+      ),
+    );
+    log.success(`🐸 Created PR: ${createResult}`);
+
+    prNumber = createResult?.match(/\/pull\/(\d+)/)?.[1] ?? null;
+    if (repo && prNumber) {
+      const updatedBody = formatVersionPrBody(displayPlan, preamble, packageDirs, repo, prNumber, noPatWarning);
+      await withPatToken(() =>
+        runArgsAsync(['gh', 'pr', 'edit', prNumber!, '--body-file', '-'], {
+          cwd: rootDir,
+          input: updatedBody,
+        }),
+      );
+    }
+
+    if (!process.env.BUMPY_GH_TOKEN) {
+      // Push again with the custom token now that the PR exists (see createVersionPr)
+      pushWithToken(rootDir, branch, config);
+    }
+  }
+
+  if (channel.versionPr.automerge && prNumber) {
+    await enableAutoMerge(rootDir, prNumber);
+  }
+
+  // Switch back to the channel branch
+  runArgs(['git', 'checkout', baseBranch], { cwd: rootDir });
+}
+
+function buildChannelPrPreamble(config: BumpyConfig, channel: ResolvedChannel): string {
+  return [
+    config.versionPr.preamble,
+    '',
+    `> 🔀 **Prerelease channel \`${channel.name}\`** — merging this PR publishes the versions below to the \`@${channel.tag}\` dist-tag.`,
+    `> The diff only moves bump files into \`.bumpy/${channel.name}/\` — prerelease versions are derived at publish time and never committed. Version numbers shown here are estimates; the registry wins at publish.`,
+  ].join('\n');
+}
+
+/** Enable GitHub auto-merge on a PR, trying the available merge methods in order */
+async function enableAutoMerge(rootDir: string, prNumber: string): Promise<void> {
+  const validPr = validatePrNumber(prNumber);
+  for (const method of ['--squash', '--merge', '--rebase']) {
+    try {
+      await withPatToken(() => runArgsAsync(['gh', 'pr', 'merge', validPr, '--auto', method], { cwd: rootDir }));
+      log.dim(`  Auto-merge enabled (${method.slice(2)})`);
+      return;
+    } catch {
+      // method not allowed on this repo — try the next one
+    }
+  }
+  log.warn('  Failed to enable auto-merge — check repository merge settings and token permissions.');
+}
+
+/** Channel-aware `ci plan`: reports what `ci release` would do on this channel branch */
+async function ciChannelPlan(
+  rootDir: string,
+  config: BumpyConfig,
+  channel: ResolvedChannel,
+  packages: Map<string, import('../types.ts').WorkspacePackage>,
+  depGraph: DependencyGraph,
+  bumpFiles: BumpFile[],
+): Promise<void> {
+  const pending = bumpFiles.filter((bf) => bf.channel !== channel.name);
+  const movedIds = detectChannelMoves(rootDir, channel);
+
+  let mode: CiPlanMode = 'nothing';
+  let releases: PlannedRelease[] = [];
+  if (pending.length > 0 || movedIds.length > 0) {
+    mode = pending.length > 0 ? 'version-pr' : 'publish';
+    const stablePlan = assembleReleasePlan(bumpFiles, packages, depGraph, config, {
+      prereleasePreid: channel.preid,
+    });
+    try {
+      const built = await buildChannelReleasePlan(stablePlan, channel, packages, rootDir, { forDisplay: true });
+      releases = built.plan.releases;
+    } catch {
+      releases = stablePlan.releases.map((r) => ({ ...r, newVersion: `${r.newVersion}-${channel.preid}.?` }));
+    }
+  }
+
+  const output = {
+    mode,
+    channel: channel.name,
+    bumpFiles: bumpFiles.map((bf) => ({
+      id: bf.id,
+      summary: bf.summary,
+      releases: bf.releases.map((r) => ({ name: r.name, type: r.type })),
+      shipped: bf.channel === channel.name,
+    })),
+    releases: releases.map((r) => formatPlanRelease(r, packages, config)),
+    packageNames: releases.map((r) => r.name),
+  };
+
+  const json = JSON.stringify(output, null, 2);
+  console.log(json);
+  writeGitHubOutput('mode', output.mode);
+  writeGitHubOutput('channel', channel.name);
+  writeGitHubOutput('packages', JSON.stringify(output.packageNames));
+  writeGitHubOutput('json', JSON.stringify(output));
 }
 
 // ---- PR comment helpers ----

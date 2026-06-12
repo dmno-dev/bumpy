@@ -25,6 +25,7 @@ Bumpy is configured via `.bumpy/_config.json`, created by `bumpy init`. Per-pack
 | `versionPr`                  | `{ title, branch, preamble }`          | see below                        | Customize the version PR                                                                         |
 | `allowCustomCommands`        | `boolean \| string[]`                  | `false`                          | Allow per-package custom commands from `package.json` (see below)                                |
 | `packages`                   | `object`                               | `{}`                             | Per-package config overrides (keyed by package name)                                             |
+| `channels`                   | `object`                               | `{}`                             | Prerelease channels, keyed by channel name (see below)                                           |
 
 ### Dependency bump rules
 
@@ -98,6 +99,29 @@ The `versionPr` object customizes the PR that `bumpy ci release` creates:
 | `title`    | `string` | `"🐸 Versioned release"`   | PR title                              |
 | `branch`   | `string` | `"bumpy/version-packages"` | Branch name for the version PR        |
 | `preamble` | `string` | —                          | HTML content prepended to the PR body |
+
+### Prerelease channels
+
+The `channels` object maps long-lived branches to prerelease lines. See [prereleases.md](prereleases.md) for the full workflow.
+
+```jsonc
+{
+  "channels": {
+    "next": {
+      "branch": "next", // required — branch that triggers this channel
+      "preid": "rc", // version suffix (default: channel name)
+      "tag": "next", // npm dist-tag (default: channel name)
+      "versionPr": {
+        "title": "🐸 Versioned release (next)", // default: "<base title> (<name>)"
+        "branch": "bumpy/version-packages-next", // default: "<base branch>-<name>"
+        "automerge": false, // enable auto-merge on the release PR
+      },
+    },
+  },
+}
+```
+
+Channel names become `.bumpy/<name>/` subdirectories (holding bump files that shipped on the channel), so they must be filesystem-safe and can't start with `_` or collide with reserved entries.
 
 ## Per-package config
 

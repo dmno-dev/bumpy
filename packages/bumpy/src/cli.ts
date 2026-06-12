@@ -60,6 +60,7 @@ async function main() {
           bumpType: flags.bump as string | undefined,
           filter: flags.filter as string | undefined,
           verbose: flags.verbose === true,
+          channel: flags.channel as string | undefined,
         });
         break;
       }
@@ -69,6 +70,7 @@ async function main() {
         const { versionCommand } = await import('./commands/version.ts');
         await versionCommand(rootDir, {
           commit: flags.commit === true,
+          channel: flags.channel as string | undefined,
         });
         break;
       }
@@ -96,6 +98,7 @@ async function main() {
           strict: flags.strict === true,
           noFail: flags['no-fail'] === true,
           hook: hookValue as 'pre-commit' | 'pre-push' | undefined,
+          base: flags.base as string | undefined,
         });
         break;
       }
@@ -154,6 +157,7 @@ async function main() {
           tag: flags.tag as string | undefined,
           noPush: flags['no-push'] === true,
           filter: flags.filter as string | undefined,
+          channel: flags.channel as string | undefined,
         });
         break;
       }
@@ -215,8 +219,11 @@ function printHelp() {
       --strict                Fail if any changed package is uncovered (default: only fail if no bump files at all)
       --no-fail               Warn only, never exit 1
       --hook <context>        Hook context: "pre-commit" or "pre-push" (controls which bump files count)
+      --base <branch>         Branch to compare against (default: baseBranch; use the channel branch for channel PRs)
     version [--commit]      Apply bump files and bump versions
+                            (on a channel branch: moves pending bump files into .bumpy/<channel>/)
     publish                 Publish versioned packages
+                            (on a channel branch: derives prerelease versions and publishes to the channel dist-tag)
     ci check                PR check — report pending releases, comment on PR
     ci plan                 Report what ci release would do (JSON + GitHub Actions outputs)
     ci release              Release — create version PR or auto-publish
@@ -240,12 +247,18 @@ function printHelp() {
     --bump <types>          Filter by bump type (e.g., "major", "minor,patch")
     --filter <names>        Filter by package name/glob (e.g., "@myorg/*")
     --verbose               Show bump file details
+    --channel <name>        Show channel status (default: inferred from the current branch)
 
   Publish options:
     --dry-run               Preview without publishing
     --tag <tag>             npm dist-tag (e.g., "next", "beta")
     --no-push               Skip pushing git tags to remote
     --filter <names>        Publish only matching packages (e.g., "@myorg/*")
+    --channel <name>        Publish a prerelease channel (default: inferred from the current branch)
+
+  Version options:
+    --commit                Create a git commit with the version changes
+    --channel <name>        Channel override (default: inferred from the current branch)
 
   CI check options:
     --comment               Force PR comment on/off (auto-detected in CI)

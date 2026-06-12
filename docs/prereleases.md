@@ -1,7 +1,5 @@
 # Prerelease Channels
 
-> ⚠️ **Proposed design — not yet implemented.** This document describes the planned prerelease feature. Feedback welcome before we build it.
-
 Prerelease versioning lets you ship `1.2.0-rc.0`, `1.2.0-beta.1`, etc. before the stable `1.2.0` — for early adopters, integration testing, or staging risky changes.
 
 Bumpy's model is **branch-based**: you nominate one or more long-lived branches (e.g. `next`, `beta`) in your config as prerelease channels. CI runs the same release workflow on those branches as it does on `main` — only the version suffix and dist-tag change. When you're ready to ship stable, you merge the channel branch into `main` and the ordinary stable release flow takes over.
@@ -139,6 +137,8 @@ on:
 
 That's the only workflow change. `bumpy ci release` reads the current branch, looks up the channel in `_config.json`, and behaves accordingly.
 
+> Make sure the checkout step uses `fetch-depth: 0` (the [release workflow](github-actions.md) already requires this) — the channel publish trigger diffs the triggering push to detect release PR merges.
+
 > The PR check workflow (`bumpy-check.yaml`) needs no changes — it runs on `pull_request_target` and handles any base branch.
 
 ---
@@ -169,14 +169,14 @@ When a feature PR merges to `next`:
 When a maintainer merges that PR:
 
 4. `bumpy ci release` runs again on `next`, sees newly-shipped files in `.bumpy/next/`, computes the prerelease versions fresh (see [Publish mechanics](#publish-mechanics) below), and publishes the full cycle to the `@next` dist-tag.
-5. Git tags (`v1.2.0-rc.0`) are pushed; a GitHub release is created (marked as prerelease) with notes drawn from the just-moved bump files.
+5. Git tags (`my-package@1.2.0-rc.0`) are pushed; a GitHub release is created (marked as prerelease) for each package, with notes built from the cycle's bump files that touched it.
 
 ```bash
 # A consumer testing the prerelease:
 npm install my-package@next       # gets 1.2.0-rc.0
 ```
 
-> **The PR title is narrative, not state.** Versions are recomputed at publish time and the registry always wins. If reality moved between PR creation and merge (e.g. `main` shipped a stable release that retargets the cycle), publish uses the recomputed versions and the GitHub release notes say so explicitly: "retargeted from 1.2.0-rc.4 → 1.3.0-rc.0 because 1.2.0 shipped stable." Bumpy never reads versions back out of PR titles or commit messages.
+> **The PR title is narrative, not state.** Versions are recomputed at publish time and the registry always wins. If reality moved between PR creation and merge (e.g. `main` shipped a stable release that overtakes the cycle's target), publish uses the recomputed versions and warns about the retarget in its logs. Bumpy never reads versions back out of PR titles or commit messages.
 
 To skip the manual merge step, set `versionPr.automerge: true` on the channel — the release PR is created with auto-merge enabled, so each feature merge flows to a prerelease publish once checks pass. The PR (and its file-move commit) still exists, keeping the model intact; you just don't click the button.
 
@@ -186,7 +186,7 @@ When a new feature lands on `next`:
 
 - The new bump file appears at `.bumpy/feature-y.md` (root). Previously-shipped `.bumpy/next/feature-x.md` stays put.
 - `bumpy ci release` opens/updates the release PR, which moves `feature-y.md` into `.bumpy/next/`.
-- Merge → publish computes `1.2.0-rc.1` and republishes the cycle. The GitHub release for `rc.1` highlights `feature-y.md` (the just-moved file), with the full cycle listed in a collapsed section.
+- Merge → publish computes `1.2.0-rc.1` and republishes the cycle. Each package's `rc.1` GitHub release carries notes from the cycle's bump files that touched it (`feature-y.md` shows up on the packages it changed).
 
 If a feature merges immediately after a release PR merges, both halves happen in one run: bumpy publishes the rc for the already-moved files **and** opens the next release PR for the new pending file. The two actions are independent.
 
@@ -229,9 +229,9 @@ How `bumpy publish` (and the publish half of `bumpy ci release`) works on a chan
 
 **Counter** — derived from the registry: for each package, find the highest published `-<preid>.N` for its target version; the next publish is `N+1` (or `.0` if none exists). This makes counters immune to branch resets, abandoned cycles, and anything else that would corrupt committed state.
 
-**Trigger** — publish fires when files were added to `.bumpy/<channel>/` since the last release tag reachable from `HEAD` (or when the directory is non-empty and no release tag exists yet). The same diff that triggers the publish defines the "what's new" section of the release notes. A push that doesn't move bump files (an ordinary feature merge) never causes a publish.
+**Trigger** — in CI, publish fires when the triggering push added files to `.bumpy/<channel>/` (the push event's `before..after` range, falling back to the last commit). That's exactly what merging a release PR does; an ordinary feature merge never touches the channel dir, so it never causes a publish. This requires git history in the checkout — use `fetch-depth: 0`, which the [release workflow](github-actions.md) needs anyway. Running `bumpy publish` manually on the channel branch always publishes the cycle (manual = explicit intent).
 
-**Idempotency & resume** — after a successful publish, the pushed tags mark `HEAD` as released; re-running on the same SHA is a no-op. If a publish fails partway, re-running resumes it: npm records the publishing commit (`gitHead`) in each version's metadata, so bumpy can tell "already published from this exact SHA — skip" apart from "needs the next counter." `bumpy publish --filter` remains available as a manual fallback.
+**Idempotency & resume** — re-running on the same commit is a no-op: npm records the publishing commit (`gitHead`) in each version's metadata, so bumpy can tell "already published from this exact SHA — skip" apart from "needs the next counter." (Packages publishing outside npm — custom commands, `skipNpmPublish` — use their git tags for the same check.) If a publish fails partway, re-running resumes it package by package; `bumpy publish --filter` remains available as a manual fallback.
 
 **Order of operations** — publish packages topologically, then push tags, then create the GitHub release. Tags are the completion marker, so they go up only after the registry is fully consistent.
 
@@ -248,7 +248,7 @@ How `bumpy publish` (and the publish half of `bumpy ci release`) works on a chan
 Instead:
 
 - **The cycle's changelog is the bump files themselves**, sitting readable in `.bumpy/next/`.
-- **Per-rc notes** go to GitHub releases (marked prerelease), built from the just-moved files.
+- **Per-rc notes** go to GitHub releases (marked prerelease), built per package from the cycle's bump files that touched it.
 - **`bumpy status`** on a channel renders the would-be changelog for the whole cycle on demand — the answer to "what has shipped on `@next` so far," including for teams not on GitHub.
 - **The stable `CHANGELOG.md` entry** is written once, at promotion, on `main` — lossless, because it's built from the bump files rather than from intermediate changelogs.
 
@@ -323,7 +323,7 @@ There's no channel-specific opt-out of the cascade — disabling it would produc
 | `bumpy publish`    | publishes to `@latest`                                | computes prerelease versions, rewrites artifacts, publishes the cycle to `@next`, pushes tags     |
 | `bumpy ci release` | version-PR / publish on main                          | release-PR (file moves) / publish on `next`                                                       |
 | `bumpy ci check`   | (PR-level, unchanged)                                 | (PR-level, unchanged)                                                                             |
-| `bumpy check`      | compares to `baseBranch`                              | compares to the channel branch                                                                    |
+| `bumpy check`      | compares to `baseBranch`                              | skipped on channel/release-PR branches; use `--base next` on feature branches targeting a channel |
 
 You can override the inferred channel with `--channel <name>` for local testing:
 
