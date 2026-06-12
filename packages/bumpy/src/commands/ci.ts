@@ -108,9 +108,10 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
   // Skip on the version PR branch (and channel release PR branches) — they move/consume
   // bump files by design
   const prBranchName = detectPrBranch(rootDir);
+  const channels = resolveChannels(config);
   const releasePrBranches = new Set([
     config.versionPr.branch,
-    ...[...resolveChannels(config).values()].map((c) => c.versionPr.branch),
+    ...[...channels.values()].map((c) => c.versionPr.branch),
   ]);
   if (prBranchName && releasePrBranches.has(prBranchName)) {
     log.dim('  Skipping — this is a release PR branch.');
@@ -228,6 +229,7 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
       parseErrors,
       emptyBumpFileIds,
       prChannel,
+      channels,
     );
     await postOrUpdatePrComment(prNumber, comment, rootDir);
   }
@@ -1024,6 +1026,7 @@ export function formatReleasePlanComment(
   parseErrors: string[] = [],
   emptyBumpFileIds: string[] = [],
   channel: ResolvedChannel | null = null,
+  allChannels: Map<string, ResolvedChannel> | null = null,
 ): string {
   const repo = process.env.GITHUB_REPOSITORY;
   const lines: string[] = [];
@@ -1032,9 +1035,17 @@ export function formatReleasePlanComment(
   // `-<preid>.x` suffix (the exact counter is derived from the registry at publish time).
   const versionSuffix = channel ? `-${channel.preid}.x` : '';
 
+  // Promotion PR: stable-targeted, carrying bump files that already shipped on a
+  // channel (e.g. `next` → `main`). Merging it ends the cycle and ships stable.
+  const promotedChannels = channel ? [] : [...new Set(bumpFiles.map((bf) => bf.channel))].filter((c) => c != null);
+  const channelTag = (name: string) => `\`@${allChannels?.get(name)?.tag ?? name}\``;
+
   const headline = channel
     ? `**This PR targets the \`${channel.name}\` prerelease channel** — merging it ships these packages as a **prerelease** to the \`@${channel.tag}\` dist-tag, not a stable release.`
-    : '**The changes in this PR will be included in the next version bump.**';
+    : promotedChannels.length > 0
+      ? `**This PR promotes the ${promotedChannels.map((c) => `\`${c}\``).join(', ')} prerelease cycle${promotedChannels.length > 1 ? 's' : ''} to a stable release.** ` +
+        `The changes below that already shipped to the ${promotedChannels.map(channelTag).join(', ')} dist-tag${promotedChannels.length > 1 ? 's' : ''} will be consolidated into the next stable version bump.`
+      : '**The changes in this PR will be included in the next version bump.**';
   const preamble = [
     `<a href="https://bumpy.varlock.dev"><img src="${FROG_IMG_BASE}/frog-clipboard.png" alt="bumpy-frog" width="60" align="left" style="image-rendering: pixelated;" title="Hi! I'm bumpy!" /></a>`,
     '',
@@ -1082,6 +1093,7 @@ export function formatReleasePlanComment(
     // Channel-dir files (pending on promotion/graduation PRs) live at `.bumpy/<channel>/`
     const filename = bf.channel ? `${bf.channel}/${bf.id}.md` : `${bf.id}.md`;
     const parts: string[] = [`\`${filename}\``];
+    if (bf.channel) parts.push(`_(shipped on ${channelTag(bf.channel)})_`);
     if (repo) {
       parts.push(
         `([view diff](https://github.com/${repo}/pull/${prNumber}/changes#diff-${sha256Hex(`.bumpy/${filename}`)}))`,

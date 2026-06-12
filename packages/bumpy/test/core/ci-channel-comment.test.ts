@@ -3,9 +3,8 @@ import { formatReleasePlanComment } from '../../src/commands/ci.ts';
 import { resolveChannels } from '../../src/core/channels.ts';
 import { makeRelease, makeReleasePlan, makeBumpFile, makeConfig } from '../helpers.ts';
 
-const channel = resolveChannels(makeConfig({ channels: { next: { branch: 'next', preid: 'rc', tag: 'next' } } })).get(
-  'next',
-)!;
+const allChannels = resolveChannels(makeConfig({ channels: { next: { branch: 'next', preid: 'rc', tag: 'next' } } }));
+const channel = allChannels.get('next')!;
 
 const plan = makeReleasePlan(
   [makeRelease('@myorg/core', '1.2.0', { type: 'minor', oldVersion: '1.1.0', bumpFiles: ['feat'] })],
@@ -51,14 +50,54 @@ describe('formatReleasePlanComment — promotion PR (channel-dir bump files, sta
     [makeRelease('@myorg/core', '1.2.0', { type: 'minor', oldVersion: '1.1.0', bumpFiles: ['feat'] })],
     [{ ...makeBumpFile('feat', [{ name: '@myorg/core', type: 'minor' }], 'Add a feature'), channel: 'next' }],
   );
-  const comment = formatReleasePlanComment(promotionPlan, promotionPlan.bumpFiles, '1', 'next', 'npm');
+  const comment = formatReleasePlanComment(
+    promotionPlan,
+    promotionPlan.bumpFiles,
+    '1',
+    'next',
+    'npm',
+    [],
+    [],
+    [],
+    null,
+    allChannels,
+  );
 
-  test('renders channel-dir bump files with their subdir path', () => {
-    expect(comment).toContain('`next/feat.md`');
+  test('headline calls out the promotion explicitly', () => {
+    expect(comment).toContain('promotes the `next` prerelease cycle to a stable release');
+    expect(comment).toContain('already shipped to the `@next` dist-tag');
+    expect(comment).not.toContain('included in the next version bump');
+  });
+
+  test('renders channel-dir bump files with their subdir path and shipped annotation', () => {
+    expect(comment).toContain('`next/feat.md` _(shipped on `@next`)_');
   });
 
   test('shows the stable plan (no channel banner, no preid suffix)', () => {
     expect(comment).toContain('1.1.0 → **1.2.0**');
     expect(comment).not.toContain('prerelease channel');
+  });
+
+  test('mixed promotion: root bump files get no shipped annotation', () => {
+    const mixedPlan = makeReleasePlan(promotionPlan.releases, [
+      ...promotionPlan.bumpFiles,
+      makeBumpFile('new-fix', [{ name: '@myorg/core', type: 'patch' }], 'A fix that never shipped as an rc'),
+    ]);
+    const mixed = formatReleasePlanComment(
+      mixedPlan,
+      mixedPlan.bumpFiles,
+      '1',
+      'next',
+      'npm',
+      [],
+      [],
+      [],
+      null,
+      allChannels,
+    );
+    expect(mixed).toContain('promotes the `next` prerelease cycle');
+    expect(mixed).toContain('`next/feat.md` _(shipped on `@next`)_');
+    expect(mixed).toContain('- `new-fix.md`');
+    expect(mixed).not.toContain('`new-fix.md` _(shipped');
   });
 });
