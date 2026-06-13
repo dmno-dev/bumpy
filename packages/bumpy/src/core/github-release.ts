@@ -73,6 +73,8 @@ export async function createIndividualReleases(
     try {
       // Use --target so gh can create the tag on the remote if it wasn't pushed yet
       const args = ['gh', 'release', 'create', tag, '--title', title, '--notes', body];
+      // Mark prerelease versions so they never show as "latest" on GitHub
+      if (/-/.test(release.newVersion)) args.push('--prerelease');
       if (headSha) args.push('--target', headSha);
       await withReleaseToken(() => runArgsAsync(args, { cwd: rootDir }));
       log.dim(`  Created GitHub release: ${title}`);
@@ -288,8 +290,10 @@ export async function createDraftRelease(
   body: string,
   rootDir: string,
   targetSha?: string,
+  opts?: { prerelease?: boolean },
 ): Promise<void> {
   const args = ['gh', 'release', 'create', tag, '--title', title, '--notes', body, '--draft'];
+  if (opts?.prerelease) args.push('--prerelease');
   if (targetSha) args.push('--target', targetSha);
   await withReleaseToken(() => runArgsAsync(args, { cwd: rootDir }));
 }

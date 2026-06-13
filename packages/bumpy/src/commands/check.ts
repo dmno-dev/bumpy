@@ -22,6 +22,8 @@ interface CheckOptions {
   strict?: boolean;
   noFail?: boolean;
   hook?: HookContext;
+  /** Branch to compare against (default: baseBranch). Use for feature branches targeting a channel branch. */
+  base?: string;
 }
 
 /**
@@ -39,8 +41,24 @@ export async function checkCommand(rootDir: string, opts: CheckOptions = {}): Pr
   const config = await loadConfig(rootDir);
   const { packages } = await discoverWorkspace(rootDir, config);
 
+  // Channel branches and release PR branches move/consume bump files by design —
+  // checking them against baseBranch would produce false failures.
+  const { resolveChannels, detectReleaseBranch } = await import('../core/channels.ts');
+  const currentBranch = detectReleaseBranch(rootDir);
+  if (currentBranch) {
+    const skipBranches = new Set([config.versionPr.branch]);
+    for (const channel of resolveChannels(config).values()) {
+      skipBranches.add(channel.branch);
+      skipBranches.add(channel.versionPr.branch);
+    }
+    if (skipBranches.has(currentBranch)) {
+      log.dim(`  Skipping check — "${currentBranch}" is a channel or release PR branch.`);
+      return;
+    }
+  }
+
   // Find which files have changed on this branch vs base
-  const baseBranch = config.baseBranch;
+  const baseBranch = opts.base || config.baseBranch;
   const changedFiles = getChangedFiles(rootDir, baseBranch);
 
   if (changedFiles.length === 0) {

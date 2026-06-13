@@ -8,10 +8,11 @@
 name: Release
 on:
   push:
-    branches: [main]
+    branches: [main, next] # `next` = prerelease channel (dogfooding bumpy's own feature)
 
 concurrency:
-  group: bumpy-release
+  # per-branch so a `next` prerelease run doesn't queue behind a `main` stable run
+  group: bumpy-release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:

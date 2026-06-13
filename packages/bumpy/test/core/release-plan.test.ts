@@ -74,6 +74,57 @@ describe('assembleReleasePlan', () => {
     expect(plan.releases.find((r) => r.name === 'pkg-b')!.newVersion).toBe('2.0.1');
   });
 
+  describe('prerelease (channel) plans', () => {
+    test('cascades to all dependents — prereleases never satisfy stable ranges', () => {
+      const packages = new Map([
+        ['core', makePkg('core', '1.1.0')],
+        // ^1.1.0 would still be satisfied by stable 1.2.0, but NOT by 1.2.0-rc.0
+        ['plugin', makePkg('plugin', '1.0.0', { dependencies: { core: '^1.1.0' } })],
+        ['cli', makePkg('cli', '2.0.0', { peerDependencies: { core: 'workspace:^' } })],
+      ]);
+
+      const bumpFiles: BumpFile[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'minor' }], summary: 'Feature' }];
+      const graph = new DependencyGraph(packages);
+
+      // Stable plan: nothing cascades (ranges stay satisfied)
+      const stablePlan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig());
+      expect(stablePlan.releases.map((r) => r.name)).toEqual(['core']);
+
+      // Channel plan: everything cascades, at proportional levels
+      const channelPlan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig(), { prereleasePreid: 'rc' });
+      const byName = new Map(channelPlan.releases.map((r) => [r.name, r]));
+      expect(channelPlan.releases).toHaveLength(3);
+      expect(byName.get('plugin')!.type).toBe('patch'); // dependencies → patch
+      expect(byName.get('cli')!.type).toBe('minor'); // peerDependencies → match trigger
+      // Planned versions stay stable targets — the -rc.N suffix comes from the registry floor later
+      expect(byName.get('core')!.newVersion).toBe('1.2.0');
+      expect(byName.get('plugin')!.newVersion).toBe('1.0.1');
+    });
+
+    test('workspace:* deps still never trigger propagation', () => {
+      const packages = new Map([
+        ['core', makePkg('core', '1.1.0')],
+        ['plugin', makePkg('plugin', '1.0.0', { dependencies: { core: 'workspace:*' } })],
+      ]);
+      const bumpFiles: BumpFile[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'minor' }], summary: 'Feature' }];
+      const graph = new DependencyGraph(packages);
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig(), { prereleasePreid: 'rc' });
+      expect(plan.releases.map((r) => r.name)).toEqual(['core']);
+    });
+
+    test('cascade is transitive through the dependency graph', () => {
+      const packages = new Map([
+        ['core', makePkg('core', '1.0.0')],
+        ['mid', makePkg('mid', '1.0.0', { dependencies: { core: '^1.0.0' } })],
+        ['app', makePkg('app', '1.0.0', { dependencies: { mid: '^1.0.0' } })],
+      ]);
+      const bumpFiles: BumpFile[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'patch' }], summary: 'Fix' }];
+      const graph = new DependencyGraph(packages);
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig(), { prereleasePreid: 'rc' });
+      expect(plan.releases.map((r) => r.name).sort()).toEqual(['app', 'core', 'mid']);
+    });
+  });
+
   // ---- Phase A: out-of-range checks ----
 
   describe('Phase A: out-of-range', () => {

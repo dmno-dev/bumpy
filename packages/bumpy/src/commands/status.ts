@@ -5,7 +5,9 @@ import { DependencyGraph } from '../core/dep-graph.ts';
 import { readBumpFiles, filterBranchBumpFiles } from '../core/bump-file.ts';
 import { assembleReleasePlan } from '../core/release-plan.ts';
 import { getCurrentBranch, getChangedFiles } from '../core/git.ts';
-import type { BumpyConfig, PackageConfig, PlannedRelease, WorkspacePackage } from '../types.ts';
+import { channelNames, resolveActiveChannel, type ResolvedChannel } from '../core/channels.ts';
+import { buildChannelReleasePlan } from '../core/prerelease.ts';
+import type { BumpFile, BumpyConfig, PackageConfig, PlannedRelease, WorkspacePackage } from '../types.ts';
 
 interface StatusOptions {
   json?: boolean;
@@ -17,13 +19,23 @@ interface StatusOptions {
   filter?: string;
   /** Show verbose output including bump file details */
   verbose?: boolean;
+  /** Channel name override (otherwise inferred from the current branch) */
+  channel?: string;
 }
 
 export async function statusCommand(rootDir: string, opts: StatusOptions): Promise<void> {
   const config = await loadConfig(rootDir);
   const packages = await discoverPackages(rootDir, config);
   const depGraph = new DependencyGraph(packages);
-  const { bumpFiles, errors: parseErrors } = await readBumpFiles(rootDir);
+
+  const channel = resolveActiveChannel(rootDir, config, opts.channel);
+  if (channel) {
+    await channelStatus(rootDir, config, channel, packages, depGraph, opts);
+    return;
+  }
+
+  // Channel-dir bump files count as pending on the base branch (promotion)
+  const { bumpFiles, errors: parseErrors } = await readBumpFiles(rootDir, { channels: channelNames(config) });
 
   if (parseErrors.length > 0) {
     for (const err of parseErrors) {
@@ -148,6 +160,130 @@ export async function statusCommand(rootDir: string, opts: StatusOptions): Promi
       }
     }
   }
+}
+
+/**
+ * Status on a prerelease channel: shows the cycle (shipped + pending bump files)
+ * and the derived prerelease versions. Counters come from the registry — when it's
+ * unreachable, targets render with a ".?" counter placeholder.
+ */
+async function channelStatus(
+  rootDir: string,
+  config: BumpyConfig,
+  channel: ResolvedChannel,
+  packages: Map<string, WorkspacePackage>,
+  depGraph: DependencyGraph,
+  opts: StatusOptions,
+): Promise<void> {
+  const { bumpFiles, errors: parseErrors } = await readBumpFiles(rootDir, { channels: channelNames(config) });
+  for (const err of parseErrors) log.error(err);
+
+  const shipped = bumpFiles.filter((bf) => bf.channel === channel.name);
+  const pending = bumpFiles.filter((bf) => bf.channel !== channel.name);
+
+  if (bumpFiles.length === 0) {
+    if (opts.json) {
+      console.log(JSON.stringify({ channel: channel.name, bumpFiles: [], releases: [], packageNames: [] }, null, 2));
+    } else if (!opts.packagesOnly) {
+      log.info(`No bump files in the "${channel.name}" cycle.`);
+    }
+    process.exit(1); // exit 1 = no releases pending (useful for CI)
+  }
+
+  const stablePlan = assembleReleasePlan(bumpFiles, packages, depGraph, config, {
+    prereleasePreid: channel.preid,
+  });
+  let releases = stablePlan.releases;
+  let countersExact = false;
+  try {
+    const built = await buildChannelReleasePlan(stablePlan, channel, packages, rootDir, { forDisplay: true });
+    if (built.plan.releases.length > 0) {
+      releases = built.plan.releases;
+      countersExact = true;
+    }
+  } catch {
+    // registry unreachable — fall through to ".?" display
+  }
+  if (!countersExact) {
+    releases = releases.map((r) => ({ ...r, newVersion: `${r.newVersion}-${channel.preid}.?` }));
+  }
+
+  if (opts.bumpType) {
+    const types = opts.bumpType.split(',').map((t) => t.trim());
+    releases = releases.filter((r) => types.includes(r.type));
+  }
+  if (opts.filter) {
+    const { matchGlob } = await import('../core/config.ts');
+    const patterns = opts.filter.split(',').map((p) => p.trim());
+    releases = releases.filter((r) => patterns.some((p) => matchGlob(r.name, p)));
+  }
+
+  if (opts.json) {
+    console.log(
+      JSON.stringify(
+        {
+          channel: channel.name,
+          preid: channel.preid,
+          tag: channel.tag,
+          bumpFiles: bumpFiles.map((bf) => ({
+            id: bf.id,
+            summary: bf.summary,
+            releases: bf.releases.map((r) => ({ name: r.name, type: r.type })),
+            shipped: bf.channel === channel.name,
+          })),
+          releases: releases.map((r) => {
+            const pkg = packages.get(r.name);
+            return {
+              name: r.name,
+              type: r.type,
+              oldVersion: r.oldVersion,
+              newVersion: r.newVersion,
+              dir: pkg?.relativeDir,
+              bumpFiles: r.bumpFiles,
+              isDependencyBump: r.isDependencyBump,
+              isCascadeBump: r.isCascadeBump,
+              publishTargets: getPublishTargets(pkg, pkg?.bumpy || {}, config),
+            };
+          }),
+          packageNames: releases.map((r) => r.name),
+        },
+        null,
+        2,
+      ),
+    );
+    return;
+  }
+
+  if (opts.packagesOnly) {
+    for (const r of releases) console.log(r.name);
+    return;
+  }
+
+  log.bold(`Channel "${channel.name}" — preid "-${channel.preid}.N", dist-tag @${channel.tag}\n`);
+  printBumpFileGroup(`Shipped on this channel (.bumpy/${channel.name}/)`, shipped);
+  printBumpFileGroup('Pending (next prerelease)', pending);
+
+  log.bold(`Cycle releases${countersExact ? '' : colorize(' (registry unreachable — counters unknown)', 'dim')}`);
+  for (const r of releases) {
+    printRelease(r, packages);
+  }
+  console.log();
+
+  if (stablePlan.warnings.length > 0) {
+    for (const w of stablePlan.warnings) log.warn(w);
+  }
+}
+
+function printBumpFileGroup(label: string, files: BumpFile[]): void {
+  log.bold(label);
+  if (files.length === 0) {
+    console.log(colorize('  (none)', 'dim'));
+  }
+  for (const bf of files) {
+    const summary = bf.summary ? colorize(` — ${bf.summary.split('\n')[0]}`, 'dim') : '';
+    console.log(`  ${colorize(`${bf.id}.md`, 'cyan')}${summary}`);
+  }
+  console.log();
 }
 
 function printRelease(r: PlannedRelease, packages: Map<string, WorkspacePackage>) {

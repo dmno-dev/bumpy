@@ -61,12 +61,27 @@ export async function applyReleasePlan(
     }
   }
 
-  // 3. Delete all bump files (including empty ones that aren't in the release plan)
+  // 3. Delete all bump files (including empty ones that aren't in the release plan).
+  // Channel subdirs (`.bumpy/<channel>/`) hold bump files that shipped as prereleases;
+  // a stable release consumes those too (promotion), then removes the empty dirs.
   const bumpyDir = getBumpyDir(rootDir);
   const allBumpFiles = await listFiles(bumpyDir, '.md');
   for (const file of allBumpFiles) {
     if (file === 'README.md') continue;
     await removeFile(resolve(bumpyDir, file));
+  }
+  const { rmdir } = await import('node:fs/promises');
+  for (const channel of Object.keys(config.channels || {})) {
+    const channelDir = resolve(bumpyDir, channel);
+    const channelFiles = await listFiles(channelDir, '.md');
+    for (const file of channelFiles) {
+      await removeFile(resolve(channelDir, file));
+    }
+    try {
+      await rmdir(channelDir);
+    } catch {
+      // dir doesn't exist or has non-bump-file contents — leave it
+    }
   }
 }
 
