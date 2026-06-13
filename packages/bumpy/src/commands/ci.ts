@@ -681,8 +681,63 @@ async function createVersionPr(
     }
   }
 
+  // A promotion merge makes any open release PR on the source channel obsolete
+  await closePromotedChannelReleasePrs(rootDir, config, plan.bumpFiles);
+
   // Switch back to the base branch
   runArgs(['git', 'checkout', baseBranch], { cwd: rootDir });
+}
+
+/**
+ * Close lingering channel release PRs whose cycles were promoted: once a channel's
+ * bump files are pending on this branch (via a promotion or graduation merge), the
+ * source channel's own release PR is obsolete — merging it would re-publish a cycle
+ * that's already moving to its next stage. A fresh release PR is created automatically
+ * if new work lands on the channel branch.
+ */
+async function closePromotedChannelReleasePrs(
+  rootDir: string,
+  config: BumpyConfig,
+  bumpFiles: BumpFile[],
+  /** The channel whose release PR is being maintained right now (never close our own) */
+  currentChannel?: ResolvedChannel,
+): Promise<void> {
+  const promoted = [...new Set(bumpFiles.map((bf) => bf.channel))].filter(
+    (name): name is string => name != null && name !== currentChannel?.name,
+  );
+  if (promoted.length === 0) return;
+
+  const channels = resolveChannels(config);
+  for (const name of promoted) {
+    const channel = channels.get(name);
+    if (!channel) continue;
+    const pr = tryRunArgs(
+      ['gh', 'pr', 'list', '--head', channel.versionPr.branch, '--json', 'number', '--jq', '.[0].number'],
+      { cwd: rootDir },
+    );
+    if (!pr) continue;
+    const validPr = validatePrNumber(pr);
+    log.step(`Closing release PR #${validPr} — the "${name}" cycle's changes are pending here now...`);
+    try {
+      await withPatToken(() =>
+        runArgsAsync(
+          [
+            'gh',
+            'pr',
+            'close',
+            validPr,
+            '--comment',
+            `Closing — the \`${name}\` cycle's bump files were promoted and are now pending a release here. ` +
+              `A new release PR will be created automatically if more changes land on \`${channel.branch}\`.`,
+          ],
+          { cwd: rootDir },
+        ),
+      );
+      log.success(`🐸 Closed obsolete release PR #${validPr}`);
+    } catch (e) {
+      log.warn(`  Failed to close release PR #${validPr}: ${e}`);
+    }
+  }
 }
 
 // ---- channel (prerelease) release flow ----
@@ -918,6 +973,10 @@ async function createChannelReleasePr(
   if (channel.versionPr.automerge && prNumber) {
     await enableAutoMerge(rootDir, prNumber);
   }
+
+  // A graduation merge (e.g. alpha → beta) makes any open release PR on the
+  // source channel obsolete
+  await closePromotedChannelReleasePrs(rootDir, config, result.movedFiles, channel);
 
   // Switch back to the channel branch
   runArgs(['git', 'checkout', baseBranch], { cwd: rootDir });

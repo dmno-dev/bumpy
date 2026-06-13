@@ -204,6 +204,8 @@ When the prerelease has been tested and you're ready to ship the real `1.2.0`:
    - Deletes `.bumpy/next/`
 3. Merge that PR → bumpy publishes `1.2.0` to `@latest`, tags `v1.2.0`, and creates a stable GitHub release.
 
+If the channel had an open release PR at promotion time (offering one more rc), it's now obsolete — bumpy closes it automatically with an explanatory comment when it creates the stable version PR. A fresh release PR appears if new work lands on the channel branch. The same applies to a source channel's release PR after a graduation merge (e.g. `alpha` → `beta`).
+
 There is no special promotion mode. Promotion is literally "the bump files arrive on `main` and the stable flow eats them."
 
 > The final stable `CHANGELOG.md` entry includes every change from the prerelease cycle — consumers of `@latest` see the full picture, not just the last rc's delta. Individual rc release notes remain available on the GitHub releases page.
