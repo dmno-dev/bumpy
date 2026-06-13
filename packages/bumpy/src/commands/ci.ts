@@ -681,11 +681,42 @@ async function createVersionPr(
     }
   }
 
-  // A promotion merge makes any open release PR on the source channel obsolete
-  await closePromotedChannelReleasePrs(rootDir, config, plan.bumpFiles);
-
   // Switch back to the base branch
   runArgs(['git', 'checkout', baseBranch], { cwd: rootDir });
+
+  // A promotion merge makes any open release PR on the source channel obsolete.
+  // (Runs from the base branch so the non-CI fallback diffs the triggering commit.)
+  await closePromotedChannelReleasePrs(rootDir, config, plan.bumpFiles);
+}
+
+/**
+ * Channels whose dirs gained bump files in the triggering push — i.e. this push is
+ * the promotion/graduation merge that delivered them. (Same range detection as the
+ * channel publish trigger.)
+ */
+function detectArrivedChannelFiles(rootDir: string, config: BumpyConfig): Set<string> {
+  const range = getPushEventRange();
+  let diffRange: string;
+  if (range) {
+    diffRange = `${range.before}..${range.after}`;
+  } else {
+    if (!tryRunArgs(['git', 'rev-parse', '--verify', 'HEAD^'], { cwd: rootDir })) return new Set();
+    diffRange = 'HEAD^..HEAD';
+  }
+  // --no-renames so file moves into channel dirs show up as additions
+  const out = tryRunArgs(
+    ['git', 'diff', '--name-only', '--diff-filter=A', '--no-renames', diffRange, '--', '.bumpy/'],
+    { cwd: rootDir },
+  );
+  if (!out) return new Set();
+  const knownChannels = new Set(channelNames(config));
+  const arrived = new Set<string>();
+  for (const f of out.split('\n')) {
+    if (!f.endsWith('.md') || f.endsWith('README.md')) continue;
+    const parts = f.split('/'); // .bumpy/<channel>/<id>.md
+    if (parts.length === 3 && knownChannels.has(parts[1]!)) arrived.add(parts[1]!);
+  }
+  return arrived;
 }
 
 /**
@@ -694,6 +725,10 @@ async function createVersionPr(
  * source channel's own release PR is obsolete — merging it would re-publish a cycle
  * that's already moving to its next stage. A fresh release PR is created automatically
  * if new work lands on the channel branch.
+ *
+ * Only channels whose files arrived in the TRIGGERING push are considered: the files
+ * stay pending here until our version/release PR merges, and re-closing on every
+ * later push in that window would kill the release PR of a newly restarted cycle.
  */
 async function closePromotedChannelReleasePrs(
   rootDir: string,
@@ -702,8 +737,9 @@ async function closePromotedChannelReleasePrs(
   /** The channel whose release PR is being maintained right now (never close our own) */
   currentChannel?: ResolvedChannel,
 ): Promise<void> {
+  const arrived = detectArrivedChannelFiles(rootDir, config);
   const promoted = [...new Set(bumpFiles.map((bf) => bf.channel))].filter(
-    (name): name is string => name != null && name !== currentChannel?.name,
+    (name): name is string => name != null && name !== currentChannel?.name && arrived.has(name),
   );
   if (promoted.length === 0) return;
 
@@ -974,12 +1010,13 @@ async function createChannelReleasePr(
     await enableAutoMerge(rootDir, prNumber);
   }
 
-  // A graduation merge (e.g. alpha → beta) makes any open release PR on the
-  // source channel obsolete
-  await closePromotedChannelReleasePrs(rootDir, config, result.movedFiles, channel);
-
   // Switch back to the channel branch
   runArgs(['git', 'checkout', baseBranch], { cwd: rootDir });
+
+  // A graduation merge (e.g. alpha → beta) makes any open release PR on the
+  // source channel obsolete.
+  // (Runs from the channel branch so the non-CI fallback diffs the triggering commit.)
+  await closePromotedChannelReleasePrs(rootDir, config, result.movedFiles, channel);
 }
 
 function buildChannelPrPreamble(config: BumpyConfig, channel: ResolvedChannel): string {
