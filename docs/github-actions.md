@@ -108,10 +108,15 @@ The recommended release workflow splits version-PR maintenance from publishing i
 name: Bumpy Release
 on:
   push:
+    # Add any prerelease channel branches here too, e.g. [main, next, beta].
+    # See the prerelease channels docs: https://github.com/dmno-dev/bumpy/blob/main/docs/prereleases.md
     branches: [main]
 
 concurrency:
-  group: bumpy-release
+  # Per-branch so a channel (e.g. next) publish doesn't queue behind — or get
+  # cancelled by — a main release. Drop the `-${{ github.ref }}` if you never
+  # add channel branches above.
+  group: bumpy-release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -257,10 +262,15 @@ For simpler setups, you can run everything in a single job. `bumpy ci release` w
 name: Bumpy Release
 on:
   push:
+    # Add any prerelease channel branches here too, e.g. [main, next, beta].
+    # See the prerelease channels docs: https://github.com/dmno-dev/bumpy/blob/main/docs/prereleases.md
     branches: [main]
 
 concurrency:
-  group: bumpy-release
+  # Per-branch so a channel (e.g. next) publish doesn't queue behind — or get
+  # cancelled by — a main release. Drop the `-${{ github.ref }}` if you never
+  # add channel branches above.
+  group: bumpy-release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -321,11 +331,15 @@ Use a concurrency group on your release workflow to prevent overlapping publish 
 
 ```yaml
 concurrency:
-  group: bumpy-release
+  # Per-ref: serialize runs within a branch, but let different branches run in
+  # parallel. Drop the `-${{ github.ref }}` if you only ever release from main.
+  group: bumpy-release-${{ github.ref }}
   cancel-in-progress: false # queue rather than cancel — don't skip releases
 ```
 
 This is included in all the workflow examples above.
+
+The `-${{ github.ref }}` matters once you add [prerelease channels](prereleases.md): a single shared group (`bumpy-release`) would make a `next` prerelease publish queue behind — or, with `cancel-in-progress: true`, get cancelled by — a `main` release, even though they touch different dist-tags and never conflict. Per-ref keeps each branch's releases serialized against themselves while letting `main` and `next` proceed independently. If you release only from `main`, the plain `bumpy-release` group is equivalent.
 
 ## Token setup
 

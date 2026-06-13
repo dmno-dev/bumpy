@@ -190,6 +190,8 @@ bumpy ci check --no-fail
 
 Requires `GH_TOKEN` environment variable (automatically available in GitHub Actions).
 
+**On channel and promotion PRs:** for a PR targeting a [prerelease channel](prereleases.md) branch, the comment is channel-aware — it shows the prerelease plan (`-<preid>.x` versions) and the target dist-tag rather than implying a stable release. For a **promotion PR** (a channel branch → `main`, or a graduation like `alpha` → `beta`), the check reads the cycle's already-shipped bump files from `.bumpy/<channel>/` and shows the consolidated stable plan, calling out that merging ends the prerelease cycle. (Feature PRs that _target_ a channel branch are checked against that branch, so only the PR's own new bump files count — see [`--base`](#bumpy-check) on the local `check` command for the equivalent locally.)
+
 ## `bumpy ci plan`
 
 CI command that reports what `ci release` would do, without acting. Outputs JSON to stdout and sets GitHub Actions step outputs so you can conditionally run expensive steps (builds, etc.) only when needed.

@@ -135,7 +135,9 @@ on:
     branches: [main, next] # add channel branches here
 ```
 
-That's the only workflow change. `bumpy ci release` reads the current branch, looks up the channel in `_config.json`, and behaves accordingly.
+That's the only trigger change. `bumpy ci release` reads the current branch, looks up the channel in `_config.json`, and behaves accordingly.
+
+> **Concurrency:** if your workflow uses a single `concurrency.group` (e.g. `bumpy-release`), make it per-ref (`bumpy-release-${{ github.ref }}`) so a channel publish doesn't queue behind — or get cancelled by — a `main` release. The [recommended release workflow](github-actions.md#release-workflow-recommended-split-jobs) already does this.
 
 > **If your publish job runs in a GitHub Environment with deployment branch restrictions** (the [recommended hardening](github-actions.md#optional-hardening-protection-rules-on-the-publish-environment) restricts it to `main`), add each channel branch to the environment's allowed deployment branches (repo Settings → Environments → publish → Deployment branches). Otherwise the publish job can't run from the channel branch — with npm trusted publishing this means OIDC token requests are rejected and channel publishes fail.
 
