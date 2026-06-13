@@ -108,10 +108,13 @@ The recommended release workflow splits version-PR maintenance from publishing i
 name: Bumpy Release
 on:
   push:
+    # Add any prerelease channel branches here too, e.g. [main, next, beta].
+    # See the prerelease channels docs: https://github.com/dmno-dev/bumpy/blob/main/docs/prereleases.md
     branches: [main]
 
 concurrency:
-  group: bumpy-release
+  # Per-ref: serialize a branch's releases, let different branches run in parallel
+  group: bumpy-release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -257,10 +260,13 @@ For simpler setups, you can run everything in a single job. `bumpy ci release` w
 name: Bumpy Release
 on:
   push:
+    # Add any prerelease channel branches here too, e.g. [main, next, beta].
+    # See the prerelease channels docs: https://github.com/dmno-dev/bumpy/blob/main/docs/prereleases.md
     branches: [main]
 
 concurrency:
-  group: bumpy-release
+  # Per-ref: serialize a branch's releases, let different branches run in parallel
+  group: bumpy-release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -321,11 +327,11 @@ Use a concurrency group on your release workflow to prevent overlapping publish 
 
 ```yaml
 concurrency:
-  group: bumpy-release
+  group: bumpy-release-${{ github.ref }}
   cancel-in-progress: false # queue rather than cancel — don't skip releases
 ```
 
-This is included in all the workflow examples above.
+This is included in all the workflow examples above. Per-ref serializes each branch's releases against themselves while letting different branches publish in parallel. It's the right default everywhere: with a single release branch it behaves identically to a plain group, and once you add [prerelease channels](prereleases.md) it stops a `next` prerelease publish from queueing behind — or, with `cancel-in-progress: true`, being cancelled by — a `main` release, even though they touch different dist-tags and never conflict.
 
 ## Token setup
 
