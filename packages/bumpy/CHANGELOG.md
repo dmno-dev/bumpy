@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.14.0
+
+<sub>2026-06-13</sub>
+
+- _(minor)_ - Add prerelease channels — branch-based prerelease lines (e.g. `next` → `@next` dist-tag) where prerelease versions are never committed to git. Targets derive from bump files, counters from the registry; shipped bump files are tracked by moving them into `.bumpy/<channel>/`. Includes channel-aware `version` / `publish` / `status` / `ci release` flows, exact-pinned lockstep cycle publishes, and promotion-by-merge to stable.
+- [#110](https://github.com/dmno-dev/bumpy/pull/110) _(patch)_ - `ci check` now reads bump files in channel directories, so promotion PRs (channel → main) and graduation PRs (channel → channel) correctly report the cycle's pending releases instead of failing with "no bump files found". Channel-dir bump files render with their subdir path (`next/feature.md`) so view/edit links resolve.
+- _(patch)_ - Channel release PR titles and bodies now show deterministic versions: targets with a wildcard counter (`1.2.0-rc.x`) derived purely from committed state, instead of registry-derived counters that could drift between PR creation and publish. Multi-package cycles show a package count in the title instead of an arbitrary lead package. The PR check comment and `version` output use the same `.x` wildcard; `status` / `ci plan` still show live registry-derived counters (`.?` when offline).
+- [#110](https://github.com/dmno-dev/bumpy/pull/110) _(patch)_ - The PR check comment now explicitly calls out promotion PRs (channel → stable): the headline explains that merging ends the prerelease cycle and ships stable, and bump files that already shipped on a channel are annotated with their dist-tag (e.g. `next/feature.md` _(shipped on `@next`)_).
+- [#115](https://github.com/dmno-dev/bumpy/pull/115) _(patch)_ - When a prerelease cycle is promoted (channel → main) or graduated (channel → channel), any lingering release PR on the source channel is now closed automatically with an explanatory comment — merging it would have offered another prerelease of a cycle that already moved on.
+
 ## 1.13.2
 
 <sub>2026-06-05</sub>
