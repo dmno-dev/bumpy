@@ -134,6 +134,16 @@ export interface BumpyConfig {
   linked: string[][];
   /** Glob patterns to filter which changed files count toward marking a package as changed */
   changedFilePatterns: string[];
+  /**
+   * Top-level `package.json` fields whose change alone does NOT mark a package as
+   * changed (i.e. doesn't require a bump file). When `package.json` is the only changed
+   * file in a package, bumpy diffs it against the base branch and ignores changes
+   * confined to these fields. Default: `["devDependencies"]` — dev-only dependency
+   * updates (e.g. Dependabot) don't affect published output. Exception: a changed
+   * `devDependencies` entry that matches the package's `bundledDependencies` still
+   * counts, since it ships in the bundle.
+   */
+  ignoredPackageJsonFields: string[];
   /** Package names/globs to exclude from version management */
   ignore: string[];
   /** Package names/globs to explicitly include (overrides private + ignore) */
@@ -208,6 +218,7 @@ export const DEFAULT_CONFIG: BumpyConfig = {
   channels: {},
   versionCommitMessage: undefined,
   changedFilePatterns: ['**'],
+  ignoredPackageJsonFields: ['devDependencies'],
   changelog: 'default',
   fixed: [],
   linked: [],

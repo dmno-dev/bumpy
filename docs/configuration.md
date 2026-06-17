@@ -20,12 +20,31 @@ Bumpy is configured via `.bumpy/_config.json`, created by `bumpy init`. Per-pack
 | `dependencyBumpRules`        | `object`                               | see below                        | Controls how bumps propagate through dependency types                                            |
 | `versionCommitMessage`       | `string`                               | —                                | Customize the version commit message (see below)                                                 |
 | `changedFilePatterns`        | `string[]`                             | `["**"]`                         | Glob patterns to filter which changed files count toward marking a package as changed            |
+| `ignoredPackageJsonFields`   | `string[]`                             | `["devDependencies"]`            | `package.json` fields whose change alone doesn't require a bump file (see below)                 |
 | `publish`                    | `object`                               | see below                        | Publishing pipeline config                                                                       |
 | `gitUser`                    | `{ name, email }`                      | bumpy-bot                        | Git identity for CI commits                                                                      |
 | `versionPr`                  | `{ title, branch, preamble }`          | see below                        | Customize the version PR                                                                         |
 | `allowCustomCommands`        | `boolean \| string[]`                  | `false`                          | Allow per-package custom commands from `package.json` (see below)                                |
 | `packages`                   | `object`                               | `{}`                             | Per-package config overrides (keyed by package name)                                             |
 | `channels`                   | `object`                               | `{}`                             | Prerelease channels, keyed by channel name (see below)                                           |
+
+### Change detection and `package.json` fields
+
+A package is "changed" (and so needs a bump file) when a changed file inside it matches `changedFilePatterns`. `package.json` is a special case: editing it shouldn't always demand a release — a `devDependencies` bump from Dependabot, for example, doesn't affect what consumers install.
+
+So when `package.json` is the **only** changed file in a package, bumpy diffs it against the base branch and only flags the package if a field **outside** `ignoredPackageJsonFields` changed. The default ignore list is `["devDependencies"]`, meaning dev-only dependency updates don't require a bump file. Every other field — `dependencies`, `exports`, `bin`, `files`, `description`, `scripts`, etc. — still counts.
+
+One exception keeps this safe: a changed `devDependencies` entry that matches the package's [`bundledDependencies`](#example-a-bundled-dependency-consumer-side) **does** flag the package, since a bundled dep ships in the published output.
+
+To relax additional fields (e.g. treat `scripts` changes as non-releasing too), extend the list:
+
+```json
+{
+  "ignoredPackageJsonFields": ["devDependencies", "scripts"]
+}
+```
+
+bumpy errs toward requiring a bump file whenever it can't compare cleanly — a brand-new `package.json`, or one it can't parse.
 
 ### Dependency bump rules
 

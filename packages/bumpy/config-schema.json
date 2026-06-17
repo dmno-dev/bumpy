@@ -44,6 +44,12 @@
       "items": { "type": "string" },
       "default": ["**"]
     },
+    "ignoredPackageJsonFields": {
+      "type": "array",
+      "description": "Top-level package.json fields whose change alone does not mark a package as changed. When package.json is the only changed file, it's diffed against the base branch and changes confined to these fields are ignored. Default: ['devDependencies']. A changed devDependencies entry matching the package's bundledDependencies still counts.",
+      "items": { "type": "string" },
+      "default": ["devDependencies"]
+    },
     "fixed": {
       "type": "array",
       "description": "Package groups that always bump together to the same version. Each element is an array of package name globs.",
