@@ -198,6 +198,8 @@ Or in the package's `package.json` (requires `allowCustomCommands`):
 }
 ```
 
+> To publish without a long-lived `VSCE_PAT`, see [VS Code extension OIDC publishing](./vscode-oidc-publishing.md) — Azure workload identity federation with copy-paste setup scripts.
+
 ### Example: cascade from core to plugins (source-side)
 
 ```json

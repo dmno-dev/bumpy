@@ -119,6 +119,7 @@ The skill teaches the AI to examine git changes, identify affected packages, cho
 - [Configuration reference](https://github.com/dmno-dev/bumpy/blob/main/docs/configuration.md) - all `.bumpy/_config.json` and per-package options
 - [CLI reference](https://github.com/dmno-dev/bumpy/blob/main/docs/cli.md) - every command with flags and examples
 - [GitHub Actions setup](https://github.com/dmno-dev/bumpy/blob/main/docs/github-actions.md) - CI workflows, token setup, trusted publishing
+- [VS Code extension OIDC publishing](https://github.com/dmno-dev/bumpy/blob/main/docs/vscode-oidc-publishing.md) - publish to the Marketplace via Azure workload identity instead of an expiring PAT
 - [Version propagation](https://github.com/dmno-dev/bumpy/blob/main/docs/version-propagation.md) - how dependency bumps cascade through your graph
 - [Prerelease channels](https://github.com/dmno-dev/bumpy/blob/main/docs/prereleases.md) - branch-based `@next` / `@beta` release lines
 
