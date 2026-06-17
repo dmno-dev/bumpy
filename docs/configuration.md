@@ -145,6 +145,7 @@ Per-package settings can be defined in two places:
 | `dependencyBumpRules` | `object`                   | Per-package override for dependency propagation rules                        |
 | `cascadeTo`           | `object`                   | Explicit cascade targets — glob pattern mapped to `{ trigger, bumpAs }`      |
 | `cascadeFrom`         | `object`                   | Explicit cascade sources — glob pattern mapped to `{ trigger, bumpAs }`      |
+| `bundledDependencies` | `string[]`                 | Deps bundled into this package's output — any bump republishes it (patch)    |
 
 ### Custom commands and `allowCustomCommands`
 
@@ -222,15 +223,28 @@ Or with custom trigger/bumpAs:
 }
 ```
 
-### Example: cascade from a bundled dependency (consumer-side)
+### Example: a bundled dependency (consumer-side)
 
-When a package bundles a devDependency into its published output, use `cascadeFrom` so bumps to the dependency also trigger a release of the consumer:
+When a package bundles a dependency into its published output (inlined by esbuild/tsup/rollup), a change to that dependency changes what consumers receive — so the bundler must be republished. This is common with deps declared under `devDependencies`, since they aren't resolved at runtime.
+
+The simplest way to express this is `bundledDependencies`. Any bump to a listed dep republishes this package with a **patch** bump:
 
 ```json
 {
   "name": "@myorg/astro-integration",
   "bumpy": {
-    "cascadeFrom": ["@myorg/vite-integration"]
+    "bundledDependencies": ["@myorg/vite-integration"]
+  }
+}
+```
+
+This is shorthand for a `cascadeFrom` rule of `{ "trigger": "patch", "bumpAs": "patch" }`. If you re-export the bundled dependency's API and want **proportional** bumps (a minor in the dep → a minor here), use `cascadeFrom` directly instead — an explicit `cascadeFrom` rule for the same source takes precedence:
+
+```json
+{
+  "name": "@myorg/astro-integration",
+  "bumpy": {
+    "cascadeFrom": { "@myorg/vite-integration": { "trigger": "patch", "bumpAs": "match" } }
   }
 }
 ```

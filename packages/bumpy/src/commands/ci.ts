@@ -174,6 +174,10 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
         : 'No bump files found in this PR.';
     if (willFail) log.error(msg);
     else log.warn(msg);
+    // Point at the empty-bump-file escape hatch so the CLI matches the PR comment.
+    if (parseErrors.length === 0 && willFail) {
+      log.dim('Run `bumpy add` to declare a release, or `bumpy add --empty` to acknowledge that no release is needed.');
+    }
 
     if (shouldComment && prNumber) {
       const prBranch = detectPrBranch(rootDir);
@@ -181,7 +185,7 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
         prNumber,
         parseErrors.length > 0
           ? formatBumpFileErrorsComment(parseErrors, prBranch, pm)
-          : formatNoBumpFilesComment(prBranch, pm),
+          : formatNoBumpFilesComment(prBranch, pm, willFail, changedPackages),
         rootDir,
       );
     }
@@ -1105,6 +1109,18 @@ function buildAddBumpFileLink(prBranch: string | null): string | null {
   return `https://github.com/${repo}/new/${prBranch}?filename=${encodeURIComponent(filename)}&value=${encodeURIComponent(template)}`;
 }
 
+/** Link to create an empty bump file on GitHub — acknowledges that no release is needed */
+function buildAddEmptyBumpFileLink(prBranch: string | null): string | null {
+  if (!prBranch) return null;
+  const repo = process.env.GITHUB_REPOSITORY;
+  if (!repo) return null;
+
+  // An empty bump file is just empty frontmatter (`---\n---`) — see `bumpy add --empty`.
+  const template = ['---', '---', ''].join('\n');
+  const filename = `.bumpy/${randomName()}.md`;
+  return `https://github.com/${repo}/new/${prBranch}?filename=${encodeURIComponent(filename)}&value=${encodeURIComponent(template)}`;
+}
+
 function pmRunCommand(pm: PackageManager): string {
   if (pm === 'bun') return 'bunx bumpy';
   if (pm === 'pnpm') return 'pnpm exec bumpy';
@@ -1302,23 +1318,81 @@ function formatEmptyBumpFileComment(emptyBumpFileIds: string[], prNumber: string
   return lines.join('\n');
 }
 
-function formatNoBumpFilesComment(prBranch: string | null, pm: PackageManager): string {
+/**
+ * Comment for a PR with no bump files.
+ *
+ * When the check will fail (the default/strict modes, given changed packages), the
+ * comment must NOT say "you're good to go" — that contradicts the failing status.
+ * Instead it explains that a bump file is required and points at the empty bump file
+ * as the way to acknowledge an intentional no-release (e.g. a dependency-only PR).
+ * In `--no-fail` mode the check passes, so the friendlier wording is accurate.
+ */
+export function formatNoBumpFilesComment(
+  prBranch: string | null,
+  pm: PackageManager,
+  willFail = false,
+  changedPackages: string[] = [],
+): string {
   const runCmd = pmRunCommand(pm);
+  const addLink = buildAddBumpFileLink(prBranch);
+  const emptyLink = buildAddEmptyBumpFileLink(prBranch);
+
+  if (!willFail) {
+    const lines = [
+      `<a href="https://bumpy.varlock.dev"><img src="${FROG_IMG_BASE}/frog-warning.png" alt="bumpy-frog" width="60" align="left" style="image-rendering: pixelated;" title="Hi! I'm bumpy!" /></a>`,
+      '',
+      "Merging this PR will not cause a version bump for any packages. If these changes should not result in a new version, you're good to go. **If these changes should result in a version bump, you need to add a bump file.**",
+      '<br clear="left" />\n',
+      'You can add a bump file by running:\n',
+      '```bash',
+      `${runCmd} add`,
+      '```',
+    ];
+    if (addLink) {
+      lines.push('');
+      lines.push(`Or [click here to add a bump file](${addLink}) directly on GitHub.`);
+    }
+    lines.push('\n---');
+    lines.push(`_This comment is maintained by [bumpy](https://bumpy.varlock.dev)._`);
+    return lines.join('\n');
+  }
+
+  // Failing case — the wording matches the failing status check.
+  const headline =
+    changedPackages.length > 0
+      ? `**This PR changes ${changedPackages.length} package${changedPackages.length === 1 ? '' : 's'} but has no bump file, so this check is failing.**`
+      : '**This PR has no bump file, so this check is failing.**';
   const lines = [
-    `<a href="https://bumpy.varlock.dev"><img src="${FROG_IMG_BASE}/frog-warning.png" alt="bumpy-frog" width="60" align="left" style="image-rendering: pixelated;" title="Hi! I'm bumpy!" /></a>`,
+    `<a href="https://bumpy.varlock.dev"><img src="${FROG_IMG_BASE}/frog-error.png" alt="bumpy-frog" width="60" align="left" style="image-rendering: pixelated;" title="Hi! I'm bumpy!" /></a>`,
     '',
-    "Merging this PR will not cause a version bump for any packages. If these changes should not result in a new version, you're good to go. **If these changes should result in a version bump, you need to add a bump file.**",
+    headline,
     '<br clear="left" />\n',
-    'You can add a bump file by running:\n',
-    '```bash',
-    `${runCmd} add`,
-    '```',
   ];
 
-  const addLink = buildAddBumpFileLink(prBranch);
-  if (addLink) {
+  if (changedPackages.length > 0) {
+    lines.push('Changed package(s) without a bump file:\n');
+    for (const name of changedPackages) {
+      lines.push(`- \`${name}\``);
+    }
     lines.push('');
-    lines.push(`Or [click here to add a bump file](${addLink}) directly on GitHub.`);
+  }
+
+  lines.push(
+    '**If these changes should be released**, add a bump file describing the version bump. ' +
+      '**If no release is needed** (e.g. a dependency-only or dev-only change), add an _empty_ ' +
+      'bump file to acknowledge that intent — that satisfies this check without bumping any package.\n',
+  );
+  lines.push('```bash');
+  lines.push(`${runCmd} add            # describe a release`);
+  lines.push(`${runCmd} add --empty    # acknowledge no release is needed`);
+  lines.push('```');
+
+  if (addLink || emptyLink) {
+    const parts: string[] = [];
+    if (addLink) parts.push(`[add a bump file](${addLink})`);
+    if (emptyLink) parts.push(`[add an empty bump file](${emptyLink})`);
+    lines.push('');
+    lines.push(`Or directly on GitHub: ${parts.join(' · ')}.`);
   }
 
   lines.push('\n---');

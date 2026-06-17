@@ -366,6 +366,11 @@
         "cascadeFrom": {
           "description": "Explicit cascade sources — when a matching package is bumped, cascade the bump to this package.",
           "$ref": "#/$defs/cascadeConfig"
+        },
+        "bundledDependencies": {
+          "type": "array",
+          "description": "Names (or globs) of workspace deps bundled into this package's published output (e.g. inlined by esbuild/tsup/rollup). Any bump to a listed dep republishes this package with a patch bump. Shorthand for a cascadeFrom rule of { trigger: 'patch', bumpAs: 'patch' }; an explicit cascadeFrom for the same source takes precedence.",
+          "items": { "type": "string" }
         }
       },
       "additionalProperties": false

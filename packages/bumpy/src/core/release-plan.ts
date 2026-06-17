@@ -6,6 +6,7 @@ import {
   type BumpType,
   type BumpFile,
   type DependencyBumpRule,
+  type CascadeRule,
   normalizeCascadeConfig,
   type DepType,
   type PlannedRelease,
@@ -123,7 +124,8 @@ export function assembleReleasePlan(
       const dependents = depGraph.getDependents(pkgName);
 
       for (const dep of dependents) {
-        // Skip devDependencies in Phase A
+        // Skip devDependencies in Phase A (bundled devDeps are handled by the
+        // consumer-side cascade — see applyCascadeFrom / bundledDependencies).
         if (dep.depType === 'devDependencies') continue;
 
         // Check if new version is out of range
@@ -439,8 +441,7 @@ function applyCascadeFrom(
 ): boolean {
   let changed = false;
   for (const [targetName, targetPkg] of packages) {
-    if (!targetPkg.bumpy?.cascadeFrom) continue;
-    const rules = normalizeCascadeConfig(targetPkg.bumpy.cascadeFrom);
+    const rules = cascadeFromRules(targetPkg);
     for (const [pattern, rule] of Object.entries(rules)) {
       if (!matchGlob(sourceName, pattern)) continue;
       if (!shouldTrigger(sourceType, rule.trigger)) continue;
@@ -456,6 +457,31 @@ function applyCascadeFrom(
 /** Check if a bump level meets the trigger threshold */
 function shouldTrigger(bumpType: BumpType, trigger: BumpType): boolean {
   return bumpLevel(bumpType) >= bumpLevel(trigger);
+}
+
+/**
+ * Consumer-side cascade rules for a package: explicit `cascadeFrom` entries, plus the
+ * `bundledDependencies` sugar.
+ *
+ * `bundledDependencies` declares deps that are baked into this package's published
+ * output (e.g. inlined by esbuild/tsup/rollup) — often listed under `devDependencies`
+ * because they're not runtime-resolved. Any bump to such a dep changes what consumers
+ * receive, so it must republish the bundler: `{ trigger: 'patch', bumpAs: 'patch' }`
+ * (any bump triggers; the bundler gets a patch, since its own public API hasn't
+ * necessarily changed). An explicit `cascadeFrom` rule for the same source wins, so
+ * you can opt into proportional bumps (`bumpAs: 'match'`) when you re-export the dep.
+ */
+function cascadeFromRules(pkg: WorkspacePackage): Record<string, Required<CascadeRule>> {
+  const bundled = pkg.bumpy?.bundledDependencies;
+  const cascadeFrom = pkg.bumpy?.cascadeFrom;
+  if (!bundled?.length && !cascadeFrom) return {};
+
+  const rules: Record<string, Required<CascadeRule>> = {};
+  for (const name of bundled ?? []) {
+    rules[name] = { trigger: 'patch', bumpAs: 'patch' };
+  }
+  // Explicit cascadeFrom overrides the bundled-dependency default on conflict.
+  return { ...rules, ...(cascadeFrom ? normalizeCascadeConfig(cascadeFrom) : {}) };
 }
 
 /**

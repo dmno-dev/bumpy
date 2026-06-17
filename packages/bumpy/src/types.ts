@@ -181,6 +181,16 @@ export interface PackageConfig {
   dependencyBumpRules?: Partial<Record<DepType, DependencyBumpRule | false>>;
   cascadeTo?: CascadeConfig;
   cascadeFrom?: CascadeConfig;
+  /**
+   * Names (or globs) of workspace dependencies bundled into this package's published
+   * output (e.g. inlined by esbuild/tsup/rollup). Because the dep's code ships inside
+   * this package, *any* bump to it republishes this package — so each entry acts as a
+   * `cascadeFrom` source with `{ trigger: 'patch', bumpAs: 'patch' }`. This is the
+   * common case where a true runtime dep lives under `devDependencies` (it's not
+   * runtime-resolved). For proportional bumps or finer control, use `cascadeFrom`
+   * directly — an explicit `cascadeFrom` rule for the same source takes precedence.
+   */
+  bundledDependencies?: string[];
 }
 
 export const DEFAULT_PUBLISH_CONFIG: PublishConfig = {
