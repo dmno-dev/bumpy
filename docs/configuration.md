@@ -34,7 +34,7 @@ A package is "changed" (and so needs a bump file) when a changed file inside it 
 
 So when `package.json` is the **only** changed file in a package, bumpy diffs it against the base branch and only flags the package if a field **outside** `ignoredPackageJsonFields` changed. The default ignore list is `["devDependencies"]`, meaning dev-only dependency updates don't require a bump file. Every other field — `dependencies`, `exports`, `bin`, `files`, `description`, `scripts`, etc. — still counts.
 
-One exception keeps this safe: a changed `devDependencies` entry that matches the package's [`bundledDependencies`](#example-a-bundled-dependency-consumer-side) **does** flag the package, since a bundled dep ships in the published output.
+One exception keeps this safe: a changed `devDependencies` entry that matches the package's [`bundledDependencies`](#bundled-dependencies-consumer-side) **does** flag the package, since a bundled dep ships in the published output.
 
 To relax additional fields (e.g. treat `scripts` changes as non-releasing too), extend the list:
 
@@ -242,11 +242,9 @@ Or with custom trigger/bumpAs:
 }
 ```
 
-### Example: a bundled dependency (consumer-side)
+### Bundled dependencies (consumer-side)
 
-When a package bundles a dependency into its published output (inlined by esbuild/tsup/rollup), a change to that dependency changes what consumers receive — so the bundler must be republished. This is common with deps declared under `devDependencies`, since they aren't resolved at runtime.
-
-The simplest way to express this is `bundledDependencies`. Any bump to a listed dep republishes this package with a **patch** bump:
+When a package bundles a dependency into its published output (inlined by esbuild/tsup/rollup), a change to that dependency changes what consumers receive — so the bundler must be republished. This is common with deps declared under `devDependencies`, since they aren't resolved at runtime. List them in `bundledDependencies`:
 
 ```json
 {
@@ -257,7 +255,20 @@ The simplest way to express this is `bundledDependencies`. Any bump to a listed 
 }
 ```
 
-This is shorthand for a `cascadeFrom` rule of `{ "trigger": "patch", "bumpAs": "patch" }`. If you re-export the bundled dependency's API and want **proportional** bumps (a minor in the dep → a minor here), use `cascadeFrom` directly instead — an explicit `cascadeFrom` rule for the same source takes precedence:
+`bundledDependencies` declares intent — "this dependency ships inside my output" — and that drives **two** behaviors:
+
+1. **Propagation** — when the bundled dependency gets its **own release**, this package is cascaded a **patch** bump (shorthand for a `cascadeFrom` rule of `{ "trigger": "patch", "bumpAs": "patch" }`). This only applies to **internal workspace** deps, since bumpy only releases packages in your workspace.
+2. **Change detection** — when the bundled dependency's version is edited in **this** package's `package.json` (e.g. a Dependabot PR, or a manual bump), this package is flagged as changed and needs a bump file — even though `devDependencies` edits are normally ignored (see [Change detection](#change-detection-and-packagejson-fields)). This applies to **any** bundled dep, internal or external.
+
+So for an **internal** bundled workspace dep, both paths fire; for an **external** bundled dep (e.g. a published npm package you inline), only change detection applies — listing it is still useful, and is a harmless no-op for propagation.
+
+#### Internal workspace deps: bundled vs. not
+
+This is exactly the knob for "which devDependencies affect my published output." An internal workspace package listed under `devDependencies` is, by default, treated as dev-only — its releases don't cascade ([`dependencyBumpRules.devDependencies` is `false`](#dependency-bump-rules)) and bumping its range doesn't flag you. Add it to `bundledDependencies` to flip both: now its releases republish you, and editing its range flags you. Leave it out and it stays dev-only. No global setting is involved — it's per-dependency, per-consumer.
+
+#### Proportional bumps
+
+If you re-export the bundled dependency's API and want **proportional** bumps (a minor in the dep → a minor here), use `cascadeFrom` directly instead — an explicit `cascadeFrom` rule for the same source takes precedence over the `bundledDependencies` patch default:
 
 ```json
 {
