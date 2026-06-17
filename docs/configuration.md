@@ -244,13 +244,17 @@ Or with custom trigger/bumpAs:
 
 ### Bundled dependencies (consumer-side)
 
-When a package bundles a dependency into its published output (inlined by esbuild/tsup/rollup), a change to that dependency changes what consumers receive — so the bundler must be republished. This is common with deps declared under `devDependencies`, since they aren't resolved at runtime. List them in `bundledDependencies`:
+Many packages ship a **bundle** — a build step (tsup, tsdown, esbuild, rolldown/rollup, Vite, `bun build`, webpack, …) inlines their imports into `dist/` so consumers get a self-contained artifact. A dependency that's bundled this way is **not** installed from the registry at consume time; its code is copied into your output. So when that dependency changes, what you publish changes too — and you need a new release.
+
+Because a bundled dependency isn't resolved at runtime, it's conventionally declared under `devDependencies` rather than `dependencies` (you don't want consumers to also install it). Taken to the extreme, a fully-bundled package can have **no runtime `dependencies` at all** — every library it imports sits in `devDependencies`. (bumpy itself is built this way with tsdown.)
+
+That convention is the problem bumpy has to disambiguate: a `devDependencies` change is normally ignored (it's just dev tooling — a linter, a type package, a test runner), but a bundled one is effectively a runtime dependency. `bundledDependencies` is how you tell them apart — list the deps that are baked into your output:
 
 ```json
 {
   "name": "@myorg/astro-integration",
   "bumpy": {
-    "bundledDependencies": ["@myorg/vite-integration"]
+    "bundledDependencies": ["@myorg/vite-integration", "nanoid"]
   }
 }
 ```
