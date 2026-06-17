@@ -2,7 +2,7 @@ import { resolve } from 'node:path';
 import { existsSync, readFileSync, writeFileSync, appendFileSync } from 'node:fs';
 import { unlink } from 'node:fs/promises';
 import { readJson, updateJsonNestedField } from '../utils/fs.ts';
-import { runAsync, runArgsAsync, tryRunArgs, sq } from '../utils/shell.ts';
+import { runStreaming, runArgsAsync, tryRunArgs, sq } from '../utils/shell.ts';
 import { log, colorize } from '../utils/logger.ts';
 import { createTag, tagExists } from './git.ts';
 import { DependencyGraph } from './dep-graph.ts';
@@ -217,7 +217,7 @@ export async function publishPackages(
       if (pkgConfig.buildCommand) {
         log.dim(`  Building...`);
         if (!opts.dryRun) {
-          await runAsync(pkgConfig.buildCommand, { cwd: pkg.dir });
+          await runStreaming(pkgConfig.buildCommand, { cwd: pkg.dir });
         }
       }
 
@@ -243,7 +243,7 @@ export async function publishPackages(
             .replace(/\{\{name\}\}/g, sq(release.name));
           log.dim(`  Running: ${expanded}`);
           if (!opts.dryRun) {
-            await runAsync(expanded, { cwd: pkg.dir });
+            await runStreaming(expanded, { cwd: pkg.dir });
           }
         }
       } else if (!pkgConfig.skipNpmPublish) {

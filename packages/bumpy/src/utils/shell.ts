@@ -1,4 +1,4 @@
-import { execSync, execFileSync, exec, execFile } from 'node:child_process';
+import { execSync, execFileSync, exec, execFile, spawn } from 'node:child_process';
 
 /**
  * Escape a value for safe interpolation inside a single-quoted shell string.
@@ -53,7 +53,7 @@ export function runAsync(cmd: string, opts?: { cwd?: string; input?: string }): 
   return new Promise((resolve, reject) => {
     const child = exec(cmd, { cwd: opts?.cwd, encoding: 'utf-8' }, (err, stdout, stderr) => {
       if (err) {
-        reject(new Error(`Command failed: ${cmd}\n${stderr}`));
+        reject(new Error(`Command failed: ${cmd}\n${stdout}\n${stderr}`.trim()));
       } else {
         resolve(stdout.trim());
       }
@@ -62,6 +62,55 @@ export function runAsync(cmd: string, opts?: { cwd?: string; input?: string }): 
       child.stdin?.write(opts.input);
       child.stdin?.end();
     }
+  });
+}
+
+/**
+ * Run a shell command, streaming its stdout/stderr to the parent process live
+ * (so output appears in CI logs as it happens) while also capturing it so the
+ * thrown error on failure includes the child's real output.
+ *
+ * Use this for user-defined commands (build/publish) where we don't need to
+ * parse the output but DO want it visible — unlike the capturing `runAsync`,
+ * which buffers everything and is meant for internal helpers whose stdout we
+ * parse. A failing custom command (e.g. `vsce publish`) writes its real error
+ * to stdout; this surfaces both streams instead of swallowing them.
+ */
+export function runStreaming(cmd: string, opts?: { cwd?: string; input?: string }): Promise<void> {
+  const result = checkIntercept(cmd.split(/\s+/), opts);
+  if (result?.intercepted) {
+    if ('error' in result) return Promise.reject(new Error(result.error));
+    return Promise.resolve();
+  }
+  return new Promise((resolve, reject) => {
+    const child = spawn(cmd, {
+      cwd: opts?.cwd,
+      shell: true,
+      stdio: [opts?.input ? 'pipe' : 'inherit', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout?.on('data', (chunk) => {
+      stdout += chunk;
+      process.stdout.write(chunk);
+    });
+    child.stderr?.on('data', (chunk) => {
+      stderr += chunk;
+      process.stderr.write(chunk);
+    });
+    if (opts?.input) {
+      child.stdin?.write(opts.input);
+      child.stdin?.end();
+    }
+    child.on('error', (err) => reject(err));
+    child.on('close', (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        const detail = `${stdout}\n${stderr}`.trim();
+        reject(new Error(`Command failed (exit code ${code}): ${cmd}${detail ? `\n${detail}` : ''}`));
+      }
+    });
   });
 }
 
@@ -102,7 +151,7 @@ export function runArgsAsync(args: string[], opts?: { cwd?: string; input?: stri
   return new Promise((resolve, reject) => {
     const child = execFile(cmd!, rest, { cwd: opts?.cwd, encoding: 'utf-8' }, (err, stdout, stderr) => {
       if (err) {
-        reject(new Error(`Command failed: ${args.join(' ')}\n${stderr}`));
+        reject(new Error(`Command failed: ${args.join(' ')}\n${stdout}\n${stderr}`.trim()));
       } else {
         resolve(stdout.trim());
       }
