@@ -5,6 +5,10 @@ import {
   composeReleaseBody,
   updateReleaseBodyStatus,
   buildPublishUrl,
+  isGitHubPackagesRegistry,
+  publishTargetLabel,
+  resolvePackageRegistry,
+  parseRepoSlug,
   type ReleaseMetadata,
 } from '../../src/core/github-release.ts';
 
@@ -212,5 +216,124 @@ describe('buildPublishUrl', () => {
 
   test('returns undefined for custom target', () => {
     expect(buildPublishUrl('pkg', '1.0.0', 'custom')).toBeUndefined();
+  });
+
+  test('builds npm URL when registry is the default npmjs registry', () => {
+    expect(buildPublishUrl('@varlock/bumpy', '1.9.2', 'npm', { registry: 'https://registry.npmjs.org/' })).toBe(
+      'https://www.npmjs.com/package/@varlock/bumpy/v/1.9.2',
+    );
+  });
+
+  test('builds a GitHub Packages URL for a GHP registry', () => {
+    expect(
+      buildPublishUrl('@shtian/my-pkg', '1.3.0', 'npm', {
+        registry: 'https://npm.pkg.github.com/',
+        repoSlug: 'Shtian/bumpy-github-packages-repro',
+      }),
+    ).toBe('https://github.com/Shtian/bumpy-github-packages-repro/pkgs/npm/my-pkg');
+  });
+
+  test('GitHub Packages URL works for unscoped packages', () => {
+    expect(
+      buildPublishUrl('my-pkg', '1.0.0', 'npm', {
+        registry: 'https://npm.pkg.github.com/',
+        repoSlug: 'owner/repo',
+      }),
+    ).toBe('https://github.com/owner/repo/pkgs/npm/my-pkg');
+  });
+
+  test('returns undefined for a GHP registry without a known repo', () => {
+    expect(
+      buildPublishUrl('@shtian/my-pkg', '1.3.0', 'npm', { registry: 'https://npm.pkg.github.com/' }),
+    ).toBeUndefined();
+  });
+
+  test('returns undefined (no dead npmjs link) for an unknown custom registry', () => {
+    expect(buildPublishUrl('@acme/pkg', '1.0.0', 'npm', { registry: 'https://npm.acme.internal/' })).toBeUndefined();
+  });
+});
+
+describe('isGitHubPackagesRegistry', () => {
+  test('detects GitHub Packages registries', () => {
+    expect(isGitHubPackagesRegistry('https://npm.pkg.github.com/')).toBe(true);
+    expect(isGitHubPackagesRegistry('npm.pkg.github.com')).toBe(true);
+  });
+
+  test('rejects other registries', () => {
+    expect(isGitHubPackagesRegistry('https://registry.npmjs.org/')).toBe(false);
+    expect(isGitHubPackagesRegistry(undefined)).toBe(false);
+    expect(isGitHubPackagesRegistry('https://npm.pkg.github.com.evil.com/')).toBe(false);
+  });
+});
+
+describe('publishTargetLabel', () => {
+  test('labels npm on a GHP registry as GitHub Packages', () => {
+    expect(publishTargetLabel('npm', 'https://npm.pkg.github.com/')).toBe('GitHub Packages');
+  });
+
+  test('keeps npm label for the default registry', () => {
+    expect(publishTargetLabel('npm', undefined)).toBe('npm');
+    expect(publishTargetLabel('npm', 'https://registry.npmjs.org/')).toBe('npm');
+  });
+
+  test('passes through non-npm target types', () => {
+    expect(publishTargetLabel('jsr', 'https://npm.pkg.github.com/')).toBe('jsr');
+    expect(publishTargetLabel('custom', undefined)).toBe('custom');
+  });
+});
+
+describe('resolvePackageRegistry', () => {
+  const pkg = (publishConfig?: unknown) => ({ packageJson: publishConfig ? { publishConfig } : {} }) as never;
+
+  test('prefers bumpy config registry', () => {
+    expect(resolvePackageRegistry(pkg({ registry: 'https://b/' }), { registry: 'https://a/' })).toBe('https://a/');
+  });
+
+  test('falls back to package.json publishConfig.registry', () => {
+    expect(resolvePackageRegistry(pkg({ registry: 'https://npm.pkg.github.com/' }), {})).toBe(
+      'https://npm.pkg.github.com/',
+    );
+  });
+
+  test('returns undefined when no registry configured', () => {
+    expect(resolvePackageRegistry(pkg(), {})).toBeUndefined();
+    expect(resolvePackageRegistry(undefined, undefined)).toBeUndefined();
+  });
+});
+
+describe('parseRepoSlug', () => {
+  test('parses git+https url with .git suffix', () => {
+    expect(parseRepoSlug('git+https://github.com/Shtian/bumpy-github-packages-repro.git')).toBe(
+      'Shtian/bumpy-github-packages-repro',
+    );
+  });
+
+  test('parses object form and ssh url', () => {
+    expect(parseRepoSlug({ url: 'git@github.com:owner/repo.git' })).toBe('owner/repo');
+    expect(parseRepoSlug({ type: 'git', url: 'https://github.com/owner/repo' })).toBe('owner/repo');
+  });
+
+  test('returns undefined for non-github or missing repository', () => {
+    expect(parseRepoSlug('https://gitlab.com/owner/repo.git')).toBeUndefined();
+    expect(parseRepoSlug(undefined)).toBeUndefined();
+    expect(parseRepoSlug({})).toBeUndefined();
+  });
+});
+
+describe('formatPublishedToSection with labels', () => {
+  test('uses the target label when present', () => {
+    const result = formatPublishedToSection({
+      npm: {
+        status: 'success',
+        label: 'GitHub Packages',
+        url: 'https://github.com/owner/repo/pkgs/npm/my-pkg',
+      },
+    });
+    expect(result).toContain('- ✅ [GitHub Packages](https://github.com/owner/repo/pkgs/npm/my-pkg)');
+  });
+
+  test('falls back to the target key when no label', () => {
+    const result = formatPublishedToSection({ npm: { status: 'pending' } });
+    expect(result).toContain('- ⏳ npm');
   });
 });

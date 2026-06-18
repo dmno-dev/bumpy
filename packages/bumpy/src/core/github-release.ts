@@ -2,7 +2,7 @@ import { tryRunArgs, runArgsAsync } from '../utils/shell.ts';
 import { log } from '../utils/logger.ts';
 import { generateChangelogEntry } from './changelog.ts';
 import type { ChangelogFormatter } from './changelog.ts';
-import type { PlannedRelease, BumpFile } from '../types.ts';
+import type { PlannedRelease, BumpFile, PackageConfig, WorkspacePackage } from '../types.ts';
 
 /** Get the current HEAD commit SHA */
 export function getHeadSha(rootDir: string): string | null {
@@ -148,6 +148,8 @@ export interface PublishTargetState {
   reason?: string;
   supersededBy?: string;
   url?: string;
+  /** Human-readable label, e.g. "GitHub Packages" for npm targets on a GHP registry. Falls back to the target key. */
+  label?: string;
 }
 
 export interface ReleaseMetadata {
@@ -186,38 +188,123 @@ function serializeMetadata(metadata: ReleaseMetadata): string {
 export function formatPublishedToSection(targets: Record<string, PublishTargetState>): string {
   const lines: string[] = ['#### Published to'];
   for (const [name, state] of Object.entries(targets)) {
+    const label = state.label ?? name;
     switch (state.status) {
       case 'success':
-        lines.push(state.url ? `- ✅ [${name}](${state.url})` : `- ✅ ${name}`);
+        lines.push(state.url ? `- ✅ [${label}](${state.url})` : `- ✅ ${label}`);
         break;
       case 'failed':
-        lines.push(`- ❌ ${name} — will retry on next CI run`);
+        lines.push(`- ❌ ${label} — will retry on next CI run`);
         break;
       case 'skipped':
         lines.push(
           state.supersededBy
-            ? `- ⏭️ ${name} — skipped (superseded by ${state.supersededBy})`
-            : `- ⏭️ ${name} — skipped`,
+            ? `- ⏭️ ${label} — skipped (superseded by ${state.supersededBy})`
+            : `- ⏭️ ${label} — skipped`,
         );
         break;
       case 'pending':
-        lines.push(`- ⏳ ${name}`);
+        lines.push(`- ⏳ ${label}`);
         break;
     }
   }
   return lines.join('\n');
 }
 
-/** Build a URL for a published package on a registry */
+const GITHUB_PACKAGES_HOST = 'npm.pkg.github.com';
+const DEFAULT_NPM_HOST = 'registry.npmjs.org';
+
+/** Extract the host from a registry URL, tolerating missing protocols and trailing slashes. */
+function registryHost(registry: string): string {
+  try {
+    return new URL(registry).host;
+  } catch {
+    try {
+      return new URL(`https://${registry}`).host;
+    } catch {
+      return '';
+    }
+  }
+}
+
+/** Whether a registry URL points at GitHub Packages (npm.pkg.github.com). */
+export function isGitHubPackagesRegistry(registry?: string): boolean {
+  return !!registry && registryHost(registry) === GITHUB_PACKAGES_HOST;
+}
+
+/** Whether a registry URL is the public npmjs.com registry (the default). */
+function isDefaultNpmRegistry(registry?: string): boolean {
+  return !registry || registryHost(registry) === DEFAULT_NPM_HOST;
+}
+
+/**
+ * Human-readable label for a publish target, accounting for the configured registry.
+ * An `npm`-type target on a GitHub Packages registry is labelled "GitHub Packages".
+ */
+export function publishTargetLabel(targetType: string, registry?: string): string {
+  if (targetType === 'npm' && isGitHubPackagesRegistry(registry)) {
+    return 'GitHub Packages';
+  }
+  return targetType;
+}
+
+/**
+ * Resolve the effective publish registry for a package: the bumpy `registry` config
+ * wins, falling back to npm-native `publishConfig.registry` in package.json.
+ */
+export function resolvePackageRegistry(
+  pkg: WorkspacePackage | undefined,
+  pkgConfig: Partial<PackageConfig> | undefined,
+): string | undefined {
+  if (pkgConfig?.registry) return pkgConfig.registry;
+  const publishConfig = pkg?.packageJson?.publishConfig;
+  if (publishConfig && typeof publishConfig === 'object' && 'registry' in publishConfig) {
+    const registry = (publishConfig as { registry?: unknown }).registry;
+    if (typeof registry === 'string' && registry) return registry;
+  }
+  return undefined;
+}
+
+/** Parse an "owner/repo" slug from a package.json `repository` field (string or object form). */
+export function parseRepoSlug(repository: unknown): string | undefined {
+  const url =
+    typeof repository === 'string'
+      ? repository
+      : repository && typeof repository === 'object' && 'url' in repository
+        ? String((repository as { url?: unknown }).url ?? '')
+        : '';
+  if (!url) return undefined;
+  // Handles git+https://github.com/owner/repo.git, git@github.com:owner/repo.git, https://github.com/owner/repo
+  const match = url.match(/github\.com[/:]([^/]+)\/([^/#]+?)(?:\.git)?\/?(?:[#?].*)?$/);
+  return match ? `${match[1]}/${match[2]}` : undefined;
+}
+
+export interface BuildPublishUrlOptions {
+  /** Configured registry for the package (bumpy config or publishConfig). */
+  registry?: string;
+  /** "owner/repo" slug, used to build GitHub Packages URLs. */
+  repoSlug?: string;
+}
+
+/** Build a browsable URL for a published package, honouring the configured registry. */
 export function buildPublishUrl(
   name: string,
   version: string,
   targetType: string,
-  _registry?: string,
+  opts: BuildPublishUrlOptions = {},
 ): string | undefined {
   switch (targetType) {
-    case 'npm':
+    case 'npm': {
+      if (isGitHubPackagesRegistry(opts.registry)) {
+        // GitHub Packages has no per-version page; link to the package page under the repo.
+        if (!opts.repoSlug) return undefined;
+        const unscoped = name.includes('/') ? name.slice(name.indexOf('/') + 1) : name;
+        return `https://github.com/${opts.repoSlug}/pkgs/npm/${unscoped}`;
+      }
+      // Custom/private registries have no canonical browsable URL — avoid a dead npmjs.com link.
+      if (!isDefaultNpmRegistry(opts.registry)) return undefined;
       return `https://www.npmjs.com/package/${name}/v/${version}`;
+    }
     case 'jsr': {
       // JSR uses @scope/name format
       const parts = name.startsWith('@') ? name.slice(1).split('/') : [name];
