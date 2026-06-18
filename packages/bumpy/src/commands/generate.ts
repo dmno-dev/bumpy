@@ -191,12 +191,18 @@ function mergeRelease(
 }
 
 /** Map file paths to package names based on directory containment */
-function mapFilesToPackages(files: string[], packages: Map<string, WorkspacePackage>, rootDir: string): string[] {
+export function mapFilesToPackages(
+  files: string[],
+  packages: Map<string, WorkspacePackage>,
+  rootDir: string,
+): string[] {
   const matched = new Set<string>();
   for (const file of files) {
     for (const [name, pkg] of packages) {
       const pkgRelDir = relative(rootDir, pkg.dir);
-      if (file.startsWith(pkgRelDir + '/')) {
+      // Root package (single-package repo) has an empty relative dir, so every
+      // file belongs to it. Otherwise the file must live under the package dir.
+      if (pkgRelDir === '' || file.startsWith(pkgRelDir + '/')) {
         matched.add(name);
       }
     }
