@@ -2,7 +2,8 @@ import { test, expect, describe, beforeEach, afterEach } from 'bun:test';
 import { resolve } from 'node:path';
 import { mkdir, writeFile, rm } from 'node:fs/promises';
 import { extractBumpFileIdsFromChangedFiles, filterBranchBumpFiles } from '../../src/core/bump-file.ts';
-import { makeBumpFile } from '../helpers.ts';
+import { findChangedPackages } from '../../src/commands/check.ts';
+import { makeBumpFile, makePkg, makeConfig } from '../helpers.ts';
 
 describe('extractBumpFileIdsFromChangedFiles', () => {
   test('extracts bump file IDs from changed files', () => {
@@ -96,5 +97,39 @@ describe('filterBranchBumpFiles', () => {
       const { emptyBumpFileIds } = filterBranchBumpFiles(all, changed, tmpDir);
       expect(emptyBumpFileIds).toHaveLength(0);
     });
+  });
+});
+
+describe('findChangedPackages', () => {
+  const rootDir = '/repo';
+
+  test('detects the root package in a single-package repo', async () => {
+    // Single-package repo: the only package IS the root, so pkg.dir === rootDir
+    // and its relative dir is empty. Every changed file belongs to it.
+    const packages = new Map([['fledgling', makePkg('fledgling', '1.0.0', { dir: rootDir })]]);
+    const changed = ['src/cli.ts', 'package.json', 'src/wizard.ts'];
+
+    const result = await findChangedPackages(changed, packages, rootDir, makeConfig());
+    expect(result).toEqual(['fledgling']);
+  });
+
+  test('respects changedFilePatterns for the root package', async () => {
+    const packages = new Map([['fledgling', makePkg('fledgling', '1.0.0', { dir: rootDir })]]);
+    const config = makeConfig({ changedFilePatterns: ['src/**'] });
+
+    expect(await findChangedPackages(['src/cli.ts'], packages, rootDir, config)).toEqual(['fledgling']);
+    // A file outside the pattern shouldn't count as a change
+    expect(await findChangedPackages(['README.md'], packages, rootDir, config)).toEqual([]);
+  });
+
+  test('still scopes changes by directory in a monorepo', async () => {
+    const packages = new Map([
+      ['pkg-a', makePkg('pkg-a', '1.0.0', { dir: `${rootDir}/packages/pkg-a` })],
+      ['pkg-b', makePkg('pkg-b', '1.0.0', { dir: `${rootDir}/packages/pkg-b` })],
+    ]);
+    const changed = ['packages/pkg-a/src/index.ts'];
+
+    const result = await findChangedPackages(changed, packages, rootDir, makeConfig());
+    expect(result).toEqual(['pkg-a']);
   });
 });

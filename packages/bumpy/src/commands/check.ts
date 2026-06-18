@@ -258,14 +258,22 @@ export async function findChangedPackages(
 
   for (const [name, pkg] of packages) {
     const pkgRelDir = relative(rootDir, pkg.dir);
-    if (!pkgRelDir) continue; // root-level package: not flagged by file globs (unchanged behavior)
+    // Root package (single-package repo) has an empty relative dir — every changed
+    // file belongs to it and is matched directly. Other packages only own files
+    // under their own directory.
+    const isRoot = pkgRelDir === '';
     const prefix = `${pkgRelDir}/`;
     const matcher = matchers.get(name)!;
 
     let pkgJsonOnlyTrigger = false;
     for (const file of changedFiles) {
-      if (!file.startsWith(prefix)) continue;
-      const relToPackage = file.slice(prefix.length);
+      let relToPackage: string;
+      if (isRoot) {
+        relToPackage = file;
+      } else {
+        if (!file.startsWith(prefix)) continue;
+        relToPackage = file.slice(prefix.length);
+      }
       if (!matcher(relToPackage)) continue;
       if (relToPackage === 'package.json') {
         pkgJsonOnlyTrigger = true; // defer — refine by inspecting which fields changed
@@ -328,7 +336,7 @@ async function packageJsonAffectsRelease(
   ignoredFields: string[],
   releaseTriggeringDevDeps?: string[],
 ): Promise<boolean> {
-  const relPath = `${pkgRelDir}/package.json`;
+  const relPath = pkgRelDir ? `${pkgRelDir}/package.json` : 'package.json';
   const beforeRaw = readFileAtRef(rootDir, baseRef, relPath);
   if (beforeRaw == null) return true; // not present at base (new package) → release-affecting
 
