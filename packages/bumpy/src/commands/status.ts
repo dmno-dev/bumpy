@@ -7,6 +7,7 @@ import { assembleReleasePlan } from '../core/release-plan.ts';
 import { getCurrentBranch, getChangedFiles } from '../core/git.ts';
 import { channelNames, resolveActiveChannel, type ResolvedChannel } from '../core/channels.ts';
 import { buildChannelReleasePlan } from '../core/prerelease.ts';
+import { publishTargetLabel, resolvePackageRegistry } from '../core/github-release.ts';
 import type { BumpFile, BumpyConfig, PackageConfig, PlannedRelease, WorkspacePackage } from '../types.ts';
 
 interface StatusOptions {
@@ -302,16 +303,17 @@ function getPublishTargets(
   pkg: WorkspacePackage | undefined,
   pkgConfig: Partial<PackageConfig>,
   _config: BumpyConfig,
-): Array<{ type: string }> {
+): Array<{ type: string; label: string; registry?: string }> {
   if (!pkg) return [];
   // Private packages with no custom command won't publish
   if (pkg.private && !pkgConfig.publishCommand) return [];
-  const targets: Array<{ type: string }> = [];
+  const targets: Array<{ type: string; label: string; registry?: string }> = [];
   if (pkgConfig.publishCommand) {
-    targets.push({ type: 'custom' });
+    targets.push({ type: 'custom', label: 'custom' });
   }
   if (!pkgConfig.publishCommand && !pkgConfig.skipNpmPublish) {
-    targets.push({ type: 'npm' });
+    const registry = resolvePackageRegistry(pkg, pkgConfig);
+    targets.push({ type: 'npm', label: publishTargetLabel('npm', registry), ...(registry ? { registry } : {}) });
   }
   return targets;
 }

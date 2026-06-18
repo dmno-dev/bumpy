@@ -19,6 +19,9 @@ import {
   finalizeSupersededDrafts,
   composeReleaseBody,
   buildPublishUrl,
+  publishTargetLabel,
+  resolvePackageRegistry,
+  parseRepoSlug,
   isGhAvailable,
   getHeadSha,
   generateReleaseBody,
@@ -274,6 +277,8 @@ async function runPublishFlow(
 
   // Determine publish targets for each package
   const publishTargetsByPkg = new Map<string, string[]>();
+  // Registry context per package, used to label targets and build correct release URLs.
+  const registryByPkg = new Map<string, { registry?: string; repoSlug?: string }>();
   for (const release of toPublish) {
     const pkg = packages.get(release.name)!;
     const pkgConfig = pkg.bumpy || {};
@@ -284,6 +289,10 @@ async function runPublishFlow(
       targets.push('npm');
     }
     publishTargetsByPkg.set(release.name, targets);
+    registryByPkg.set(release.name, {
+      registry: resolvePackageRegistry(pkg, pkgConfig),
+      repoSlug: parseRepoSlug(pkg.packageJson.repository) ?? process.env.GITHUB_REPOSITORY,
+    });
   }
 
   // For each package, set up draft releases (if gh is available and not dry run)
@@ -319,9 +328,11 @@ async function runPublishFlow(
           ? await generateReleaseBody(release, releasePlan.bumpFiles, formatter)
           : buildReleaseBody(release, releasePlan.bumpFiles);
 
+        const { registry } = registryByPkg.get(release.name) || {};
         const initialTargets: Record<string, PublishTargetState> = {};
         for (const t of targets) {
-          initialTargets[t] = { status: 'pending' };
+          const label = publishTargetLabel(t, registry);
+          initialTargets[t] = { status: 'pending', ...(label !== t ? { label } : {}) };
         }
         const metadata: ReleaseMetadata = {
           version: release.newVersion,
@@ -431,23 +442,28 @@ async function runPublishFlow(
       const published = result.published.find((p) => p.name === release.name);
       const failed = result.failed.find((f) => f.name === release.name);
 
+      const { registry, repoSlug } = registryByPkg.get(release.name) || {};
       let changed = false;
       for (const targetName of targets) {
         // Skip already-succeeded targets
         if (info.metadata.targets[targetName]?.status === 'success') continue;
 
         if (published) {
+          const label = publishTargetLabel(targetName, registry);
           info.metadata.targets[targetName] = {
             status: 'success',
             publishedAt: new Date().toISOString(),
-            url: buildPublishUrl(release.name, release.newVersion, targetName),
+            url: buildPublishUrl(release.name, release.newVersion, targetName, { registry, repoSlug }),
+            ...(label !== targetName ? { label } : {}),
           };
           changed = true;
         } else if (failed) {
+          const label = publishTargetLabel(targetName, registry);
           info.metadata.targets[targetName] = {
             status: 'failed',
             error: failed.error,
             lastAttempt: new Date().toISOString(),
+            ...(label !== targetName ? { label } : {}),
           };
           changed = true;
         }
