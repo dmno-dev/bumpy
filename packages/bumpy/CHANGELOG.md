@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.15.0
+
+<sub>2026-06-18</sub>
+
+- [#120](https://github.com/dmno-dev/bumpy/pull/120) _(minor)_
+  Change detection is now `package.json`-field-aware: when `package.json` is the only changed file in a package, bumpy diffs it against the base branch and only requires a bump file if a publish-affecting field changed. The new `ignoredPackageJsonFields` option (default `["devDependencies"]`) controls which fields are ignored, so a dev-only dependency bump (e.g. Dependabot) no longer requires a bump file — unless the changed dep matches the package's `releaseTriggeringDevDeps`.
+
+  `ci check` no longer posts a "you're good to go" comment while exiting 1. When the check fails because changed packages have no bump file, the comment now matches the failing status, lists the uncovered packages, and points at an empty bump file (`bumpy add --empty`) to acknowledge an intentional no-release.
+
+  Add a per-package `releaseTriggeringDevDeps` option: names/globs of `devDependencies` that affect a package's published output (most often because they're bundled in). A change to one requires a release, and a listed internal workspace dep's own releases cascade with a patch bump — shorthand for a `cascadeFrom` rule of `{ trigger: 'patch', bumpAs: 'patch' }`.
+
+- [#118](https://github.com/dmno-dev/bumpy/pull/118) _(patch)_
+  Stream `buildCommand`/`publishCommand` output live to the parent process and surface the child's real failure reason. Custom publish commands (vsce, ovsx, anything bespoke) previously ran through a buffering runner that discarded stdout and never streamed output, so a failure like an expired marketplace token produced only a generic `Command failed` wrapper with no usable cause in CI logs. These commands now run through a streaming runner (`spawn` with piped+teed stdio) that prints output as it happens and includes both stdout and stderr in the thrown error. The capturing `runAsync`/`runArgsAsync` helpers (still used for internal git/npm calls whose output is parsed) also now include stdout in their error messages.
+- [#122](https://github.com/dmno-dev/bumpy/pull/122) _(patch)_
+  Changelog entries now use a block layout when a summary is multi-line, long (>120 chars), or contains markdown block syntax (headings, lists, blockquotes, code fences, tables). In those cases the entry metadata (`*(type)*`, PR link, "Thanks @user!") goes on its own line and the summary is rendered indented below it, instead of being jammed onto the same line. Short single-line summaries are unchanged and stay inline. Internal blank lines in a summary are now preserved so markdown paragraphs and lists render correctly. Applies to both the default and `github` formatters.
+- [#124](https://github.com/dmno-dev/bumpy/pull/124) _(patch)_
+  Label and link npm targets published to GitHub Packages correctly. Packages publishing to a GitHub Packages registry (`npm.pkg.github.com`) were labelled `npm` in the GitHub release notes and `bumpy status`/`bumpy ci plan` output, with a "Published to" badge linking to a non-existent npmjs.com page (404). The configured registry is now honoured: such targets are labelled **GitHub Packages** and link to the package page under the repo (`https://github.com/<owner>/<repo>/pkgs/npm/<name>`), resolving the repo from the package's `repository` field or `GITHUB_REPOSITORY`. Other custom/private registries no longer emit a dead npmjs.com link. `buildPublishUrl` now honours its registry argument (previously the unused `_registry` param).
+- [#125](https://github.com/dmno-dev/bumpy/pull/125) _(patch)_
+  Fix changed-package detection in single-package (non-monorepo) repos. Both `findChangedPackages` (used by `check`/`ci check`) and `mapFilesToPackages` (used by `generate`) matched changed files against `pkgRelDir + '/'`, but for the root package the relative dir is empty, so the check became `file.startsWith('/')` — always false for git's relative paths. As a result `ci check` always reported "No managed packages have changed" (never requiring a bump file or posting a PR comment) and `generate` never attributed commits to the root package. The root package (empty relative dir) now treats every changed file as belonging to it, while still honoring `changedFilePatterns`.
+
 ## 1.14.0
 
 <sub>2026-06-13</sub>
