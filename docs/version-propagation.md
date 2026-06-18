@@ -21,9 +21,11 @@ The bump type applied to the dependent depends on the dependency type:
 | `peerDependencies`     | matches the triggering bump | Proportional — a minor bump on the dep → minor bump on the dependent |
 | `dependencies`         | `patch`                     | Internal detail — consumers don't see it                             |
 | `optionalDependencies` | `patch`                     | Internal detail — consumers don't see it                             |
-| `devDependencies`      | _(skipped)_                 | Doesn't affect published consumers                                   |
+| `devDependencies`      | _(skipped)_                 | Doesn't affect published consumers†                                  |
 
 For peer deps, "matches the triggering bump" means if `core` gets a minor bump that breaks the range, `plugin` also gets a minor bump. This keeps version bumps proportional — especially important for `0.x` packages where `^` ranges cause minor bumps to go out of range frequently.
+
+> † `devDependencies` are skipped because they normally don't ship to consumers. The exception is a dependency that affects your published output — most often one **bundled** in by a build step (tsup, tsdown, esbuild, rolldown/rollup, Vite, `bun build`, …), declared under `devDependencies` since it isn't runtime-resolved. List those under `releaseTriggeringDevDeps` (or use `cascadeFrom`) so any bump to them republishes this package. See [Configuration](./configuration.md#release-triggering-devdependencies).
 
 This phase is a **safety net** — it cannot be skipped. It ensures that published packages always have valid dependency ranges.
 

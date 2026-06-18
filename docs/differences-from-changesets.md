@@ -19,7 +19,7 @@ Bumpy splits propagation into three phases inside an iterative loop:
 Key differences from changesets:
 
 - Out-of-range peer dep bumps match the triggering bump level (not always major) — a minor bump on `core` → minor bump on `plugin`, not major
-- Dev deps never propagate by default (configurable per-package for bundled devDeps)
+- Dev deps never propagate by default (opt specific ones in per-package via `releaseTriggeringDevDeps`, e.g. bundled deps)
 - `cascadeTo` config for source-side "when I change, cascade to these packages"
 - Per-bump-file `none` to acknowledge changes without triggering a direct bump
 - Warns about `^0.x` caret range gotchas and `workspace:*` on peer deps

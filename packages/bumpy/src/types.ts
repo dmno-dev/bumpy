@@ -134,6 +134,16 @@ export interface BumpyConfig {
   linked: string[][];
   /** Glob patterns to filter which changed files count toward marking a package as changed */
   changedFilePatterns: string[];
+  /**
+   * Top-level `package.json` fields whose change alone does NOT mark a package as
+   * changed (i.e. doesn't require a bump file). When `package.json` is the only changed
+   * file in a package, bumpy diffs it against the base branch and ignores changes
+   * confined to these fields. Default: `["devDependencies"]` — dev-only dependency
+   * updates (e.g. Dependabot) don't affect published output. Exception: a changed
+   * `devDependencies` entry that matches the package's `releaseTriggeringDevDeps` still
+   * counts, since it ships in the bundle.
+   */
+  ignoredPackageJsonFields: string[];
   /** Package names/globs to exclude from version management */
   ignore: string[];
   /** Package names/globs to explicitly include (overrides private + ignore) */
@@ -181,6 +191,21 @@ export interface PackageConfig {
   dependencyBumpRules?: Partial<Record<DepType, DependencyBumpRule | false>>;
   cascadeTo?: CascadeConfig;
   cascadeFrom?: CascadeConfig;
+  /**
+   * Names (or globs) of `devDependencies` that should be treated as release-relevant:
+   * a change to one requires a release of this package, and (for internal workspace
+   * deps) its own releases cascade here. `devDependencies` are ignored for versioning by
+   * default — this opts specific entries back in.
+   *
+   * The usual reason is a dependency **bundled** into the published output (inlined by a
+   * build step — tsup/tsdown/esbuild/rollup/…), which is why it lives under
+   * `devDependencies` rather than `dependencies`. Other cases: a tool whose output is
+   * committed and shipped (codegen), or a re-exported types package. Each entry acts as a
+   * `cascadeFrom` source with `{ trigger: 'patch', bumpAs: 'patch' }`; an explicit
+   * `cascadeFrom` rule for the same source takes precedence (e.g. `bumpAs: 'match'` for
+   * proportional bumps).
+   */
+  releaseTriggeringDevDeps?: string[];
 }
 
 export const DEFAULT_PUBLISH_CONFIG: PublishConfig = {
@@ -198,6 +223,7 @@ export const DEFAULT_CONFIG: BumpyConfig = {
   channels: {},
   versionCommitMessage: undefined,
   changedFilePatterns: ['**'],
+  ignoredPackageJsonFields: ['devDependencies'],
   changelog: 'default',
   fixed: [],
   linked: [],

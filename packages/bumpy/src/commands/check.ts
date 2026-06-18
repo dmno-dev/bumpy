@@ -1,7 +1,7 @@
 import { relative, resolve } from 'node:path';
 import picomatch from 'picomatch';
 import { log, colorize } from '../utils/logger.ts';
-import { loadConfig, loadPackageConfig, getBumpyDir } from '../core/config.ts';
+import { loadConfig, loadPackageConfig, getBumpyDir, matchGlob } from '../core/config.ts';
 import { discoverWorkspace } from '../core/workspace.ts';
 import { readBumpFiles, filterBranchBumpFiles } from '../core/bump-file.ts';
 import { getChangedFiles, getFileStatuses, getBaseCompareRef, readFileAtRef } from '../core/git.ts';
@@ -253,14 +253,36 @@ export async function findChangedPackages(
     matchers.set(name, picomatch(patterns));
   }
 
-  for (const file of changedFiles) {
-    for (const [name, pkg] of packages) {
-      const pkgRelDir = relative(rootDir, pkg.dir);
-      if (file.startsWith(pkgRelDir + '/')) {
-        const relToPackage = file.slice(pkgRelDir.length + 1);
-        if (matchers.get(name)!(relToPackage)) {
-          changed.add(name);
-        }
+  const ignoredFields = config.ignoredPackageJsonFields ?? ['devDependencies'];
+  let baseRef: string | null = null; // resolved lazily, only when a package.json needs diffing
+
+  for (const [name, pkg] of packages) {
+    const pkgRelDir = relative(rootDir, pkg.dir);
+    if (!pkgRelDir) continue; // root-level package: not flagged by file globs (unchanged behavior)
+    const prefix = `${pkgRelDir}/`;
+    const matcher = matchers.get(name)!;
+
+    let pkgJsonOnlyTrigger = false;
+    for (const file of changedFiles) {
+      if (!file.startsWith(prefix)) continue;
+      const relToPackage = file.slice(prefix.length);
+      if (!matcher(relToPackage)) continue;
+      if (relToPackage === 'package.json') {
+        pkgJsonOnlyTrigger = true; // defer — refine by inspecting which fields changed
+      } else {
+        changed.add(name); // any other matched file is a definite change
+        break;
+      }
+    }
+
+    // package.json was the only thing that matched — only flag if a publish-affecting
+    // field actually changed (a dev-only dependency bump shouldn't require a release).
+    if (!changed.has(name) && pkgJsonOnlyTrigger) {
+      baseRef ??= getBaseCompareRef(rootDir, config.baseBranch);
+      if (
+        await packageJsonAffectsRelease(rootDir, baseRef, pkgRelDir, ignoredFields, pkg.bumpy?.releaseTriggeringDevDeps)
+      ) {
+        changed.add(name);
       }
     }
   }
@@ -287,6 +309,92 @@ export async function findChangedPackages(
   }
 
   return [...changed];
+}
+
+/**
+ * Decide whether a package's `package.json` change is release-affecting — i.e. whether
+ * a bump file should be required for it. Diffs the file against the base ref and returns
+ * true if any top-level field changed *other* than the ignored ones (default:
+ * `devDependencies`). A changed `devDependencies` entry still counts when it matches the
+ * package's `releaseTriggeringDevDeps`, since such a dep affects the published output.
+ *
+ * Errs toward `true` (require a bump file) whenever the comparison can't be made — a new
+ * file, a deleted file, or unparseable JSON.
+ */
+async function packageJsonAffectsRelease(
+  rootDir: string,
+  baseRef: string,
+  pkgRelDir: string,
+  ignoredFields: string[],
+  releaseTriggeringDevDeps?: string[],
+): Promise<boolean> {
+  const relPath = `${pkgRelDir}/package.json`;
+  const beforeRaw = readFileAtRef(rootDir, baseRef, relPath);
+  if (beforeRaw == null) return true; // not present at base (new package) → release-affecting
+
+  const afterPath = resolve(rootDir, relPath);
+  const afterRaw = (await exists(afterPath)) ? await readText(afterPath) : null;
+  if (afterRaw == null) return true; // removed in the working tree → be conservative
+
+  let before: Record<string, unknown>;
+  let after: Record<string, unknown>;
+  try {
+    before = JSON.parse(beforeRaw);
+    after = JSON.parse(afterRaw);
+  } catch {
+    return true; // unparseable → can't tell, so require a bump file
+  }
+
+  const ignored = new Set(ignoredFields);
+  const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
+  for (const key of keys) {
+    if (deepEqual(before[key], after[key])) continue;
+    if (!ignored.has(key)) return true; // a publish-affecting field changed
+    // The field is ignored — but a release-relevant devDependency change still affects output.
+    if (
+      key === 'devDependencies' &&
+      releaseTriggeringDevDepsChanged(
+        before.devDependencies as Record<string, string> | undefined,
+        after.devDependencies as Record<string, string> | undefined,
+        releaseTriggeringDevDeps,
+      )
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Whether any devDependency matching `releaseTriggeringDevDeps` was added/removed/changed. */
+function releaseTriggeringDevDepsChanged(
+  before: Record<string, string> = {},
+  after: Record<string, string> = {},
+  releaseTriggeringDevDeps?: string[],
+): boolean {
+  if (!releaseTriggeringDevDeps?.length) return false;
+  const names = new Set([...Object.keys(before ?? {}), ...Object.keys(after ?? {})]);
+  for (const name of names) {
+    if (before?.[name] === after?.[name]) continue;
+    if (releaseTriggeringDevDeps.some((pattern) => matchGlob(name, pattern))) return true;
+  }
+  return false;
+}
+
+/** Structural equality for parsed JSON values (objects compared key-insensitive to order). */
+function deepEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== typeof b || a === null || b === null) return false;
+  if (typeof a !== 'object') return false;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+    return a.every((v, i) => deepEqual(v, b[i]));
+  }
+  const ao = a as Record<string, unknown>;
+  const bo = b as Record<string, unknown>;
+  const ak = Object.keys(ao);
+  const bk = Object.keys(bo);
+  if (ak.length !== bk.length) return false;
+  return ak.every((k) => Object.prototype.hasOwnProperty.call(bo, k) && deepEqual(ao[k], bo[k]));
 }
 
 /**

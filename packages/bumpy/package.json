@@ -52,5 +52,14 @@
     "picomatch": "^4.0.4",
     "semver": "^7.7.2",
     "tsdown": "catalog:"
+  },
+  "bumpy": {
+    "releaseTriggeringDevDeps": [
+      "@clack/prompts",
+      "js-yaml",
+      "picocolors",
+      "picomatch",
+      "semver"
+    ]
   }
 }
