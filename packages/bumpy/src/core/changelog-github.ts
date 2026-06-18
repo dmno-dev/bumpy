@@ -2,7 +2,7 @@ import { tryRunArgs } from '../utils/shell.ts';
 import type { BumpType } from '../types.ts';
 import { maxBump } from '../types.ts';
 import type { ChangelogContext, ChangelogFormatter } from './changelog.ts';
-import { getBumpTypeForPackage, sortBumpFilesByType } from './changelog.ts';
+import { getBumpTypeForPackage, sortBumpFilesByType, summaryNeedsBlockLayout, trimBlankEdges } from './changelog.ts';
 
 /** Authors filtered from "Thanks" attribution by default (e.g. bots) */
 /** Authors filtered from "Thanks" attribution by default (e.g. AI/automation bots) */
@@ -72,8 +72,8 @@ export function createGithubFormatter(options: GithubChangelogOptions = {}): Cha
       // Look up git/PR info, with overrides taking precedence
       const gitInfo = resolveBumpFileInfo(bf.id, repoSlug, serverUrl, overrides);
 
-      const summaryLines = cleanSummary.split('\n');
-      const firstLine = linkifyIssueRefs(summaryLines[0]!, serverUrl, repoSlug);
+      const summaryLines = trimBlankEdges(cleanSummary.split('\n'));
+      const linkify = (s: string) => linkifyIssueRefs(s, serverUrl, repoSlug);
 
       // Build the prefix: PR link, commit link, thanks
       const { links, thanks } = formatPrefix(
@@ -85,15 +85,28 @@ export function createGithubFormatter(options: GithubChangelogOptions = {}): Cha
         internalAuthorsSet,
       );
 
-      // Assemble: links, tag, thanks, then summary
+      // Assemble metadata: links, tag, thanks
       const parts = [links, tag, thanks].filter(Boolean);
       const hasMeta = parts.length > 0;
-      lines.push(`- ${parts.join(' ')}${hasMeta ? ' - ' : ''}${firstLine}`);
+      const meta = parts.join(' ');
 
-      // Include continuation lines
-      for (let i = 1; i < summaryLines.length; i++) {
-        if (summaryLines[i]!.trim()) {
-          lines.push(`  ${linkifyIssueRefs(summaryLines[i]!, serverUrl, repoSlug)}`);
+      if (summaryLines.length === 0) {
+        // Metadata only (e.g. summary was just `pr:`/`author:` lines)
+        if (hasMeta) lines.push(`- ${meta}`);
+      } else if (hasMeta && summaryNeedsBlockLayout(cleanSummary)) {
+        // Long/multiline/markdown summary reads poorly inline — put it on its own
+        // line(s) below the metadata.
+        lines.push(`- ${meta}`);
+        for (const sl of summaryLines) {
+          lines.push(sl.trim() ? `  ${linkify(sl)}` : '');
+        }
+      } else {
+        // Short single-line summary — keep it inline after the metadata
+        lines.push(`- ${meta}${hasMeta ? ' - ' : ''}${linkify(summaryLines[0]!)}`);
+        for (let i = 1; i < summaryLines.length; i++) {
+          if (summaryLines[i]!.trim()) {
+            lines.push(`  ${linkify(summaryLines[i]!)}`);
+          }
         }
       }
     }

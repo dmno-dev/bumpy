@@ -135,6 +135,59 @@ describe('createGithubFormatter', () => {
     expect(result).not.toContain('issues/123');
   });
 
+  test('keeps short single-line summaries inline with the metadata', async () => {
+    addMockRule({ match: /^git log/, response: '' });
+
+    const formatter = createGithubFormatter({ repo: 'dmno-dev/bumpy' });
+    const release = makeRelease('pkg-a', '1.0.1', { bumpFiles: ['cs1'] });
+    const bumpFiles = [makeBumpFile('cs1', [{ name: 'pkg-a', type: 'patch' }], 'Fixed the bug')];
+
+    const result = await formatter({ release, bumpFiles, date: '2026-04-14' });
+
+    expect(result).toContain('*(patch)* - Fixed the bug');
+    // No indented continuation line for inline entries
+    expect(result).not.toContain('\n  Fixed the bug');
+  });
+
+  test('uses block layout for multi-line summaries', async () => {
+    addMockRule({ match: /^git log/, response: '' });
+    addMockRule({
+      match: /gh pr view 42/,
+      response: JSON.stringify({
+        url: 'https://github.com/dmno-dev/bumpy/pull/42',
+        author: { login: 'contributor' },
+        mergeCommit: { oid: 'abc1234567890' },
+      }),
+    });
+
+    const formatter = createGithubFormatter({ repo: 'dmno-dev/bumpy' });
+    const release = makeRelease('pkg-a', '1.0.1', { bumpFiles: ['cs1'] });
+    const bumpFiles = [
+      makeBumpFile('cs1', [{ name: 'pkg-a', type: 'patch' }], 'pr: #42\nFirst line\n\nSecond paragraph'),
+    ];
+
+    const result = await formatter({ release, bumpFiles, date: '2026-04-14' });
+
+    // Metadata line ends with the PR/tag/thanks, NOT the summary
+    expect(result).toContain('Thanks [@contributor](https://github.com/contributor)!\n  First line');
+    expect(result).not.toContain('! - First line');
+    // Internal blank line preserved between paragraphs
+    expect(result).toContain('  First line\n\n  Second paragraph');
+  });
+
+  test('uses block layout for markdown summaries', async () => {
+    addMockRule({ match: /^git log/, response: '' });
+
+    const formatter = createGithubFormatter({ repo: 'dmno-dev/bumpy' });
+    const release = makeRelease('pkg-a', '1.1.0', { type: 'minor', bumpFiles: ['cs1'] });
+    const bumpFiles = [makeBumpFile('cs1', [{ name: 'pkg-a', type: 'minor' }], '## Heading\nsome details')];
+
+    const result = await formatter({ release, bumpFiles, date: '2026-04-14' });
+
+    expect(result).toContain('*(minor)*\n  ## Heading');
+    expect(result).not.toContain('*(minor)* - ## Heading');
+  });
+
   test('handles dependency bump with source packages', async () => {
     const formatter = createGithubFormatter({ repo: 'dmno-dev/bumpy' });
     const release = makeRelease('pkg-a', '1.0.1', {

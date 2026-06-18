@@ -39,6 +39,42 @@ export function sortBumpFilesByType(bumpFiles: BumpFile[], packageName: string):
   });
 }
 
+// ---- Summary layout ----
+
+/** Max length of a single-line summary before it gets its own line below the entry metadata */
+const INLINE_SUMMARY_MAX_LENGTH = 120;
+
+/**
+ * Markdown block-level constructs that read poorly when jammed onto the same
+ * line as the entry metadata. Anchored to line starts so stray punctuation in
+ * prose (e.g. a `|` mid-sentence) doesn't trigger a false positive.
+ */
+const MARKDOWN_BLOCK_RE = /(?:^|\n)[ \t]*(?:#{1,6}[ \t]|[-*+][ \t]|\d+[.)][ \t]|>[ \t]?|```|~~~|\|)/;
+
+/**
+ * Decide whether a summary should be rendered as a block — metadata on its own
+ * line with the summary indented below — rather than inline after the metadata
+ * (e.g. `- #50 (major) Thanks @user! - summary`).
+ *
+ * Inline reads well for a short single line; block reads better when the summary
+ * is multi-line, long, or contains markdown block syntax.
+ */
+export function summaryNeedsBlockLayout(summary: string): boolean {
+  const contentLines = summary.split('\n').filter((l) => l.trim());
+  if (contentLines.length > 1) return true;
+  if ((contentLines[0]?.length ?? 0) > INLINE_SUMMARY_MAX_LENGTH) return true;
+  return MARKDOWN_BLOCK_RE.test(summary);
+}
+
+/** Strip leading/trailing blank lines while preserving internal structure (e.g. paragraph breaks) */
+export function trimBlankEdges(lines: string[]): string[] {
+  let start = 0;
+  let end = lines.length;
+  while (start < end && !lines[start]!.trim()) start++;
+  while (end > start && !lines[end - 1]!.trim()) end--;
+  return lines.slice(start, end);
+}
+
 // ---- Built-in formatters ----
 
 /** Default formatter — version heading with date, bullet points sorted by bump type */
@@ -55,12 +91,17 @@ export const defaultFormatter: ChangelogFormatter = (ctx) => {
   for (const bf of sorted) {
     if (!bf.summary) continue;
     const type = getBumpTypeForPackage(bf, release.name);
-    const summaryLines = bf.summary.split('\n');
-    lines.push(`- *(${type})* ${summaryLines[0]}`);
-    for (let i = 1; i < summaryLines.length; i++) {
-      if (summaryLines[i]!.trim()) {
-        lines.push(`  ${summaryLines[i]}`);
+    const summaryLines = trimBlankEdges(bf.summary.split('\n'));
+    if (summaryLines.length === 0) continue;
+
+    if (summaryNeedsBlockLayout(bf.summary)) {
+      // Metadata on its own line; summary block indented below
+      lines.push(`- *(${type})*`);
+      for (const sl of summaryLines) {
+        lines.push(sl.trim() ? `  ${sl}` : '');
       }
+    } else {
+      lines.push(`- *(${type})* ${summaryLines[0]}`);
     }
   }
 
