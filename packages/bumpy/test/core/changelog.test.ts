@@ -157,8 +157,40 @@ describe('defaultFormatter', () => {
 
     const result = await defaultFormatter({ release, bumpFiles, date: '2026-04-14' });
 
-    expect(result).toContain('- *(minor)* First line');
+    // Multi-line summaries use block layout: metadata on its own line, summary indented below
+    expect(result).toContain('- *(minor)*\n  First line');
     expect(result).toContain('  Second paragraph');
+    // Internal blank line (paragraph break) is preserved
+    expect(result).toContain('  First line\n\n  Second paragraph');
+  });
+
+  test('keeps short single-line summaries inline', async () => {
+    const release = makeRelease('pkg-a', '1.1.0', { type: 'minor', bumpFiles: ['cs1'] });
+    const bumpFiles = [makeBumpFile('cs1', [{ name: 'pkg-a', type: 'minor' }], 'Added feature X')];
+
+    const result = await defaultFormatter({ release, bumpFiles, date: '2026-04-14' });
+
+    expect(result).toContain('- *(minor)* Added feature X');
+  });
+
+  test('uses block layout for long single-line summaries', async () => {
+    const longSummary = `Fixed a subtle issue ${'that affected many users '.repeat(6)}`.trim();
+    const release = makeRelease('pkg-a', '1.0.1', { type: 'patch', bumpFiles: ['cs1'] });
+    const bumpFiles = [makeBumpFile('cs1', [{ name: 'pkg-a', type: 'patch' }], longSummary)];
+
+    const result = await defaultFormatter({ release, bumpFiles, date: '2026-04-14' });
+
+    expect(longSummary.length).toBeGreaterThan(120);
+    expect(result).toContain(`- *(patch)*\n  ${longSummary}`);
+  });
+
+  test('uses block layout for markdown summaries', async () => {
+    const release = makeRelease('pkg-a', '1.1.0', { type: 'minor', bumpFiles: ['cs1'] });
+    const bumpFiles = [makeBumpFile('cs1', [{ name: 'pkg-a', type: 'minor' }], '# Big change')];
+
+    const result = await defaultFormatter({ release, bumpFiles, date: '2026-04-14' });
+
+    expect(result).toContain('- *(minor)*\n  # Big change');
   });
 
   test('only includes bump files referenced by the release', async () => {
