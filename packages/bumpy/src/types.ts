@@ -140,7 +140,7 @@ export interface BumpyConfig {
    * file in a package, bumpy diffs it against the base branch and ignores changes
    * confined to these fields. Default: `["devDependencies"]` — dev-only dependency
    * updates (e.g. Dependabot) don't affect published output. Exception: a changed
-   * `devDependencies` entry that matches the package's `releaseDevDependencies` still
+   * `devDependencies` entry that matches the package's `releaseTriggeringDevDeps` still
    * counts, since it ships in the bundle.
    */
   ignoredPackageJsonFields: string[];
@@ -205,7 +205,7 @@ export interface PackageConfig {
    * `cascadeFrom` rule for the same source takes precedence (e.g. `bumpAs: 'match'` for
    * proportional bumps).
    */
-  releaseDevDependencies?: string[];
+  releaseTriggeringDevDeps?: string[];
 }
 
 export const DEFAULT_PUBLISH_CONFIG: PublishConfig = {

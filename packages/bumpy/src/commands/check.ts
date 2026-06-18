@@ -280,7 +280,7 @@ export async function findChangedPackages(
     if (!changed.has(name) && pkgJsonOnlyTrigger) {
       baseRef ??= getBaseCompareRef(rootDir, config.baseBranch);
       if (
-        await packageJsonAffectsRelease(rootDir, baseRef, pkgRelDir, ignoredFields, pkg.bumpy?.releaseDevDependencies)
+        await packageJsonAffectsRelease(rootDir, baseRef, pkgRelDir, ignoredFields, pkg.bumpy?.releaseTriggeringDevDeps)
       ) {
         changed.add(name);
       }
@@ -316,7 +316,7 @@ export async function findChangedPackages(
  * a bump file should be required for it. Diffs the file against the base ref and returns
  * true if any top-level field changed *other* than the ignored ones (default:
  * `devDependencies`). A changed `devDependencies` entry still counts when it matches the
- * package's `releaseDevDependencies`, since such a dep affects the published output.
+ * package's `releaseTriggeringDevDeps`, since such a dep affects the published output.
  *
  * Errs toward `true` (require a bump file) whenever the comparison can't be made — a new
  * file, a deleted file, or unparseable JSON.
@@ -326,7 +326,7 @@ async function packageJsonAffectsRelease(
   baseRef: string,
   pkgRelDir: string,
   ignoredFields: string[],
-  releaseDevDependencies?: string[],
+  releaseTriggeringDevDeps?: string[],
 ): Promise<boolean> {
   const relPath = `${pkgRelDir}/package.json`;
   const beforeRaw = readFileAtRef(rootDir, baseRef, relPath);
@@ -353,10 +353,10 @@ async function packageJsonAffectsRelease(
     // The field is ignored — but a release-relevant devDependency change still affects output.
     if (
       key === 'devDependencies' &&
-      releaseDevDepChanged(
+      releaseTriggeringDevDepsChanged(
         before.devDependencies as Record<string, string> | undefined,
         after.devDependencies as Record<string, string> | undefined,
-        releaseDevDependencies,
+        releaseTriggeringDevDeps,
       )
     ) {
       return true;
@@ -365,17 +365,17 @@ async function packageJsonAffectsRelease(
   return false;
 }
 
-/** Whether any devDependency matching `releaseDevDependencies` was added/removed/changed. */
-function releaseDevDepChanged(
+/** Whether any devDependency matching `releaseTriggeringDevDeps` was added/removed/changed. */
+function releaseTriggeringDevDepsChanged(
   before: Record<string, string> = {},
   after: Record<string, string> = {},
-  releaseDevDependencies?: string[],
+  releaseTriggeringDevDeps?: string[],
 ): boolean {
-  if (!releaseDevDependencies?.length) return false;
+  if (!releaseTriggeringDevDeps?.length) return false;
   const names = new Set([...Object.keys(before ?? {}), ...Object.keys(after ?? {})]);
   for (const name of names) {
     if (before?.[name] === after?.[name]) continue;
-    if (releaseDevDependencies.some((pattern) => matchGlob(name, pattern))) return true;
+    if (releaseTriggeringDevDeps.some((pattern) => matchGlob(name, pattern))) return true;
   }
   return false;
 }

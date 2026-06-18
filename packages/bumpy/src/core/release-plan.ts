@@ -125,7 +125,7 @@ export function assembleReleasePlan(
 
       for (const dep of dependents) {
         // Skip devDependencies in Phase A (release-relevant devDeps are handled by the
-        // consumer-side cascade — see applyCascadeFrom / releaseDevDependencies).
+        // consumer-side cascade — see applyCascadeFrom / releaseTriggeringDevDeps).
         if (dep.depType === 'devDependencies') continue;
 
         // Check if new version is out of range
@@ -461,9 +461,9 @@ function shouldTrigger(bumpType: BumpType, trigger: BumpType): boolean {
 
 /**
  * Consumer-side cascade rules for a package: explicit `cascadeFrom` entries, plus the
- * `releaseDevDependencies` sugar.
+ * `releaseTriggeringDevDeps` sugar.
  *
- * `releaseDevDependencies` lists `devDependencies` that are release-relevant — typically
+ * `releaseTriggeringDevDeps` lists `devDependencies` that are release-relevant — typically
  * because they're bundled into this package's published output (inlined by a build step)
  * and so aren't runtime-resolved. Any bump to such a dep changes what consumers receive,
  * so it must republish this package: `{ trigger: 'patch', bumpAs: 'patch' }` (any bump
@@ -472,15 +472,15 @@ function shouldTrigger(bumpType: BumpType, trigger: BumpType): boolean {
  * proportional bumps (`bumpAs: 'match'`) when you re-export the dep.
  */
 function cascadeFromRules(pkg: WorkspacePackage): Record<string, Required<CascadeRule>> {
-  const releaseDevDeps = pkg.bumpy?.releaseDevDependencies;
+  const releaseTriggeringDevDeps = pkg.bumpy?.releaseTriggeringDevDeps;
   const cascadeFrom = pkg.bumpy?.cascadeFrom;
-  if (!releaseDevDeps?.length && !cascadeFrom) return {};
+  if (!releaseTriggeringDevDeps?.length && !cascadeFrom) return {};
 
   const rules: Record<string, Required<CascadeRule>> = {};
-  for (const name of releaseDevDeps ?? []) {
+  for (const name of releaseTriggeringDevDeps ?? []) {
     rules[name] = { trigger: 'patch', bumpAs: 'patch' };
   }
-  // Explicit cascadeFrom overrides the releaseDevDependencies default on conflict.
+  // Explicit cascadeFrom overrides the releaseTriggeringDevDeps default on conflict.
   return { ...rules, ...(cascadeFrom ? normalizeCascadeConfig(cascadeFrom) : {}) };
 }
 

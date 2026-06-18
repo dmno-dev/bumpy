@@ -4,7 +4,7 @@ import { DependencyGraph } from '../../src/core/dep-graph.ts';
 import { makePkg, makeConfig } from '../helpers.ts';
 import type { BumpFile } from '../../src/types.ts';
 
-describe('releaseDevDependencies — devDeps baked into published output', () => {
+describe('releaseTriggeringDevDeps — devDeps baked into published output', () => {
   const coreMinor: BumpFile[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'minor' }], summary: 'Feature' }];
   const corePatch: BumpFile[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'patch' }], summary: 'Fix' }];
 
@@ -23,7 +23,7 @@ describe('releaseDevDependencies — devDeps baked into published output', () =>
       ['core', makePkg('core', '1.0.0')],
       [
         'app',
-        makePkg('app', '2.0.0', { devDependencies: { core: '^1.0.0' }, bumpy: { releaseDevDependencies: ['core'] } }),
+        makePkg('app', '2.0.0', { devDependencies: { core: '^1.0.0' }, bumpy: { releaseTriggeringDevDeps: ['core'] } }),
       ],
     ]);
     const graph = new DependencyGraph(packages);
@@ -42,7 +42,7 @@ describe('releaseDevDependencies — devDeps baked into published output', () =>
       ['core', makePkg('core', '1.0.0')],
       [
         'app',
-        makePkg('app', '2.0.0', { devDependencies: { core: '^1.0.0' }, bumpy: { releaseDevDependencies: ['core'] } }),
+        makePkg('app', '2.0.0', { devDependencies: { core: '^1.0.0' }, bumpy: { releaseTriggeringDevDeps: ['core'] } }),
       ],
     ]);
     const graph = new DependencyGraph(packages);
@@ -57,7 +57,7 @@ describe('releaseDevDependencies — devDeps baked into published output', () =>
         '@myorg/app',
         makePkg('@myorg/app', '2.0.0', {
           devDependencies: { '@myorg/core': '^1.0.0' },
-          bumpy: { releaseDevDependencies: ['@myorg/*'] },
+          bumpy: { releaseTriggeringDevDeps: ['@myorg/*'] },
         }),
       ],
     ]);
@@ -76,7 +76,7 @@ describe('releaseDevDependencies — devDeps baked into published output', () =>
         'app',
         makePkg('app', '2.0.0', {
           devDependencies: { core: '^1.0.0' },
-          bumpy: { releaseDevDependencies: ['other-lib'] },
+          bumpy: { releaseTriggeringDevDeps: ['other-lib'] },
         }),
       ],
     ]);
@@ -93,7 +93,7 @@ describe('releaseDevDependencies — devDeps baked into published output', () =>
         makePkg('app', '2.0.0', {
           devDependencies: { core: '^1.0.0' },
           bumpy: {
-            releaseDevDependencies: ['core'],
+            releaseTriggeringDevDeps: ['core'],
             cascadeFrom: { core: { trigger: 'patch', bumpAs: 'match' } },
           },
         }),
