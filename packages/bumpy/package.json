@@ -54,7 +54,7 @@
     "tsdown": "catalog:"
   },
   "bumpy": {
-    "bundledDependencies": [
+    "releaseDevDependencies": [
       "@clack/prompts",
       "js-yaml",
       "picocolors",

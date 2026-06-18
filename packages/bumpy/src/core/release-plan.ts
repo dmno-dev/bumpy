@@ -124,8 +124,8 @@ export function assembleReleasePlan(
       const dependents = depGraph.getDependents(pkgName);
 
       for (const dep of dependents) {
-        // Skip devDependencies in Phase A (bundled devDeps are handled by the
-        // consumer-side cascade — see applyCascadeFrom / bundledDependencies).
+        // Skip devDependencies in Phase A (release-relevant devDeps are handled by the
+        // consumer-side cascade — see applyCascadeFrom / releaseDevDependencies).
         if (dep.depType === 'devDependencies') continue;
 
         // Check if new version is out of range
@@ -461,26 +461,26 @@ function shouldTrigger(bumpType: BumpType, trigger: BumpType): boolean {
 
 /**
  * Consumer-side cascade rules for a package: explicit `cascadeFrom` entries, plus the
- * `bundledDependencies` sugar.
+ * `releaseDevDependencies` sugar.
  *
- * `bundledDependencies` declares deps that are baked into this package's published
- * output (e.g. inlined by esbuild/tsup/rollup) — often listed under `devDependencies`
- * because they're not runtime-resolved. Any bump to such a dep changes what consumers
- * receive, so it must republish the bundler: `{ trigger: 'patch', bumpAs: 'patch' }`
- * (any bump triggers; the bundler gets a patch, since its own public API hasn't
- * necessarily changed). An explicit `cascadeFrom` rule for the same source wins, so
- * you can opt into proportional bumps (`bumpAs: 'match'`) when you re-export the dep.
+ * `releaseDevDependencies` lists `devDependencies` that are release-relevant — typically
+ * because they're bundled into this package's published output (inlined by a build step)
+ * and so aren't runtime-resolved. Any bump to such a dep changes what consumers receive,
+ * so it must republish this package: `{ trigger: 'patch', bumpAs: 'patch' }` (any bump
+ * triggers; this package gets a patch, since its own public API hasn't necessarily
+ * changed). An explicit `cascadeFrom` rule for the same source wins, so you can opt into
+ * proportional bumps (`bumpAs: 'match'`) when you re-export the dep.
  */
 function cascadeFromRules(pkg: WorkspacePackage): Record<string, Required<CascadeRule>> {
-  const bundled = pkg.bumpy?.bundledDependencies;
+  const releaseDevDeps = pkg.bumpy?.releaseDevDependencies;
   const cascadeFrom = pkg.bumpy?.cascadeFrom;
-  if (!bundled?.length && !cascadeFrom) return {};
+  if (!releaseDevDeps?.length && !cascadeFrom) return {};
 
   const rules: Record<string, Required<CascadeRule>> = {};
-  for (const name of bundled ?? []) {
+  for (const name of releaseDevDeps ?? []) {
     rules[name] = { trigger: 'patch', bumpAs: 'patch' };
   }
-  // Explicit cascadeFrom overrides the bundled-dependency default on conflict.
+  // Explicit cascadeFrom overrides the releaseDevDependencies default on conflict.
   return { ...rules, ...(cascadeFrom ? normalizeCascadeConfig(cascadeFrom) : {}) };
 }
 

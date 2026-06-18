@@ -140,7 +140,7 @@ export interface BumpyConfig {
    * file in a package, bumpy diffs it against the base branch and ignores changes
    * confined to these fields. Default: `["devDependencies"]` — dev-only dependency
    * updates (e.g. Dependabot) don't affect published output. Exception: a changed
-   * `devDependencies` entry that matches the package's `bundledDependencies` still
+   * `devDependencies` entry that matches the package's `releaseDevDependencies` still
    * counts, since it ships in the bundle.
    */
   ignoredPackageJsonFields: string[];
@@ -192,15 +192,20 @@ export interface PackageConfig {
   cascadeTo?: CascadeConfig;
   cascadeFrom?: CascadeConfig;
   /**
-   * Names (or globs) of workspace dependencies bundled into this package's published
-   * output (e.g. inlined by esbuild/tsup/rollup). Because the dep's code ships inside
-   * this package, *any* bump to it republishes this package — so each entry acts as a
-   * `cascadeFrom` source with `{ trigger: 'patch', bumpAs: 'patch' }`. This is the
-   * common case where a true runtime dep lives under `devDependencies` (it's not
-   * runtime-resolved). For proportional bumps or finer control, use `cascadeFrom`
-   * directly — an explicit `cascadeFrom` rule for the same source takes precedence.
+   * Names (or globs) of `devDependencies` that should be treated as release-relevant:
+   * a change to one requires a release of this package, and (for internal workspace
+   * deps) its own releases cascade here. `devDependencies` are ignored for versioning by
+   * default — this opts specific entries back in.
+   *
+   * The usual reason is a dependency **bundled** into the published output (inlined by a
+   * build step — tsup/tsdown/esbuild/rollup/…), which is why it lives under
+   * `devDependencies` rather than `dependencies`. Other cases: a tool whose output is
+   * committed and shipped (codegen), or a re-exported types package. Each entry acts as a
+   * `cascadeFrom` source with `{ trigger: 'patch', bumpAs: 'patch' }`; an explicit
+   * `cascadeFrom` rule for the same source takes precedence (e.g. `bumpAs: 'match'` for
+   * proportional bumps).
    */
-  bundledDependencies?: string[];
+  releaseDevDependencies?: string[];
 }
 
 export const DEFAULT_PUBLISH_CONFIG: PublishConfig = {

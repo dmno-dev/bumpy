@@ -46,7 +46,7 @@
     },
     "ignoredPackageJsonFields": {
       "type": "array",
-      "description": "Top-level package.json fields whose change alone does not mark a package as changed. When package.json is the only changed file, it's diffed against the base branch and changes confined to these fields are ignored. Default: ['devDependencies']. A changed devDependencies entry matching the package's bundledDependencies still counts.",
+      "description": "Top-level package.json fields whose change alone does not mark a package as changed. When package.json is the only changed file, it's diffed against the base branch and changes confined to these fields are ignored. Default: ['devDependencies']. A changed devDependencies entry matching the package's releaseDevDependencies still counts.",
       "items": { "type": "string" },
       "default": ["devDependencies"]
     },
@@ -373,9 +373,9 @@
           "description": "Explicit cascade sources — when a matching package is bumped, cascade the bump to this package.",
           "$ref": "#/$defs/cascadeConfig"
         },
-        "bundledDependencies": {
+        "releaseDevDependencies": {
           "type": "array",
-          "description": "Names (or globs) of workspace deps bundled into this package's published output (e.g. inlined by esbuild/tsup/rollup). Any bump to a listed dep republishes this package with a patch bump. Shorthand for a cascadeFrom rule of { trigger: 'patch', bumpAs: 'patch' }; an explicit cascadeFrom for the same source takes precedence.",
+          "description": "Names (or globs) of devDependencies that are release-relevant: a change to one requires a release of this package, and (for internal workspace deps) its own releases cascade here. devDependencies are ignored for versioning by default — this opts specific entries back in. The usual reason is a dep bundled into the published output (inlined by tsup/tsdown/esbuild/rollup/…). Shorthand for a cascadeFrom rule of { trigger: 'patch', bumpAs: 'patch' }; an explicit cascadeFrom for the same source takes precedence.",
           "items": { "type": "string" }
         }
       },

@@ -34,7 +34,7 @@ A package is "changed" (and so needs a bump file) when a changed file inside it 
 
 So when `package.json` is the **only** changed file in a package, bumpy diffs it against the base branch and only flags the package if a field **outside** `ignoredPackageJsonFields` changed. The default ignore list is `["devDependencies"]`, meaning dev-only dependency updates don't require a bump file. Every other field — `dependencies`, `exports`, `bin`, `files`, `description`, `scripts`, etc. — still counts.
 
-One exception keeps this safe: a changed `devDependencies` entry that matches the package's [`bundledDependencies`](#bundled-dependencies-consumer-side) **does** flag the package, since a bundled dep ships in the published output.
+One exception keeps this safe: a changed `devDependencies` entry that matches the package's [`releaseDevDependencies`](#release-relevant-devdependencies) **does** flag the package, since such a dep affects the published output.
 
 To relax additional fields (e.g. treat `scripts` changes as non-releasing too), extend the list:
 
@@ -151,20 +151,20 @@ Per-package settings can be defined in two places:
 
 `package.json` settings take precedence over global config.
 
-| Option                | Type                       | Description                                                                  |
-| --------------------- | -------------------------- | ---------------------------------------------------------------------------- |
-| `managed`             | `boolean`                  | Opt this package in or out of versioning                                     |
-| `access`              | `"public" \| "restricted"` | Override the global access level                                             |
-| `publishCommand`      | `string \| string[]`       | Custom command(s) to publish this package (replaces npm publish)             |
-| `buildCommand`        | `string`                   | Command to run before publishing                                             |
-| `registry`            | `string`                   | Custom npm registry URL                                                      |
-| `skipNpmPublish`      | `boolean`                  | Don't publish to npm (still creates git tags)                                |
-| `checkPublished`      | `string`                   | Custom command that outputs the currently published version                  |
-| `changedFilePatterns` | `string[]`                 | Glob patterns for changed-file detection (replaces root setting, not merged) |
-| `dependencyBumpRules` | `object`                   | Per-package override for dependency propagation rules                        |
-| `cascadeTo`           | `object`                   | Explicit cascade targets — glob pattern mapped to `{ trigger, bumpAs }`      |
-| `cascadeFrom`         | `object`                   | Explicit cascade sources — glob pattern mapped to `{ trigger, bumpAs }`      |
-| `bundledDependencies` | `string[]`                 | Deps bundled into this package's output — any bump republishes it (patch)    |
+| Option                   | Type                       | Description                                                                            |
+| ------------------------ | -------------------------- | -------------------------------------------------------------------------------------- |
+| `managed`                | `boolean`                  | Opt this package in or out of versioning                                               |
+| `access`                 | `"public" \| "restricted"` | Override the global access level                                                       |
+| `publishCommand`         | `string \| string[]`       | Custom command(s) to publish this package (replaces npm publish)                       |
+| `buildCommand`           | `string`                   | Command to run before publishing                                                       |
+| `registry`               | `string`                   | Custom npm registry URL                                                                |
+| `skipNpmPublish`         | `boolean`                  | Don't publish to npm (still creates git tags)                                          |
+| `checkPublished`         | `string`                   | Custom command that outputs the currently published version                            |
+| `changedFilePatterns`    | `string[]`                 | Glob patterns for changed-file detection (replaces root setting, not merged)           |
+| `dependencyBumpRules`    | `object`                   | Per-package override for dependency propagation rules                                  |
+| `cascadeTo`              | `object`                   | Explicit cascade targets — glob pattern mapped to `{ trigger, bumpAs }`                |
+| `cascadeFrom`            | `object`                   | Explicit cascade sources — glob pattern mapped to `{ trigger, bumpAs }`                |
+| `releaseDevDependencies` | `string[]`                 | devDependencies that affect published output — a change requires a release (see below) |
 
 ### Custom commands and `allowCustomCommands`
 
@@ -242,37 +242,35 @@ Or with custom trigger/bumpAs:
 }
 ```
 
-### Bundled dependencies (consumer-side)
+### Release-relevant devDependencies
 
-Many packages ship a **bundle** — a build step (tsup, tsdown, esbuild, rolldown/rollup, Vite, `bun build`, webpack, …) inlines their imports into `dist/` so consumers get a self-contained artifact. A dependency that's bundled this way is **not** installed from the registry at consume time; its code is copied into your output. So when that dependency changes, what you publish changes too — and you need a new release.
-
-Because a bundled dependency isn't resolved at runtime, it's conventionally declared under `devDependencies` rather than `dependencies` (you don't want consumers to also install it). Taken to the extreme, a fully-bundled package can have **no runtime `dependencies` at all** — every library it imports sits in `devDependencies`. (bumpy itself is built this way with tsdown.)
-
-That convention is the problem bumpy has to disambiguate: a `devDependencies` change is normally ignored (it's just dev tooling — a linter, a type package, a test runner), but a bundled one is effectively a runtime dependency. `bundledDependencies` is how you tell them apart — list the deps that are baked into your output:
+By default a `devDependencies` change doesn't require a release — it's usually dev tooling (a linter, a type package, a test runner). But sometimes a dependency that affects your **published output** lives under `devDependencies`. `releaseDevDependencies` marks those, so a change to one requires a release (and, for internal workspace deps, its own releases cascade to you):
 
 ```json
 {
   "name": "@myorg/astro-integration",
   "bumpy": {
-    "bundledDependencies": ["@myorg/vite-integration", "nanoid"]
+    "releaseDevDependencies": ["@myorg/vite-integration", "nanoid"]
   }
 }
 ```
 
-`bundledDependencies` declares intent — "this dependency ships inside my output" — and that drives **two** behaviors:
+**The usual reason is bundling.** A build step (tsup, tsdown, esbuild, rolldown/rollup, Vite, `bun build`, webpack, …) inlines imports into `dist/`, so consumers get a self-contained artifact. A bundled dependency isn't installed from the registry at consume time — its code is copied into your output — so it's conventionally declared under `devDependencies` (you don't want consumers to also install it). Taken to the extreme, a fully-bundled package can have **no runtime `dependencies` at all**; every library it imports sits in `devDependencies`. (bumpy itself is built this way with tsdown.) Other cases that fit: a dependency whose output you commit and ship (codegen), or a re-exported types-only package.
 
-1. **Propagation** — when the bundled dependency gets its **own release**, this package is cascaded a **patch** bump (shorthand for a `cascadeFrom` rule of `{ "trigger": "patch", "bumpAs": "patch" }`). This only applies to **internal workspace** deps, since bumpy only releases packages in your workspace.
-2. **Change detection** — when the bundled dependency's version is edited in **this** package's `package.json` (e.g. a Dependabot PR, or a manual bump), this package is flagged as changed and needs a bump file — even though `devDependencies` edits are normally ignored (see [Change detection](#change-detection-and-packagejson-fields)). This applies to **any** bundled dep, internal or external.
+`releaseDevDependencies` declares intent — "a change to this dep changes what I publish" — and that drives **two** behaviors:
 
-So for an **internal** bundled workspace dep, both paths fire; for an **external** bundled dep (e.g. a published npm package you inline), only change detection applies — listing it is still useful, and is a harmless no-op for propagation.
+1. **Propagation** — when the dep gets its **own release**, this package is cascaded a **patch** bump (shorthand for a `cascadeFrom` rule of `{ "trigger": "patch", "bumpAs": "patch" }`). This only applies to **internal workspace** deps, since bumpy only releases packages in your workspace.
+2. **Change detection** — when the dep's version is edited in **this** package's `package.json` (e.g. a Dependabot PR, or a manual bump), this package is flagged as changed and needs a bump file — even though `devDependencies` edits are normally ignored (see [Change detection](#change-detection-and-packagejson-fields)). This applies to **any** listed dep, internal or external.
 
-#### Internal workspace deps: bundled vs. not
+So for an **internal** workspace dep, both paths fire; for an **external** dep (e.g. a published npm package you inline), only change detection applies — listing it is still useful, and is a harmless no-op for propagation.
 
-This is exactly the knob for "which devDependencies affect my published output." An internal workspace package listed under `devDependencies` is, by default, treated as dev-only — its releases don't cascade ([`dependencyBumpRules.devDependencies` is `false`](#dependency-bump-rules)) and bumping its range doesn't flag you. Add it to `bundledDependencies` to flip both: now its releases republish you, and editing its range flags you. Leave it out and it stays dev-only. No global setting is involved — it's per-dependency, per-consumer.
+#### Internal workspace deps: release-relevant or not
+
+This is exactly the knob for "which `devDependencies` affect my published output." An internal workspace package listed under `devDependencies` is, by default, treated as dev-only — its releases don't cascade ([`dependencyBumpRules.devDependencies` is `false`](#dependency-bump-rules)) and bumping its range doesn't flag you. Add it to `releaseDevDependencies` to flip both: now its releases republish you, and editing its range flags you. Leave it out and it stays dev-only. No global setting is involved — it's per-dependency, per-consumer.
 
 #### Proportional bumps
 
-If you re-export the bundled dependency's API and want **proportional** bumps (a minor in the dep → a minor here), use `cascadeFrom` directly instead — an explicit `cascadeFrom` rule for the same source takes precedence over the `bundledDependencies` patch default:
+If you re-export the dependency's API and want **proportional** bumps (a minor in the dep → a minor here), use `cascadeFrom` directly instead — an explicit `cascadeFrom` rule for the same source takes precedence over the `releaseDevDependencies` patch default:
 
 ```json
 {

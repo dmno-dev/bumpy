@@ -279,7 +279,9 @@ export async function findChangedPackages(
     // field actually changed (a dev-only dependency bump shouldn't require a release).
     if (!changed.has(name) && pkgJsonOnlyTrigger) {
       baseRef ??= getBaseCompareRef(rootDir, config.baseBranch);
-      if (await packageJsonAffectsRelease(rootDir, baseRef, pkgRelDir, ignoredFields, pkg.bumpy?.bundledDependencies)) {
+      if (
+        await packageJsonAffectsRelease(rootDir, baseRef, pkgRelDir, ignoredFields, pkg.bumpy?.releaseDevDependencies)
+      ) {
         changed.add(name);
       }
     }
@@ -314,7 +316,7 @@ export async function findChangedPackages(
  * a bump file should be required for it. Diffs the file against the base ref and returns
  * true if any top-level field changed *other* than the ignored ones (default:
  * `devDependencies`). A changed `devDependencies` entry still counts when it matches the
- * package's `bundledDependencies`, since it ships in the bundle.
+ * package's `releaseDevDependencies`, since such a dep affects the published output.
  *
  * Errs toward `true` (require a bump file) whenever the comparison can't be made — a new
  * file, a deleted file, or unparseable JSON.
@@ -324,7 +326,7 @@ async function packageJsonAffectsRelease(
   baseRef: string,
   pkgRelDir: string,
   ignoredFields: string[],
-  bundledDependencies?: string[],
+  releaseDevDependencies?: string[],
 ): Promise<boolean> {
   const relPath = `${pkgRelDir}/package.json`;
   const beforeRaw = readFileAtRef(rootDir, baseRef, relPath);
@@ -348,13 +350,13 @@ async function packageJsonAffectsRelease(
   for (const key of keys) {
     if (deepEqual(before[key], after[key])) continue;
     if (!ignored.has(key)) return true; // a publish-affecting field changed
-    // The field is ignored — but a bundled devDependency change still affects output.
+    // The field is ignored — but a release-relevant devDependency change still affects output.
     if (
       key === 'devDependencies' &&
-      bundledDevDepChanged(
+      releaseDevDepChanged(
         before.devDependencies as Record<string, string> | undefined,
         after.devDependencies as Record<string, string> | undefined,
-        bundledDependencies,
+        releaseDevDependencies,
       )
     ) {
       return true;
@@ -363,17 +365,17 @@ async function packageJsonAffectsRelease(
   return false;
 }
 
-/** Whether any devDependency matching `bundledDependencies` was added/removed/changed. */
-function bundledDevDepChanged(
+/** Whether any devDependency matching `releaseDevDependencies` was added/removed/changed. */
+function releaseDevDepChanged(
   before: Record<string, string> = {},
   after: Record<string, string> = {},
-  bundled?: string[],
+  releaseDevDependencies?: string[],
 ): boolean {
-  if (!bundled?.length) return false;
+  if (!releaseDevDependencies?.length) return false;
   const names = new Set([...Object.keys(before ?? {}), ...Object.keys(after ?? {})]);
   for (const name of names) {
     if (before?.[name] === after?.[name]) continue;
-    if (bundled.some((pattern) => matchGlob(name, pattern))) return true;
+    if (releaseDevDependencies.some((pattern) => matchGlob(name, pattern))) return true;
   }
   return false;
 }

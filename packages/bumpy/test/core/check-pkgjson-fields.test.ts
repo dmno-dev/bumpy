@@ -104,13 +104,13 @@ describe('findChangedPackages — package.json field awareness', () => {
   test('a bundled devDependency change DOES flag the package', async () => {
     await setupPkg({
       devDependencies: { 'bundled-lib': '^1.0.0', vitest: '^1.0.0' },
-      bumpy: { bundledDependencies: ['bundled-lib'] },
+      bumpy: { releaseDevDependencies: ['bundled-lib'] },
     });
     await writeJson('packages/app/package.json', {
       name: 'app',
       version: '1.0.0',
       devDependencies: { 'bundled-lib': '^2.0.0', vitest: '^1.0.0' },
-      bumpy: { bundledDependencies: ['bundled-lib'] },
+      bumpy: { releaseDevDependencies: ['bundled-lib'] },
     });
     gitInDir(['commit', '-am', 'bump bundled-lib'], tmpDir);
     expect(await detect()).toContain('app');
@@ -119,13 +119,13 @@ describe('findChangedPackages — package.json field awareness', () => {
   test('a non-bundled devDependency change alongside a bundled marker stays unflagged', async () => {
     await setupPkg({
       devDependencies: { 'bundled-lib': '^1.0.0', vitest: '^1.0.0' },
-      bumpy: { bundledDependencies: ['bundled-lib'] },
+      bumpy: { releaseDevDependencies: ['bundled-lib'] },
     });
     await writeJson('packages/app/package.json', {
       name: 'app',
       version: '1.0.0',
       devDependencies: { 'bundled-lib': '^1.0.0', vitest: '^2.0.0' },
-      bumpy: { bundledDependencies: ['bundled-lib'] },
+      bumpy: { releaseDevDependencies: ['bundled-lib'] },
     });
     gitInDir(['commit', '-am', 'bump vitest only'], tmpDir);
     expect(await detect()).not.toContain('app');
