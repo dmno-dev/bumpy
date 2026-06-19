@@ -102,14 +102,15 @@ bumpy publish   # pack and publish, create git tags, push tags, and create GitHu
 
 ## AI Integration
 
-Bumpy ships with an AI skill that teaches LLMs how to create bump files.
+Bumpy ships with an [agent skill](https://github.com/dmno-dev/bumpy/blob/main/skills/add-change/SKILL.md) that teaches LLMs how to create bump files.
+
+For Claude Code, install it as a plugin:
 
 ```bash
-bumpy ai setup --target claude    # installs Claude Code plugin
-bumpy ai setup --target opencode  # creates OpenCode command file
-bumpy ai setup --target cursor    # creates Cursor rule file
-bumpy ai setup --target codex     # creates Codex instruction file
+claude plugin install @varlock/bumpy
 ```
+
+The skill is also bundled in the published npm package, so once bumpy is installed it lives at `node_modules/@varlock/bumpy/skills/add-change/SKILL.md` — version-pinned to your installed bumpy. Agents and tools that support the [SKILL.md](https://github.com/dmno-dev/bumpy/blob/main/skills/add-change/SKILL.md) format can reference it directly.
 
 The skill teaches the AI to examine git changes, identify affected packages, choose bump levels, and create bump files with `bumpy add`. It also instructs the AI to keep existing bump files up to date as work continues on a branch - updating packages, bump levels, and summaries to reflect the final state of changes.
 

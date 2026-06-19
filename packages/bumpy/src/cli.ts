@@ -162,23 +162,6 @@ async function main() {
         break;
       }
 
-      case 'ai': {
-        const rootDir = await findRoot();
-        const subcommand = args[1];
-        const aiFlags = parseFlags(args.slice(2));
-
-        if (subcommand === 'setup') {
-          const { aiSetupCommand } = await import('./commands/ai.ts');
-          await aiSetupCommand(rootDir, {
-            target: aiFlags.target as string | undefined,
-          });
-        } else {
-          log.error(`Unknown ai subcommand: ${subcommand}. Use "ai setup".`);
-          process.exit(1);
-        }
-        break;
-      }
-
       case '--version':
       case '-v':
         console.log(`bumpy ${__BUMPY_VERSION__}`);
@@ -228,7 +211,6 @@ function printHelp() {
     ci plan                 Report what ci release would do (JSON + GitHub Actions outputs)
     ci release              Release — create version PR or auto-publish
     ci setup                Set up a token for triggering CI on version PRs
-    ai setup                Install AI skill for creating bump files
 
   Add options:
     --packages <list>       Package bumps (e.g., "pkg-a:minor,pkg-b:patch")
@@ -270,9 +252,6 @@ function printHelp() {
     --auto-publish          Version + publish directly (default: create version PR)
     --tag <tag>             npm dist-tag for auto-publish
     --branch <name>         Branch name for version PR (default: bumpy/version-packages)
-
-  AI setup options:
-    --target <tool>         Target AI tool: claude, opencode, cursor, codex
 
   ${colorize('https://bumpy.varlock.dev', 'dim')}
 `);
