@@ -263,20 +263,3 @@ Interactive guide to set up `BUMPY_GH_TOKEN` for CI. Walks through creating a fi
 ```bash
 bumpy ci setup
 ```
-
-## `bumpy ai setup`
-
-Install an AI skill for creating bump files in supported coding tools.
-
-```bash
-bumpy ai setup --target claude
-bumpy ai setup --target opencode
-bumpy ai setup --target cursor
-bumpy ai setup --target codex
-```
-
-| Flag              | Description                                |
-| ----------------- | ------------------------------------------ |
-| `--target <tool>` | `claude`, `opencode`, `cursor`, or `codex` |
-
-For Claude Code, this runs `claude plugin install @varlock/bumpy` under the hood. For other targets, it copies a command/rule file into your project.
