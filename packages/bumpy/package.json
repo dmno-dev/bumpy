@@ -36,7 +36,7 @@
     }
   },
   "scripts": {
-    "build": "bun run scripts/sync-skill.ts && tsdown",
+    "build": "tsdown",
     "prepack": "bun run scripts/sync-skill.ts && cp ../../README.md .",
     "sync-skill": "bun run scripts/sync-skill.ts",
     "check": "bun run tsc --noEmit",

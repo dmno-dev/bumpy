@@ -6,9 +6,10 @@
  *
  * The canonical copy lives at the repo root so a single source of truth feeds
  * both the npm bundle and any future discovery endpoints. This package copy is
- * a generated artifact (gitignored) and is regenerated on every `build` /
- * `prepack` / publish. It is also what the Claude Code plugin manifest
- * (`.claude-plugin/plugin.json`) ships to agents.
+ * a generated artifact (gitignored) and is regenerated on every `prepack` /
+ * publish (run `bun run sync-skill` to refresh it manually). It is also what
+ * the Claude Code plugin manifest (`.claude-plugin/plugin.json`) ships to
+ * agents.
  */
 import { existsSync, rmSync, cpSync } from 'node:fs';
 import { resolve } from 'node:path';
