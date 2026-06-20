@@ -102,17 +102,31 @@ bumpy publish   # pack and publish, create git tags, push tags, and create GitHu
 
 ## AI Integration
 
-Bumpy ships with an [agent skill](https://github.com/dmno-dev/bumpy/blob/main/skills/add-change/SKILL.md) that teaches LLMs how to create bump files.
+Bumpy ships with an [agent skill](https://github.com/dmno-dev/bumpy/blob/main/skills/add-change/SKILL.md) that teaches LLMs how to create bump files. It teaches the AI to examine git changes, identify affected packages, choose bump levels, and create bump files with `bumpy add` — and to keep existing bump files up to date as work continues on a branch, updating packages, bump levels, and summaries to reflect the final state of changes.
 
-For Claude Code, install it as a plugin:
+### Installing the skill
 
-```bash
-claude plugin install @varlock/bumpy
-```
+Pick whichever fits your setup:
 
-The skill is also bundled in the published npm package, so once bumpy is installed it lives at `node_modules/@varlock/bumpy/skills/add-change/SKILL.md` — version-pinned to your installed bumpy. Agents and tools that support the [SKILL.md](https://github.com/dmno-dev/bumpy/blob/main/skills/add-change/SKILL.md) format can reference it directly.
+- **[`skills`](https://github.com/vercel-labs/skills) (any agent — recommended)** — works with Claude Code, Cursor, OpenCode, Codex, and others:
 
-The skill teaches the AI to examine git changes, identify affected packages, choose bump levels, and create bump files with `bumpy add`. It also instructs the AI to keep existing bump files up to date as work continues on a branch - updating packages, bump levels, and summaries to reflect the final state of changes.
+  ```bash
+  npx skills add dmno-dev/bumpy     # update with: npx skills update
+  ```
+
+- **GitHub CLI** (v2.90+):
+
+  ```bash
+  gh skill install dmno-dev/bumpy add-change     # update with: gh skill update add-change
+  ```
+
+- **Claude Code plugin:**
+
+  ```bash
+  claude plugin install @varlock/bumpy
+  ```
+
+- **npm-bundled** — the skill ships inside the published package, so once `@varlock/bumpy` is installed it lives at `node_modules/@varlock/bumpy/skills/add-change/SKILL.md`, version-pinned to your installed bumpy. Point any tool that consumes a `SKILL.md` path at it directly.
 
 ## Documentation
 
