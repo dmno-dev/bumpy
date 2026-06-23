@@ -135,6 +135,133 @@ Mixed
     expect(errors[0]).toContain('"bogus"');
   });
 
+  test('parses $changelog: false reserved key', () => {
+    const content = `---
+"pkg-a": patch
+$changelog: false
+---
+
+Internal refactor — not worth a changelog line
+`;
+    const { bumpFile: bf, errors } = parseBumpFile(content, 'test-bf');
+    expect(errors).toHaveLength(0);
+    expect(bf!.releases).toHaveLength(1);
+    expect(bf!.releases[0]!.name).toBe('pkg-a');
+    expect(bf!.releases[0]!.type).toBe('patch');
+    expect(bf!.noChangelog).toBe(true);
+    // body is preserved as a note even though it won't be rendered
+    expect(bf!.summary).toBe('Internal refactor — not worth a changelog line');
+  });
+
+  test('parses per-package changelog: false in nested format', () => {
+    const content = `---
+"pkg-a": patch
+"pkg-b":
+  bump: patch
+  changelog: false
+---
+
+Shared body
+`;
+    const { bumpFile: bf, errors } = parseBumpFile(content, 'test-bf');
+    expect(errors).toHaveLength(0);
+    expect(bf!.noChangelog).toBeUndefined();
+    expect(bf!.releases).toHaveLength(2);
+    expect(bf!.releases[0]!.name).toBe('pkg-a');
+    expect(bf!.releases[0]!.noChangelog).toBeUndefined();
+    expect(bf!.releases[1]!.name).toBe('pkg-b');
+    expect(bf!.releases[1]!.noChangelog).toBe(true);
+  });
+
+  test('per-package changelog flag coexists with cascade', () => {
+    const content = `---
+"@myorg/core":
+  bump: minor
+  changelog: false
+  cascade:
+    "plugins/*": patch
+---
+
+Body
+`;
+    const { bumpFile: bf, errors } = parseBumpFile(content, 'test-bf');
+    expect(errors).toHaveLength(0);
+    const rel = bf!.releases[0]! as any;
+    expect(rel.noChangelog).toBe(true);
+    expect(rel.cascade).toEqual({ 'plugins/*': 'patch' });
+  });
+
+  test('errors on non-boolean per-package changelog value', () => {
+    const content = `---
+"pkg-a":
+  bump: patch
+  changelog: nope
+---
+
+Body
+`;
+    const { bumpFile: bf, errors } = parseBumpFile(content, 'test-bf');
+    expect(bf).toBeNull();
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('"changelog" for "pkg-a"');
+    expect(errors[0]).toContain('true or false');
+  });
+
+  test('$changelog: true leaves noChangelog unset', () => {
+    const content = `---
+"pkg-a": patch
+$changelog: true
+---
+
+A change
+`;
+    const { bumpFile: bf, errors } = parseBumpFile(content, 'test-bf');
+    expect(errors).toHaveLength(0);
+    expect(bf!.noChangelog).toBeUndefined();
+  });
+
+  test('a package named "changelog" is unaffected by the reserved key', () => {
+    const content = `---
+"changelog": patch
+---
+
+Bumped the changelog package
+`;
+    const { bumpFile: bf, errors } = parseBumpFile(content, 'test-bf');
+    expect(errors).toHaveLength(0);
+    expect(bf!.releases).toHaveLength(1);
+    expect(bf!.releases[0]!.name).toBe('changelog');
+    expect(bf!.noChangelog).toBeUndefined();
+  });
+
+  test('errors on non-boolean $changelog value', () => {
+    const content = `---
+"pkg-a": patch
+$changelog: nope
+---
+
+A change
+`;
+    const { bumpFile: bf, errors } = parseBumpFile(content, 'test-bf');
+    expect(bf!.releases).toHaveLength(1);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('"$changelog"');
+    expect(errors[0]).toContain('true or false');
+  });
+
+  test('errors on unknown reserved key', () => {
+    const content = `---
+"pkg-a": patch
+$bogus: false
+---
+
+A change
+`;
+    const { errors } = parseBumpFile(content, 'test-bf');
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('Unknown reserved key "$bogus"');
+  });
+
   test('handles multi-line summary', () => {
     const content = `---
 "pkg-a": minor

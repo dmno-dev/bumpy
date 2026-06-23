@@ -78,8 +78,9 @@ export function makeBumpFile(
   id: string,
   releases: { name: string; type: BumpTypeWithNone }[],
   summary = 'Test change',
+  extra: Partial<Pick<BumpFile, 'noChangelog' | 'channel'>> = {},
 ): BumpFile {
-  return { id, releases, summary };
+  return { id, releases, summary, ...extra };
 }
 
 /** Create a ReleasePlan for testing */

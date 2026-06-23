@@ -30,6 +30,44 @@ describe('defaultFormatter', () => {
     expect(result.indexOf('Added new feature')).toBeLessThan(result.indexOf('Fixed a bug'));
   });
 
+  test('omits summary from bump files flagged $changelog: false', async () => {
+    const release = makeRelease('pkg-a', '1.0.2', {
+      type: 'patch',
+      oldVersion: '1.0.1',
+      bumpFiles: ['cs1', 'cs2'],
+    });
+    const bumpFiles = [
+      makeBumpFile('cs1', [{ name: 'pkg-a', type: 'patch' }], 'User-facing fix'),
+      makeBumpFile('cs2', [{ name: 'pkg-a', type: 'patch' }], 'Internal refactor', { noChangelog: true }),
+    ];
+
+    const result = await defaultFormatter({ release, bumpFiles, date: '2026-04-14' });
+
+    expect(result).toContain('- *(patch)* User-facing fix');
+    expect(result).not.toContain('Internal refactor');
+  });
+
+  test('per-package changelog: false suppresses only the flagged package', async () => {
+    // One bump file covers both packages with a shared body, but opts pkg-a out.
+    const bumpFile = {
+      id: 'cs1',
+      summary: 'Shared internal change',
+      releases: [
+        { name: 'pkg-a', type: 'patch' as const, noChangelog: true },
+        { name: 'pkg-b', type: 'patch' as const },
+      ],
+    };
+
+    const releaseA = makeRelease('pkg-a', '1.0.2', { type: 'patch', oldVersion: '1.0.1', bumpFiles: ['cs1'] });
+    const releaseB = makeRelease('pkg-b', '2.0.2', { type: 'patch', oldVersion: '2.0.1', bumpFiles: ['cs1'] });
+
+    const resultA = await defaultFormatter({ release: releaseA, bumpFiles: [bumpFile], date: '2026-04-14' });
+    const resultB = await defaultFormatter({ release: releaseB, bumpFiles: [bumpFile], date: '2026-04-14' });
+
+    expect(resultA).not.toContain('Shared internal change');
+    expect(resultB).toContain('- *(patch)* Shared internal change');
+  });
+
   test('formats dependency bump with source packages', async () => {
     const release = makeRelease('pkg-a', '1.0.1', {
       isDependencyBump: true,

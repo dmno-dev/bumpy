@@ -164,7 +164,23 @@ export function parseBumpFile(content: string, id: string): BumpFileParseResult 
   }
 
   const releases: BumpFileRelease[] = [];
+  let noChangelog = false;
   for (const [name, value] of Object.entries(parsed)) {
+    // Reserved meta keys are sigil-prefixed (`$`) so they can never collide with
+    // a package name (`$` is rejected by validatePackageName).
+    if (name.startsWith('$')) {
+      if (name === '$changelog') {
+        if (typeof value !== 'boolean') {
+          errors.push(`Reserved key "$changelog" in bump file "${id}" must be true or false`);
+        } else if (value === false) {
+          noChangelog = true;
+        }
+      } else {
+        errors.push(`Unknown reserved key "${name}" in bump file "${id}" (expected: $changelog)`);
+      }
+      continue;
+    }
+
     if (!validatePackageName(name)) {
       errors.push(`Invalid package name "${name}" in bump file "${id}"`);
       continue;
@@ -180,18 +196,23 @@ export function parseBumpFile(content: string, id: string): BumpFileParseResult 
       // Simple format: "pkg-name": minor
       releases.push({ name, type: value as BumpTypeWithNone });
     } else if (value && typeof value === 'object') {
-      // Nested format: "pkg-name": { bump: minor, cascade: { ... } }
-      const obj = value as { bump: BumpTypeWithNone; cascade?: Record<string, BumpType> };
+      // Nested format: "pkg-name": { bump: minor, cascade: { ... }, changelog: false }
+      const obj = value as { bump: BumpTypeWithNone; cascade?: Record<string, BumpType>; changelog?: boolean };
       if (!VALID_BUMP_TYPES.has(obj.bump)) {
         errors.push(
           `Unknown bump type "${obj.bump}" for "${name}" in bump file "${id}" (expected: major, minor, patch, or none)`,
         );
         continue;
       }
+      if (obj.changelog !== undefined && typeof obj.changelog !== 'boolean') {
+        errors.push(`"changelog" for "${name}" in bump file "${id}" must be true or false`);
+        continue;
+      }
       const release: BumpFileReleaseCascade = {
         name,
         type: obj.bump,
         cascade: obj.cascade || {},
+        ...(obj.changelog === false && { noChangelog: true }),
       };
       releases.push(release);
     } else {
@@ -204,7 +225,7 @@ export function parseBumpFile(content: string, id: string): BumpFileParseResult 
     return { bumpFile: null, errors };
   }
 
-  const bumpFile = releases.length > 0 ? { id, releases, summary } : null;
+  const bumpFile = releases.length > 0 ? { id, releases, summary, ...(noChangelog && { noChangelog }) } : null;
   return { bumpFile, errors };
 }
 
