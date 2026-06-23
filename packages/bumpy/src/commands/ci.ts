@@ -1420,7 +1420,14 @@ function sha256Hex(input: string): string {
   return createHash('sha256').update(input).digest('hex');
 }
 
-function formatVersionPrBody(
+// GitHub rejects pull request bodies longer than this many characters
+// (GraphQL: "Body is too long (maximum is 65536 characters)"). We leave a
+// little headroom for safety since GitHub's count and JS string length can
+// differ slightly for multi-byte characters.
+const GH_BODY_MAX = 65_536;
+const GH_BODY_SAFE = 64_000;
+
+export function formatVersionPrBody(
   plan: ReleasePlan,
   preamble: string,
   packageDirs: Map<string, string>,
@@ -1429,63 +1436,90 @@ function formatVersionPrBody(
   showNoPatWarning = false,
 ): string {
   const changesBaseUrl = repo && prNumber ? `https://github.com/${repo}/pull/${prNumber}/changes` : null;
-  const lines: string[] = [];
-  lines.push(preamble);
-  lines.push('');
 
   const groups: Record<string, PlannedRelease[]> = { major: [], minor: [], patch: [] };
   for (const r of plan.releases) {
     groups[r.type]?.push(r);
   }
 
-  for (const type of ['major', 'minor', 'patch'] as const) {
-    const releases = groups[type];
-    if (!releases || releases.length === 0) continue;
-
-    lines.push(bumpSectionHeader(type));
+  // Render the body at a given detail level. `includeSummaries: false` drops
+  // the per-change bullet points, leaving just the version-bump headers — a
+  // big size reduction for releases with many or large change summaries.
+  const render = (includeSummaries: boolean): string => {
+    const lines: string[] = [];
+    lines.push(preamble);
     lines.push('');
-    for (const r of releases) {
-      const suffix = r.isDependencyBump ? ' _(dep)_' : r.isCascadeBump ? ' _(cascade)_' : '';
-      const pkgDir = packageDirs.get(r.name);
-      const diffLinks = pkgDir ? buildDiffLinks(pkgDir, changesBaseUrl) : '';
-      lines.push(`#### \`${r.name}\` ${r.oldVersion} → **${r.newVersion}**${suffix}${diffLinks}`);
+
+    if (!includeSummaries) {
+      lines.push(
+        '> ℹ️ This release contains too many changes to summarize inline. See the **Files changed** tab and each package’s `CHANGELOG.md` for details.',
+      );
       lines.push('');
+    }
 
-      const relevantBumpFiles = plan.bumpFiles.filter((bf) => r.bumpFiles.includes(bf.id));
+    for (const type of ['major', 'minor', 'patch'] as const) {
+      const releases = groups[type];
+      if (!releases || releases.length === 0) continue;
 
-      if (relevantBumpFiles.length > 0) {
-        for (const bf of relevantBumpFiles) {
-          if (bf.summary) {
-            const bfLink = changesBaseUrl
-              ? ` ([bump file](${changesBaseUrl}#diff-${sha256Hex(`.bumpy/${bf.id}.md`)}))`
-              : '';
-            const summaryLines = bf.summary.split('\n');
-            lines.push(`- ${summaryLines[0]}${bfLink}`);
-            for (let i = 1; i < summaryLines.length; i++) {
-              if (summaryLines[i]!.trim()) {
-                lines.push(`  ${summaryLines[i]}`);
+      lines.push(bumpSectionHeader(type));
+      lines.push('');
+      for (const r of releases) {
+        const suffix = r.isDependencyBump ? ' _(dep)_' : r.isCascadeBump ? ' _(cascade)_' : '';
+        const pkgDir = packageDirs.get(r.name);
+        const diffLinks = pkgDir ? buildDiffLinks(pkgDir, changesBaseUrl) : '';
+        lines.push(`#### \`${r.name}\` ${r.oldVersion} → **${r.newVersion}**${suffix}${diffLinks}`);
+        lines.push('');
+
+        if (!includeSummaries) continue;
+
+        const relevantBumpFiles = plan.bumpFiles.filter((bf) => r.bumpFiles.includes(bf.id));
+
+        if (relevantBumpFiles.length > 0) {
+          for (const bf of relevantBumpFiles) {
+            if (bf.summary) {
+              const bfLink = changesBaseUrl
+                ? ` ([bump file](${changesBaseUrl}#diff-${sha256Hex(`.bumpy/${bf.id}.md`)}))`
+                : '';
+              const summaryLines = bf.summary.split('\n');
+              lines.push(`- ${summaryLines[0]}${bfLink}`);
+              for (let i = 1; i < summaryLines.length; i++) {
+                if (summaryLines[i]!.trim()) {
+                  lines.push(`  ${summaryLines[i]}`);
+                }
               }
             }
           }
+        } else if (r.isDependencyBump) {
+          lines.push('- Updated dependencies');
+        } else if (r.isCascadeBump) {
+          lines.push('- Version bump via cascade rule');
         }
-      } else if (r.isDependencyBump) {
-        lines.push('- Updated dependencies');
-      } else if (r.isCascadeBump) {
-        lines.push('- Version bump via cascade rule');
-      }
 
+        lines.push('');
+      }
+    }
+
+    if (showNoPatWarning) {
+      lines.push(
+        '> ⚠️ `BUMPY_GH_TOKEN` is not set — CI checks will not run automatically on this PR. Run `bumpy ci setup` for help.',
+      );
       lines.push('');
     }
-  }
 
-  if (showNoPatWarning) {
-    lines.push(
-      '> ⚠️ `BUMPY_GH_TOKEN` is not set — CI checks will not run automatically on this PR. Run `bumpy ci setup` for help.',
-    );
-    lines.push('');
-  }
+    return lines.join('\n');
+  };
 
-  return lines.join('\n');
+  const full = render(true);
+  if (full.length <= GH_BODY_SAFE) return full;
+
+  // Too long for GitHub — drop the inline change summaries and keep just the
+  // version-bump list. This is rare (dozens of packages or huge changelogs).
+  const compact = render(false);
+  if (compact.length <= GH_BODY_SAFE) return compact;
+
+  // Still too long (an enormous number of packages) — hard-truncate.
+  const notice = '\n\n> ⚠️ This release list was truncated because it exceeds GitHub’s size limit.';
+  return compact.slice(0, GH_BODY_MAX - notice.length) + notice;
 }
 
 const COMMENT_MARKER = '<!-- bumpy-release-plan -->';
