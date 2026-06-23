@@ -103,6 +103,23 @@ Added new encryption provider. Plugins need a patch bump for compatibility.
 EOF
 ```
 
+## Advanced: omitting an entry from the changelog
+
+If a change needs a version bump but shouldn't appear in the changelog (internal refactor, dependency tidy-up, etc.), add the `$changelog: false` reserved key. The bump still applies and cascades normally, but this file's body is omitted from the changelog and release notes — write the body anyway as a note for reviewers:
+
+```bash
+cat > .bumpy/<name>.md << 'EOF'
+---
+"@myorg/core": patch
+$changelog: false
+---
+
+Internal refactor of the config loader — no user-facing change.
+EOF
+```
+
+It's a file-level flag (a bump file has one shared body), so it applies to every package the file lists.
+
 ## Important notes
 
 - Only include packages that have **actual code changes** — bumpy handles dependency propagation automatically

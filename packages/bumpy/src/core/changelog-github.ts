@@ -2,7 +2,13 @@ import { tryRunArgs } from '../utils/shell.ts';
 import type { BumpType } from '../types.ts';
 import { maxBump } from '../types.ts';
 import type { ChangelogContext, ChangelogFormatter } from './changelog.ts';
-import { getBumpTypeForPackage, sortBumpFilesByType, summaryNeedsBlockLayout, trimBlankEdges } from './changelog.ts';
+import {
+  getBumpTypeForPackage,
+  isChangelogSuppressed,
+  sortBumpFilesByType,
+  summaryNeedsBlockLayout,
+  trimBlankEdges,
+} from './changelog.ts';
 
 /** Authors filtered from "Thanks" attribution by default (e.g. bots) */
 /** Authors filtered from "Thanks" attribution by default (e.g. AI/automation bots) */
@@ -61,7 +67,7 @@ export function createGithubFormatter(options: GithubChangelogOptions = {}): Cha
     const sorted = sortBumpFilesByType(relevantBumpFiles, release.name);
 
     for (const bf of sorted) {
-      if (!bf.summary) continue;
+      if (!bf.summary || isChangelogSuppressed(bf, release.name)) continue;
 
       const type = getBumpTypeForPackage(bf, release.name);
       const tag = ` *(${type})*`;

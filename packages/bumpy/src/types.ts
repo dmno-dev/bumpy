@@ -253,12 +253,20 @@ export const DEFAULT_CONFIG: BumpyConfig = {
 export interface BumpFileReleaseSimple {
   name: string;
   type: BumpTypeWithNone;
+  /**
+   * When true, omit this package's entry from changelogs / release notes while
+   * still applying its bump. Per-package override of the file-level
+   * `$changelog: false` flag — set via the nested form `{ bump, changelog: false }`.
+   */
+  noChangelog?: boolean;
 }
 
 export interface BumpFileReleaseCascade {
   name: string;
   type: BumpTypeWithNone;
   cascade: Record<string, BumpType>; // glob pattern → bump type
+  /** See {@link BumpFileReleaseSimple.noChangelog}. */
+  noChangelog?: boolean;
 }
 
 export type BumpFileRelease = BumpFileReleaseSimple | BumpFileReleaseCascade;
@@ -273,6 +281,13 @@ export interface BumpFile {
   summary: string; // markdown body
   /** Channel directory this file lives in (`.bumpy/<channel>/`), if any. Undefined = `.bumpy/` root. */
   channel?: string;
+  /**
+   * When true, this file's summary is omitted from changelogs / release notes
+   * (still applies its version bumps). Set via the `$changelog: false` reserved
+   * frontmatter key — useful for internal changes not worth a changelog line,
+   * while keeping the body as a note for reviewers.
+   */
+  noChangelog?: boolean;
 }
 
 // ---- Workspace ----

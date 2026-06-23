@@ -20,7 +20,7 @@ Added user language preference to the core config.
 Fixed locale fallback logic in utils.
 ```
 
-> **Tip:** The description body is optional. If left blank, the bump file still contributes to the release plan (triggering version bumps and dependency propagation), but no entry will appear in the changelog for it.
+> **Tip:** The description body is optional. If left blank, the bump file still contributes to the release plan (triggering version bumps and dependency propagation), but no entry will appear in the changelog for it. To keep a body as a note for reviewers while still omitting it from the changelog, set [`$changelog: false`](#omitting-an-entry-from-the-changelog) instead.
 
 ### Bump levels
 
@@ -108,6 +108,40 @@ To quickly set all changed packages to `none`:
 ```bash
 bumpy add --none
 ```
+
+## Omitting an entry from the changelog
+
+Sometimes a change warrants a version bump but isn't worth a changelog line (an internal refactor, a dependency tidy-up, etc.). You _could_ leave the body blank, but that's easy to misread as "I forgot to write a description." The `$changelog: false` reserved key makes the intent explicit:
+
+```markdown
+---
+'@myorg/core': patch
+$changelog: false
+---
+
+Internal refactor of the config loader — no user-facing change.
+```
+
+The bump still happens (and still cascades normally), but this file's body is omitted from both the changelog and GitHub release notes. The body is preserved in the bump file, so you can keep notes for reviewers without them leaking into public release notes.
+
+`$changelog` is a file-level flag — a bump file has a single shared body, so it applies to every package the file lists. The `$` prefix marks it as a reserved key; it can never collide with a package name (a package named `changelog` is still written `changelog: patch`, as a normal entry).
+
+### Per-package opt-out
+
+If a single bump file covers several packages and you only want to suppress the changelog entry for _some_ of them, use the nested object form's `changelog: false` instead. The shared body then renders for the other packages but is omitted for the flagged ones:
+
+```markdown
+---
+'@myorg/core': patch
+'@myorg/internal-tooling':
+  bump: patch
+  changelog: false
+---
+
+Reworked the build pipeline.
+```
+
+Here `@myorg/core`'s changelog gets the entry, but `@myorg/internal-tooling`'s does not. The per-package flag composes with `cascade`, and stacks with the file-level `$changelog: false` (either one suppresses).
 
 ## Cascade control (advanced)
 

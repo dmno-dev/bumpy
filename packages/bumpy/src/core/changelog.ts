@@ -30,6 +30,16 @@ export function getBumpTypeForPackage(bf: BumpFile, packageName: string): BumpTy
   return rel?.type === 'none' || !rel?.type ? 'patch' : rel.type;
 }
 
+/**
+ * Whether a bump file's summary should be omitted from a given package's
+ * changelog entry — either the whole file is flagged (`$changelog: false`) or
+ * just this package is (`{ bump, changelog: false }`).
+ */
+export function isChangelogSuppressed(bf: BumpFile, packageName: string): boolean {
+  if (bf.noChangelog) return true;
+  return bf.releases.find((r) => r.name === packageName)?.noChangelog === true;
+}
+
 /** Sort bump files by bump type for a specific package (major → minor → patch) */
 export function sortBumpFilesByType(bumpFiles: BumpFile[], packageName: string): BumpFile[] {
   return [...bumpFiles].sort((a, b) => {
@@ -89,7 +99,7 @@ export const defaultFormatter: ChangelogFormatter = (ctx) => {
   const sorted = sortBumpFilesByType(relevantBumpFiles, release.name);
 
   for (const bf of sorted) {
-    if (!bf.summary) continue;
+    if (!bf.summary || isChangelogSuppressed(bf, release.name)) continue;
     const type = getBumpTypeForPackage(bf, release.name);
     const summaryLines = trimBlankEdges(bf.summary.split('\n'));
     if (summaryLines.length === 0) continue;
