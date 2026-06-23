@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.15.2
+
+<sub>2026-06-23</sub>
+
+- [#129](https://github.com/dmno-dev/bumpy/pull/129) _(patch)_
+  Degrade the version PR body when it would exceed GitHub's 65536-character limit (which previously failed the release for large multi-package releases). The body now drops inline change summaries — and hard-truncates as a last resort — instead of erroring.
+
 ## 1.15.1
 
 <sub>2026-06-20</sub>
