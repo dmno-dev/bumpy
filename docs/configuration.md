@@ -145,7 +145,7 @@ Channel names become `.bumpy/<name>/` subdirectories (holding bump files that sh
 
 ### Snapshot releases
 
-The `snapshot` object configures one-off transient previews published with `bumpy publish --snapshot <name>`. See [prereleases.md → Snapshot releases](prereleases.md#snapshot-releases) for the full workflow.
+The `snapshot` object configures one-off transient previews published with `bumpy publish --snapshot <name>`. See [snapshots.md → Snapshot releases](snapshots.md#snapshot-releases) for the full workflow.
 
 ```jsonc
 {

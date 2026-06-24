@@ -94,18 +94,18 @@ bumpy publish --filter "@myorg/*"
 bumpy publish --snapshot pr-123
 ```
 
-| Flag                | Description                                                                                            |
-| ------------------- | ------------------------------------------------------------------------------------------------------ |
-| `--dry-run`         | Preview what would be published without actually doing it                                              |
-| `--tag <tag>`       | npm dist-tag (e.g., `next`, `beta`)                                                                    |
-| `--no-push`         | Skip pushing git tags to the remote                                                                    |
-| `--filter <names>`  | Only publish matching packages (supports globs)                                                        |
-| `--channel <name>`  | Channel override (default: inferred from the current branch)                                           |
-| `--snapshot <name>` | Publish a transient [snapshot](prereleases.md#snapshot-releases) (mutually exclusive with `--channel`) |
+| Flag                | Description                                                                                          |
+| ------------------- | ---------------------------------------------------------------------------------------------------- |
+| `--dry-run`         | Preview what would be published without actually doing it                                            |
+| `--tag <tag>`       | npm dist-tag (e.g., `next`, `beta`)                                                                  |
+| `--no-push`         | Skip pushing git tags to the remote                                                                  |
+| `--filter <names>`  | Only publish matching packages (supports globs)                                                      |
+| `--channel <name>`  | Channel override (default: inferred from the current branch)                                         |
+| `--snapshot <name>` | Publish a transient [snapshot](snapshots.md#snapshot-releases) (mutually exclusive with `--channel`) |
 
 On a [prerelease channel](prereleases.md) branch, publish derives prerelease versions (targets from the cycle's bump files, counters from the registry), transiently writes them into the working tree so pack/build see them, publishes the whole cycle to the channel's dist-tag with exact-pinned inter-cycle deps, then restores the files. Nothing version-shaped is ever committed.
 
-With `--snapshot <name>`, publish derives a throwaway prerelease version per pending package (e.g. `1.4.0-pr-123-a1b2c3d`), publishes them to a non-`latest` dist-tag (default: the snapshot name), then restores the working tree. It never consumes bump files, writes changelogs, commits, tags, or creates GitHub releases — it's the private-registry counterpart to [pkg.pr.new](https://pkg.pr.new). Requires pending bump files. See [Snapshot releases](prereleases.md#snapshot-releases).
+With `--snapshot <name>`, publish derives a throwaway prerelease version per pending package (e.g. `1.4.0-pr-123-a1b2c3d`), publishes them to a non-`latest` dist-tag (default: the snapshot name), then restores the working tree. It never consumes bump files, writes changelogs, commits, tags, or creates GitHub releases — it's the private-registry counterpart to [pkg.pr.new](https://pkg.pr.new). Requires pending bump files. See [Snapshot releases](snapshots.md#snapshot-releases).
 
 **How bumpy detects unpublished packages:**
 
@@ -243,7 +243,7 @@ CI command for releases. Has two modes:
 
 **Auto-publish mode (`--auto-publish`):** Versions and publishes directly on merge without an intermediate PR. **Not recommended** — you lose the version-PR preview/review gate, so every merge to main with a bump file ships immediately. It's also incompatible with the [split-job workflow](github-actions.md#release-workflow-recommended-split-jobs) (since both paths happen in one run). The credential surface itself is the same as a single-job non-auto-publish workflow — the cost here is purely the loss of the preview gate.
 
-**Snapshot mode (`--snapshot <name>`):** Publishes a transient [snapshot](prereleases.md#snapshot-releases) and, on a PR, posts/updates a comment with the published versions and install instructions. A single self-contained step — no version-PR/publish split, no branch routing — so it can run from any branch (typically a feature PR). Incompatible with `--expect-mode` and `--auto-publish`.
+**Snapshot mode (`--snapshot <name>`):** Publishes a transient [snapshot](snapshots.md#snapshot-releases) and, on a PR, posts/updates a comment with the published versions and install instructions. A single self-contained step — no version-PR/publish split, no branch routing — so it can run from any branch (typically a feature PR). Incompatible with `--expect-mode` and `--auto-publish`.
 
 ```bash
 bumpy ci release
@@ -258,7 +258,7 @@ bumpy ci release --snapshot pr-123
 | `--auto-publish`       | Version + publish directly instead of creating a PR                                                                                                                     |
 | `--tag <tag>`          | npm dist-tag (for `--auto-publish`, or the snapshot dist-tag)                                                                                                           |
 | `--branch <name>`      | Version PR branch name (default: `bumpy/version-packages`)                                                                                                              |
-| `--snapshot <name>`    | Publish a transient [snapshot](prereleases.md#snapshot-releases) and comment install instructions on the PR                                                             |
+| `--snapshot <name>`    | Publish a transient [snapshot](snapshots.md#snapshot-releases) and comment install instructions on the PR                                                               |
 
 Requires `GH_TOKEN`. When `BUMPY_GH_TOKEN` is set, it is automatically used to push the version branch and create/edit the PR so that PR workflows trigger (see [GitHub Actions setup](github-actions.md#token-setup)).
 

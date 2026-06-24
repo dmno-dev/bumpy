@@ -1,13 +1,10 @@
-# Prereleases & Snapshots
+# Prerelease Channels
 
 Prerelease versioning lets you ship `1.2.0-rc.0`, `1.2.0-beta.1`, etc. before the stable `1.2.0` — for early adopters, integration testing, or staging risky changes.
 
-Bumpy gives you two tools for this, covered on this page:
+Bumpy's model is **branch-based**: you nominate one or more long-lived branches (e.g. `next`, `beta`) in your config as prerelease channels. CI runs the same release workflow on those branches as it does on `main` — only the version suffix and dist-tag change. When you're ready to ship stable, you merge the channel branch into `main` and the ordinary stable release flow takes over.
 
-- **[Prerelease channels](#when-to-use-channels--and-when-not-to)** — long-lived release lines (`next`, `beta`, `rc`) that accumulate changes over days or weeks before promotion to stable. Most of this page.
-- **One-off previews** of a single PR or commit — no branch, no committed state. Use [pkg.pr.new](#pkgprnew-public-packages) for public packages, or [snapshot releases](#snapshot-releases) for private ones.
-
-Bumpy's channel model is **branch-based**: you nominate one or more long-lived branches (e.g. `next`, `beta`) in your config as prerelease channels. CI runs the same release workflow on those branches as it does on `main` — only the version suffix and dist-tag change. When you're ready to ship stable, you merge the channel branch into `main` and the ordinary stable release flow takes over.
+> Want a **one-off, throwaway preview** of a single PR or commit rather than a managed release line? That's a snapshot, not a channel — see [Snapshots & PR previews](./snapshots.md) (pkg.pr.new for public packages, `bumpy publish --snapshot` for private ones).
 
 **Prerelease versions are never committed to git.** On a channel branch, every `package.json` keeps the last stable version — identical to `main`. Prerelease versions are computed at publish time and exist only in the npm registry and in git tags.
 
@@ -25,22 +22,18 @@ This is why there's no prerelease counter to corrupt, no suffix to strip at prom
 
 Channels are designed for **long-lived release lines** — an ongoing `next` / `beta` / `rc` cycle that accumulates changes over days or weeks before promotion to stable. They're worth setting up when you expect to ship multiple prereleases through the same cycle.
 
-**For anything short-lived or ephemeral, use a snapshot instead** — either [pkg.pr.new](#pkgprnew-public-packages) (public packages) or [`bumpy publish --snapshot`](#snapshot-releases) (private packages).
-
-pkg.pr.new publishes throwaway packages from any PR, commit, or branch — no version planning, no branch discipline, no bump files. It's the zero-setup choice for **public** packages, and pairs naturally with bumpy: bumpy owns the managed release lines, pkg.pr.new owns the ephemeral previews. [Setup below](#pkgprnew-public-packages).
-
-pkg.pr.new can't serve **private** packages (it publishes to its own public storage). If your packages live in a private registry, use [`bumpy publish --snapshot`](#snapshot-releases) — it publishes a transient preview of your pending release straight to the registry you already use, under a throwaway dist-tag.
+**For anything short-lived or ephemeral, use a [snapshot](./snapshots.md) instead** — either [pkg.pr.new](./snapshots.md#pkgprnew-public-packages) (public packages) or [`bumpy publish --snapshot`](./snapshots.md#snapshot-releases) (private packages). Both are covered on the [Snapshots & PR previews](./snapshots.md) page.
 
 Rough rule of thumb:
 
-| You want…                                                 | Use                                                 |
-| --------------------------------------------------------- | --------------------------------------------------- |
-| Preview a single PR for review (public packages)          | [pkg.pr.new](#pkgprnew-public-packages)             |
-| Preview a single PR for review (private packages)         | [`bumpy publish --snapshot`](#snapshot-releases)    |
-| Per-commit canary from `main`                             | [pkg.pr.new](#pkgprnew-public-packages) / snapshots |
-| One-off snapshot from a branch for ad-hoc testing         | [snapshots](#snapshot-releases)                     |
-| Ship a `1.2.0-rc.N` line for weeks of integration testing | Bumpy channels (this doc)                           |
-| Parallel `@next` + `@beta` lines for different audiences  | Bumpy channels (this doc)                           |
+| You want…                                                 | Use                                                               |
+| --------------------------------------------------------- | ----------------------------------------------------------------- |
+| Preview a single PR for review (public packages)          | [pkg.pr.new](./snapshots.md#pkgprnew-public-packages)             |
+| Preview a single PR for review (private packages)         | [`bumpy publish --snapshot`](./snapshots.md#snapshot-releases)    |
+| Per-commit canary from `main`                             | [pkg.pr.new](./snapshots.md#pkgprnew-public-packages) / snapshots |
+| One-off snapshot from a branch for ad-hoc testing         | [snapshots](./snapshots.md#snapshot-releases)                     |
+| Ship a `1.2.0-rc.N` line for weeks of integration testing | Bumpy channels (this doc)                                         |
+| Parallel `@next` + `@beta` lines for different audiences  | Bumpy channels (this doc)                                         |
 
 ---
 
@@ -166,7 +159,7 @@ PR authors do nothing different. They:
 
 Bump files don't carry channel metadata. The branch they land on determines the channel; their location tracks whether they've shipped.
 
-> Reviewing a feature PR and want to install it before merge? That's a job for a one-off preview — [pkg.pr.new](#pkgprnew-public-packages) or a [snapshot](#snapshot-releases) — not a channel publish. Channels only kick in once a PR has merged into the channel branch.
+> Reviewing a feature PR and want to install it before merge? That's a job for a [one-off preview](./snapshots.md) (pkg.pr.new or a snapshot), not a channel publish. Channels only kick in once a PR has merged into the channel branch.
 
 ### Versioning a prerelease
 
@@ -407,119 +400,6 @@ The directory used to hold shipped bump files matches the channel name: `.bumpy/
 
 ---
 
-## pkg.pr.new (public packages)
-
-For **public** packages, [pkg.pr.new](https://pkg.pr.new) is the zero-setup way to publish a throwaway preview from any PR or commit. It publishes to its own storage (not npm) and comments install URLs on the PR, so reviewers can `npm i https://pkg.pr.new/your-pkg@<sha>` without you managing versions or dist-tags. Bumpy doesn't run it — it's an independent tool that pairs alongside your bumpy release workflow.
-
-Two setup steps:
-
-**1. Install the GitHub App** — [github.com/apps/pkg-pr-new](https://github.com/apps/pkg-pr-new), on the repo you want previews for. This is the easy-to-miss step: publishing fails without it.
-
-**2. Add a workflow** that builds your packages and runs `pkg-pr-new publish` once:
-
-```yaml
-# .github/workflows/preview.yml
-name: Preview release
-on: [push, pull_request]
-
-permissions: {}
-
-jobs:
-  preview:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 20 }
-      - run: npm ci
-      - run: npm run build
-      # Run this exactly once per workflow — it's how pkg.pr.new avoids spam.
-      - run: npx pkg-pr-new publish './packages/*'
-```
-
-It auto-comments the install URLs on the PR; no token wiring needed beyond the App. Because its storage is ephemeral, it's fine to run on **every** commit (unlike private snapshots, which you typically label-gate so a real registry doesn't fill up). For monorepos, pass explicit paths or a glob (`'./packages/*'`); for compact install URLs your package needs a valid `repository` field in `package.json`. See the [pkg.pr.new docs](https://github.com/stackblitz-labs/pkg.pr.new) for the full set of flags (`--compact`, `--comment`, `--template`, …).
-
-> pkg.pr.new can't serve **private** packages — it publishes to public storage. For those, use [snapshot releases](#snapshot-releases) below, which publish to the private registry you already use.
-
----
-
-## Snapshot releases
-
-A **snapshot** is a throwaway, one-off publish of your pending release — "what the next version would be, published right now" — under a non-`latest` dist-tag. Unlike channels, it needs no dedicated branch and leaves no trace in git: no bump files consumed, no changelog, no commit, no git tag, no GitHub release. It's the private-registry counterpart to [pkg.pr.new](#pkgprnew-public-packages).
-
-```sh
-bumpy publish --snapshot pr-123
-```
-
-This computes the pending release plan, derives a unique prerelease version per package, writes those versions into the working tree, publishes them to the `@pr-123` dist-tag, and restores the working tree. Install with `npm i your-pkg@pr-123` — the tag always points at the newest snapshot for that name.
-
-A snapshot **requires pending bump files** — it previews exactly the release you've planned, so with nothing to release it's a no-op. (This is the main difference from pkg.pr.new, which snapshots any commit regardless of intent.)
-
-### Version format
-
-The snapshot name is both the version preid and the default dist-tag. Consumers always install via the tag (`npm i your-pkg@pr-123`), so the exact version string is mostly an implementation detail — `snapshot.versionStrategy` just controls how re-runs behave:
-
-| Strategy        | Version                       | Notes                                                                           |
-| --------------- | ----------------------------- | ------------------------------------------------------------------------------- |
-| `sha` (default) | `1.4.0-pr-123-a1b2c3d`        | Short git SHA. **Idempotent per commit** — re-running on the same commit skips. |
-| `timestamp`     | `1.4.0-pr-123-20260623123456` | UTC timestamp. Always unique; never idempotent.                                 |
-
-```jsonc
-// .bumpy/_config.json
-{
-  "snapshot": { "versionStrategy": "sha" },
-}
-```
-
-In-cycle internal dependencies are exact-pinned (just like channels), so a set of snapshot packages always installs as a coherent group. Override the dist-tag independently with `--tag`:
-
-```sh
-bumpy publish --snapshot sha-a1b2c3d --tag pr-123   # version preid "sha-a1b2c3d", dist-tag "@pr-123"
-```
-
-### In CI
-
-`bumpy ci release --snapshot <name>` runs the whole thing and, on a PR, posts/updates a comment with the published versions and install instructions. There's no `ci plan` / `ci release` split — snapshots are a single self-contained step that can run from any branch.
-
-```yaml
-# .github/workflows/snapshot.yml
-on:
-  pull_request:
-    types: [opened, synchronize, labeled]
-
-jobs:
-  snapshot:
-    # Opt-in per PR via a label so you don't fill the registry with every PR's builds
-    if: contains(github.event.pull_request.labels.*.name, 'snapshot')
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
-      - uses: ./.github/actions/setup # your registry auth (.npmrc / NPM_TOKEN)
-      - run: bunx bumpy ci release --snapshot pr-${{ github.event.pull_request.number }}
-        env:
-          NPM_TOKEN: ${{ secrets.PRIVATE_REGISTRY_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # for the PR comment
-```
-
-Label-gating is the recommended default: pkg.pr.new can fire on every commit because its storage expires, but a real registry keeps every snapshot version until a retention policy prunes it. Trigger on whatever event you like — it's just a CLI command.
-
-> **Forks.** PRs from forks running on `pull_request` get a read-only token and no secrets, so they can't publish or comment. This is usually fine for private packages (contributors are internal); if you need fork snapshots, the same constraints (and `pull_request_target` caveats) apply as for [the check comment](./github-actions.md).
-
-### What a snapshot does and doesn't do
-
-| Does                                                   | Doesn't                             |
-| ------------------------------------------------------ | ----------------------------------- |
-| Compute the release plan from pending bump files       | Consume, move, or delete bump files |
-| Derive a unique prerelease version per package         | Write changelogs                    |
-| Exact-pin in-cycle internal dependencies               | Create a version PR                 |
-| Publish to a non-`latest` dist-tag (default: the name) | Create git tags or GitHub releases  |
-| Restore the working tree afterward                     | Commit anything                     |
-
-Snapshots and channels are mutually exclusive on a single command (`--snapshot` + `--channel` is an error) — they're distinct release models.
-
----
-
 ## Comparison with changesets pre mode
 
 |                                    | changesets pre mode                                                                                                                                | bumpy channels                                                                                                                 |
@@ -542,7 +422,7 @@ Snapshots and channels are mutually exclusive on a single command (`--snapshot` 
 
 These are intentionally out of scope for the initial channel feature. If any of these is a blocker for you, please open an issue.
 
-- **Ephemeral / preview / canary releases** — covered by [snapshot releases](#snapshot-releases) (private packages) and [pkg.pr.new](#pkgprnew-public-packages) (public packages). Bumpy channels stay scoped to managed long-running release lines. See [When to use channels — and when not to](#when-to-use-channels--and-when-not-to) above.
+- **Ephemeral / preview / canary releases** — covered on the [Snapshots & PR previews](./snapshots.md) page (snapshot releases for private packages, pkg.pr.new for public). Bumpy channels stay scoped to managed long-running release lines. See [When to use channels — and when not to](#when-to-use-channels--and-when-not-to) above.
 - **Stable (maintenance) channels** — long-lived branches like `1.x` publishing stable versions to a non-`latest` dist-tag. Future work; the config schema already leaves room (see note above).
 - **Prerelease changelog in the published tarball** — injecting the rendered cycle changelog into prerelease artifacts at publish time (derived content goes in the artifact, never in git). Possible later nice-to-have.
 - **Per-bump-file channel routing** — declaring `channel: beta` inside a bump file's frontmatter. Not planned; channels stay branch-derived to keep the mental model simple.
