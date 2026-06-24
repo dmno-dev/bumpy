@@ -7,6 +7,8 @@ Bumpy supports two tools here, depending on where your packages live:
 - **Public packages** → [pkg.pr.new](#pkgprnew-public-packages) — a zero-setup external service that publishes previews to its own storage.
 - **Private packages** → [`bumpy publish --snapshot`](#snapshot-releases) — publishes a transient preview to the private registry you already use.
 
+> **"Private" here means a package you publish to a private registry** — a scoped package with [`access: "restricted"`](./configuration.md#publishing-config) and/or a per-package [`registry`](./configuration.md#per-package-config), installed by your team with normal `npm install`. It does **not** mean a package marked `"private": true` in `package.json` — that's npm's "never publish" flag, which `npm publish` refuses by design, so bumpy skips those everywhere ([details](#publishing-to-a-private-registry)).
+
 > Looking for a long-lived `next` / `beta` / `rc` release line instead of a one-off preview? That's a [prerelease channel](./prereleases.md), not a snapshot.
 
 ## pkg.pr.new (public packages)
@@ -117,3 +119,27 @@ Label-gating is the recommended default: pkg.pr.new can fire on every commit bec
 | Restore the working tree afterward                     | Commit anything                     |
 
 Snapshots and channels are mutually exclusive on a single command (`--snapshot` + `--channel` is an error) — they're distinct release models.
+
+## Publishing to a private registry
+
+Snapshots — and normal `bumpy publish` — work with private registries out of the box; there's no separate "private" mode. The setup is the standard npm one:
+
+- **Scope + restricted access.** Name the package under your org scope and set [`access: "restricted"`](./configuration.md#publishing-config) (globally, or per-package). That's npm's mechanism for "published, but not public."
+- **Point at the registry.** Use the per-package [`registry`](./configuration.md#per-package-config) option, or npm's native `publishConfig.registry` / `.npmrc` (which npm honors automatically). Auth works exactly as for public packages — `NPM_TOKEN`, OIDC, or a pre-configured `.npmrc`.
+- **Don't set `"private": true`.** That field is npm's _refuse-to-publish_ marker — `npm publish` errors on it and `--access` can't override it. bumpy mirrors that: a `"private": true` package is never published by any flow (snapshot, channel, or stable). It can still be versioned and git-tagged if you opt in via [`privatePackages`](./configuration.md#private-packages-and-private-registries), but it won't be sent to a registry. Reserve `"private": true` for things you truly never publish (apps, internal tooling); use `access: "restricted"` for "private but published."
+
+```jsonc
+// package.json — a package published privately (NOT "private": true)
+{
+  "name": "@acme/widgets",
+  "version": "1.4.0",
+  "publishConfig": { "registry": "https://npm.acme.internal" },
+}
+```
+
+```jsonc
+// .bumpy/_config.json
+{ "access": "restricted" }
+```
+
+With that, `bumpy publish --snapshot pr-123` publishes `@acme/widgets@1.4.0-pr-123-<sha>` to `https://npm.acme.internal` under the `@pr-123` dist-tag, and your team installs it with `npm i @acme/widgets@pr-123`.
