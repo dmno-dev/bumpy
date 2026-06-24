@@ -126,6 +126,10 @@ function mergeConfig(defaults: BumpyConfig, user: Partial<BumpyConfig>): BumpyCo
       ...defaults.channels,
       ...user.channels,
     },
+    snapshot: {
+      ...defaults.snapshot,
+      ...user.snapshot,
+    },
   };
 }
 

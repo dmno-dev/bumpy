@@ -13,6 +13,8 @@ import type { ReleasePlan, PlannedRelease, WorkspacePackage, BumpyConfig, Packag
 export interface PublishOptions {
   dryRun?: boolean;
   tag?: string; // npm dist-tag (e.g., "next", "beta")
+  /** Skip creating git tags (snapshot releases are ephemeral and never tagged) */
+  noTag?: boolean;
 }
 
 export interface PublishResult {
@@ -421,6 +423,7 @@ function parseTarballPath(output: string, cwd: string, pm: PackageManager): stri
 }
 
 function createGitTag(release: PlannedRelease, rootDir: string, opts: PublishOptions): void {
+  if (opts.noTag) return;
   const tag = `${release.name}@${release.newVersion}`;
   if (opts.dryRun) {
     log.dim(`  Would create tag: ${tag}`);

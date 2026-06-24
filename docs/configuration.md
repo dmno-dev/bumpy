@@ -27,6 +27,7 @@ Bumpy is configured via `.bumpy/_config.json`, created by `bumpy init`. Per-pack
 | `allowCustomCommands`        | `boolean \| string[]`                  | `false`                          | Allow per-package custom commands from `package.json` (see below)                                |
 | `packages`                   | `object`                               | `{}`                             | Per-package config overrides (keyed by package name)                                             |
 | `channels`                   | `object`                               | `{}`                             | Prerelease channels, keyed by channel name (see below)                                           |
+| `snapshot`                   | `{ versionStrategy }`                  | `{ versionStrategy: "sha" }`     | Snapshot release settings — how snapshot versions are made unique (see below)                    |
 
 ### Change detection and `package.json` fields
 
@@ -141,6 +142,21 @@ The `channels` object maps long-lived branches to prerelease lines. See [prerele
 ```
 
 Channel names become `.bumpy/<name>/` subdirectories (holding bump files that shipped on the channel), so they must be filesystem-safe and can't start with `_` or collide with reserved entries.
+
+### Snapshot releases
+
+The `snapshot` object configures one-off transient previews published with `bumpy publish --snapshot <name>`. See [prereleases.md → Snapshot releases](prereleases.md#snapshot-releases) for the full workflow.
+
+```jsonc
+{
+  "snapshot": {
+    // How snapshot versions are made unique (consumers install via the tag regardless):
+    //   "sha"       → 1.4.0-pr-123-a1b2c3d  (short git SHA; idempotent per commit; default)
+    //   "timestamp" → 1.4.0-pr-123-20260623123456  (always unique)
+    "versionStrategy": "sha",
+  },
+}
+```
 
 ## Per-package config
 

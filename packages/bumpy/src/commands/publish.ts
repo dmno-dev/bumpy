@@ -8,7 +8,13 @@ import { publishPackages, willUseOidcExclusively } from '../core/publish-pipelin
 import { readBumpFiles } from '../core/bump-file.ts';
 import { assembleReleasePlan } from '../core/release-plan.ts';
 import { channelNames, resolveActiveChannel, type ResolvedChannel } from '../core/channels.ts';
-import { buildChannelReleasePlan, writeChannelVersionsInPlace } from '../core/prerelease.ts';
+import { buildChannelReleasePlan, writeTransientVersionsInPlace } from '../core/prerelease.ts';
+import {
+  buildSnapshotReleasePlan,
+  resolveSnapshot,
+  assertSnapshotPrerelease,
+  type ResolvedSnapshot,
+} from '../core/snapshot.ts';
 import {
   createIndividualReleases,
   findReleaseByTag,
@@ -45,6 +51,8 @@ interface PublishCommandOptions {
   filter?: string;
   /** Channel name override (otherwise inferred from the current branch) */
   channel?: string;
+  /** Publish a transient snapshot under this name (mutually exclusive with channel) */
+  snapshot?: string;
   /** Recovered bump files from a version commit — used for GitHub release body generation */
   recoveredBumpFiles?: import('../types.ts').BumpFile[];
   /** Package names to exclude from publishing (e.g., packages with pending non-none bumps) */
@@ -61,7 +69,10 @@ interface PublishCommandOptions {
  * here — targets from the cycle's bump files, counters from the registry — written
  * transiently into the working tree, published to the channel's dist-tag, and restored.
  */
-export async function publishCommand(rootDir: string, opts: PublishCommandOptions): Promise<void> {
+export async function publishCommand(
+  rootDir: string,
+  opts: PublishCommandOptions,
+): Promise<SnapshotPublishOutcome | null | void> {
   const config = await loadConfig(rootDir);
   const { packages, catalogs } = await discoverWorkspace(rootDir, config);
   const { packageManager: detectedPm } = await detectWorkspaces(rootDir);
@@ -70,6 +81,15 @@ export async function publishCommand(rootDir: string, opts: PublishCommandOption
   if (!opts.dryRun && hasUncommittedChanges({ cwd: rootDir })) {
     log.warn('You have uncommitted changes. Commit or stash them before publishing.');
     process.exit(1);
+  }
+
+  // Snapshots are a distinct, transient release model — never mixed with the channel flow.
+  if (opts.snapshot !== undefined) {
+    if (opts.channel !== undefined) {
+      log.error('--snapshot and --channel cannot be used together — they are distinct release models.');
+      process.exit(1);
+    }
+    return await publishSnapshot(rootDir, config, packages, catalogs, detectedPm, depGraph, opts);
   }
 
   const channel = resolveActiveChannel(rootDir, config, opts.channel);
@@ -210,7 +230,7 @@ async function publishChannel(
   // pack/build see them; always restored afterwards — prereleases never land in git.
   let restore: (() => Promise<void>) | null = null;
   if (!opts.dryRun) {
-    restore = await writeChannelVersionsInPlace(plan, packages);
+    restore = await writeTransientVersionsInPlace(plan, packages);
   }
 
   try {
@@ -226,6 +246,132 @@ async function publishChannel(
       log.dim('  Restored package.json files (prerelease versions are not committed)');
     }
   }
+}
+
+/**
+ * Publish a transient snapshot from the pending bump files.
+ *
+ * Snapshots are throwaway previews — "what the next release would be", published now under
+ * a non-`latest` dist-tag (default: the snapshot name). The computed plan is written into the
+ * working tree, published, then restored. Unlike the stable/channel flows this never consumes
+ * bump files, writes changelogs, commits, creates git tags, or makes GitHub releases.
+ *
+ * Strict by design: a snapshot requires pending bump files. With nothing to release there's
+ * no version plan to snapshot, so we stop with a clear message rather than guessing.
+ *
+ * Returns the resolved snapshot and the packages actually published (empty for dry runs or
+ * when everything was already published) so callers like `ci release` can comment on the PR.
+ */
+export interface SnapshotPublishOutcome {
+  snapshot: ResolvedSnapshot;
+  published: { name: string; version: string }[];
+}
+
+async function publishSnapshot(
+  rootDir: string,
+  config: BumpyConfig,
+  packages: Map<string, WorkspacePackage>,
+  catalogs: CatalogMap,
+  detectedPm: PackageManager,
+  depGraph: DependencyGraph,
+  opts: PublishCommandOptions,
+): Promise<SnapshotPublishOutcome | null> {
+  const snapshot = resolveSnapshot(opts.snapshot!, config, rootDir, { tag: opts.tag });
+
+  const { bumpFiles, errors: parseErrors } = await readBumpFiles(rootDir, { channels: channelNames(config) });
+  if (parseErrors.length > 0) {
+    for (const err of parseErrors) log.error(err);
+    process.exit(1);
+  }
+
+  // Targets come from the normal stable plan; snapshots don't widen the cascade the way
+  // channels do (no prereleasePreid) — they preview exactly the pending release.
+  const stablePlan = assembleReleasePlan(bumpFiles, packages, depGraph, config);
+  if (stablePlan.releases.length === 0) {
+    log.info(
+      `No pending releases to snapshot — snapshots require pending bump files.\n` +
+        `  Run \`bumpy add\` to declare the changes you want to preview.`,
+    );
+    return null;
+  }
+
+  log.bold(`Snapshot "${snapshot.name}" — dist-tag @${snapshot.tag} (strategy: ${snapshot.strategy})\n`);
+
+  const { plan, alreadyPublished, warnings } = await buildSnapshotReleasePlan(stablePlan, snapshot, packages);
+  for (const w of warnings) log.warn(w);
+  for (const skip of alreadyPublished) {
+    log.dim(`  Skipping ${skip.name}@${skip.version} — this snapshot was already published`);
+  }
+
+  if (plan.releases.length === 0) {
+    log.info('Nothing to publish — every package in the plan was already published for this snapshot.');
+    return { snapshot, published: [] };
+  }
+
+  // Snapshot versions must always be prereleases — a stable version here would land on @latest.
+  for (const r of plan.releases) assertSnapshotPrerelease(r.newVersion);
+
+  // Filter restricts what gets published; the in-place rewrite below still covers the whole
+  // plan so in-plan dependency pins stay consistent.
+  let toPublish = plan.releases;
+  if (opts.filter) {
+    const { matchGlob } = await import('../core/config.ts');
+    const patterns = opts.filter.split(',').map((p) => p.trim());
+    toPublish = toPublish.filter((r) => patterns.some((p) => matchGlob(r.name, p)));
+    if (toPublish.length === 0) {
+      log.info('No snapshot packages match the filter.');
+      return { snapshot, published: [] };
+    }
+  }
+
+  if (opts.dryRun) {
+    log.bold('Dry run — would publish:');
+  } else {
+    log.bold('Publishing:');
+  }
+  for (const r of toPublish) console.log(`  ${r.name}@${colorize(r.newVersion, 'cyan')}`);
+  console.log();
+
+  // Transiently write versions + exact pins so build/pack see them; always restored —
+  // snapshot versions never land in git.
+  let restore: (() => Promise<void>) | null = null;
+  if (!opts.dryRun) {
+    restore = await writeTransientVersionsInPlace(plan, packages);
+  }
+
+  let published: { name: string; version: string }[] = [];
+  try {
+    const publishPlan: ReleasePlan = { bumpFiles: [], releases: toPublish, warnings: [] };
+    const result = await publishPackages(
+      publishPlan,
+      packages,
+      depGraph,
+      config,
+      rootDir,
+      { dryRun: opts.dryRun, tag: snapshot.tag, noTag: true },
+      catalogs,
+      detectedPm,
+    );
+    published = result.published;
+
+    if (result.published.length > 0) {
+      log.success(`🐸 Published ${result.published.length} snapshot package(s) to @${snapshot.tag}`);
+    }
+    if (result.skipped.length > 0) {
+      log.dim(`Skipped ${result.skipped.length}: ${result.skipped.map((s) => s.name).join(', ')}`);
+    }
+    if (result.failed.length > 0) {
+      log.error(`Failed ${result.failed.length}: ${result.failed.map((f) => `${f.name} (${f.error})`).join(', ')}`);
+      process.exit(1);
+    }
+  } finally {
+    if (restore) {
+      await restore();
+      log.dim('  Restored package.json files (snapshot versions are not committed)');
+    }
+  }
+
+  return { snapshot, published };
 }
 
 /**

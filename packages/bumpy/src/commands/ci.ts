@@ -14,6 +14,7 @@ import {
   type ResolvedChannel,
 } from '../core/channels.ts';
 import { buildChannelReleasePlan, channelDisplayPlan, formatChannelVersionSummary } from '../core/prerelease.ts';
+import type { ResolvedSnapshot } from '../core/snapshot.ts';
 import { runArgs, runArgsAsync, tryRunArgs } from '../utils/shell.ts';
 import { randomName } from '../utils/names.ts';
 import { detectPackageManager } from '../utils/package-manager.ts';
@@ -429,8 +430,9 @@ function writeGitHubOutput(key: string, value: string): void {
 interface ReleaseOptions {
   autoPublish?: boolean; // skip the version-PR step and version+publish in one shot
   assertMode?: 'version-pr' | 'publish'; // refuse to run if detected mode doesn't match — see CiPlanMode
-  tag?: string; // npm dist-tag for auto-publish
+  tag?: string; // npm dist-tag for auto-publish (or the snapshot dist-tag)
   branch?: string; // branch name for version PR (default: "bumpy/version-packages")
+  snapshot?: string; // publish a transient snapshot under this name + comment install instructions on the PR
 }
 
 /**
@@ -442,6 +444,13 @@ interface ReleaseOptions {
 export async function ciReleaseCommand(rootDir: string, opts: ReleaseOptions): Promise<void> {
   const config = await loadConfig(rootDir);
   ensureGitIdentity(rootDir, config);
+
+  // Snapshots are a one-shot transient release that can run from any branch (typically a
+  // feature PR), so they bypass the base/channel branch routing entirely.
+  if (opts.snapshot !== undefined) {
+    await ciSnapshotRelease(rootDir, opts);
+    return;
+  }
 
   // Channel branches get the channel flow; unknown branches are refused (when channels
   // are configured) so a misconfigured workflow can't publish from a feature branch.
@@ -541,6 +550,34 @@ async function autoPublish(rootDir: string, config: BumpyConfig, plan: ReleasePl
   log.step('Running bumpy publish...');
   const { publishCommand } = await import('./publish.ts');
   await publishCommand(rootDir, { tag });
+}
+
+// ---- snapshot release flow ----
+
+/**
+ * CI snapshot release: publish a transient snapshot and (if this is a PR) comment install
+ * instructions. One self-contained step — no version PR, no bump-file changes, no branch
+ * routing. Typically wired to a labeled `pull_request` workflow:
+ *
+ *   bumpy ci release --snapshot pr-${{ github.event.pull_request.number }}
+ *
+ * Re-running on a new commit republishes and floats the dist-tag (and the comment updates
+ * in place). On forks the publish token and PR-comment token are unavailable — expected,
+ * since snapshots target a registry only trusted contributors can publish to.
+ */
+async function ciSnapshotRelease(rootDir: string, opts: ReleaseOptions): Promise<void> {
+  const { publishCommand } = await import('./publish.ts');
+  const outcome = await publishCommand(rootDir, { snapshot: opts.snapshot, tag: opts.tag });
+  if (!outcome || outcome.published.length === 0) return;
+
+  const prNumber = detectPrNumber();
+  if (!prNumber) {
+    log.dim('  No PR detected — skipping snapshot install-instructions comment.');
+    return;
+  }
+  const pm = await detectPackageManager(rootDir);
+  const comment = formatSnapshotComment(outcome.snapshot, outcome.published, pm);
+  await postOrUpdatePrComment(prNumber, comment, rootDir, SNAPSHOT_COMMENT_MARKER);
 }
 
 // ---- Token-aware push ----
@@ -1128,6 +1165,55 @@ function pmRunCommand(pm: PackageManager): string {
   return 'npx bumpy';
 }
 
+/** Install command for a `name@spec` package spec, in the PR's package manager */
+function pmInstallCommand(pm: PackageManager, spec: string): string {
+  if (pm === 'bun') return `bun add ${spec}`;
+  if (pm === 'pnpm') return `pnpm add ${spec}`;
+  if (pm === 'yarn') return `yarn add ${spec}`;
+  return `npm i ${spec}`;
+}
+
+/**
+ * Comment posted on a PR after a snapshot publish: which packages went out, and how to
+ * install them from the throwaway dist-tag. Maintained in place across re-runs via its
+ * own marker (separate from the release-plan comment).
+ */
+export function formatSnapshotComment(
+  snapshot: ResolvedSnapshot,
+  published: { name: string; version: string }[],
+  pm: PackageManager,
+): string {
+  const lines: string[] = [
+    `<a href="https://bumpy.varlock.dev"><img src="${FROG_IMG_BASE}/frog-clipboard.png" alt="bumpy-frog" width="60" align="left" style="image-rendering: pixelated;" title="Hi! I'm bumpy!" /></a>`,
+    '',
+    `**Snapshot published** to the \`@${snapshot.tag}\` dist-tag — a throwaway preview of this PR, not a stable release.`,
+    '<br clear="left" />',
+    '',
+    '#### Published packages',
+    '',
+  ];
+  for (const p of published) {
+    lines.push(`- \`${p.name}@${p.version}\``);
+  }
+  lines.push('');
+  lines.push('Install the latest snapshot for this PR:');
+  lines.push('');
+  lines.push('```bash');
+  for (const p of published) {
+    lines.push(pmInstallCommand(pm, `${p.name}@${snapshot.tag}`));
+  }
+  lines.push('```');
+  lines.push('');
+  lines.push(
+    `> The \`@${snapshot.tag}\` tag always points at the newest snapshot from this PR — pushing new commits republishes it. ` +
+      `Exact versions above are pinned to each other so they install as a coherent set.`,
+  );
+  lines.push('');
+  lines.push('---');
+  lines.push(`_This comment is maintained by [bumpy](https://bumpy.varlock.dev)._`);
+  return lines.join('\n');
+}
+
 export function formatReleasePlanComment(
   plan: ReleasePlan,
   bumpFiles: BumpFile[],
@@ -1489,14 +1575,21 @@ function formatVersionPrBody(
 }
 
 const COMMENT_MARKER = '<!-- bumpy-release-plan -->';
+const SNAPSHOT_COMMENT_MARKER = '<!-- bumpy-snapshot -->';
 
-async function postOrUpdatePrComment(prNumber: string, body: string, rootDir: string): Promise<void> {
+async function postOrUpdatePrComment(
+  prNumber: string,
+  body: string,
+  rootDir: string,
+  marker: string = COMMENT_MARKER,
+): Promise<void> {
   const validPr = validatePrNumber(prNumber);
-  const markedBody = `${COMMENT_MARKER}\n${body}`;
+  const markedBody = `${marker}\n${body}`;
 
   try {
-    // Find existing bumpy comment using gh with jq
-    const jqFilter = `.comments[] | select(.body | startswith("${COMMENT_MARKER}")) | .url | capture("issuecomment-(?<id>[0-9]+)$") | .id`;
+    // Find existing bumpy comment using gh with jq. The marker keeps each kind of comment
+    // (release plan vs snapshot) independent, so they don't overwrite each other.
+    const jqFilter = `.comments[] | select(.body | startswith("${marker}")) | .url | capture("issuecomment-(?<id>[0-9]+)$") | .id`;
     const existingComment = tryRunArgs(['gh', 'pr', 'view', validPr, '--json', 'comments', '--jq', jqFilter], {
       cwd: rootDir,
     });

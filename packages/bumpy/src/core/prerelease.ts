@@ -47,7 +47,7 @@ export function nextPrereleaseVersion(target: string, preid: string, existingCou
 }
 
 /** Fetch all published versions of a package from the registry */
-async function fetchPublishedVersions(name: string, registry?: string): Promise<string[]> {
+export async function fetchPublishedVersions(name: string, registry?: string): Promise<string[]> {
   const args = ['npm', 'info', name, 'versions', '--json'];
   if (registry) args.push('--registry', registry);
   try {
@@ -76,7 +76,7 @@ async function fetchGitHead(name: string, version: string, registry?: string): P
 }
 
 /** Whether a package publishes through the npm registry (vs custom command / git-tag tracking) */
-function usesNpmRegistry(pkg: WorkspacePackage): boolean {
+export function usesNpmRegistry(pkg: WorkspacePackage): boolean {
   return !pkg.bumpy?.publishCommand && !pkg.bumpy?.skipNpmPublish && !pkg.private;
 }
 
@@ -185,19 +185,20 @@ export async function buildChannelReleasePlan(
 }
 
 /**
- * Transiently write computed prerelease versions (and exact pins for in-cycle deps)
- * into the working tree's package.json files. Returns a restore function that puts
- * the original contents back — call it in a `finally` after publishing.
+ * Transiently write computed versions (and exact pins for in-plan deps) into the
+ * working tree's package.json files. Returns a restore function that puts the
+ * original contents back — call it in a `finally` after publishing. Used by both
+ * the channel prerelease flow and snapshot releases — neither commits its versions.
  *
  * Versions must be on disk before build/pack so that:
- * - PM pack picks up the prerelease version for the tarball
+ * - PM pack picks up the version for the tarball
  * - builds that bake in the version (banners, __VERSION__) see the right one
  *
- * In-cycle dependencies are pinned EXACTLY (`"1.2.0-rc.0"`, no range) so any
- * combination of packages installed from the channel dist-tag resolves to the
+ * In-plan dependencies are pinned EXACTLY (`"1.2.0-rc.0"`, no range) so any
+ * combination of packages installed from the dist-tag resolves to the
  * coherent set it was published with.
  */
-export async function writeChannelVersionsInPlace(
+export async function writeTransientVersionsInPlace(
   plan: ReleasePlan,
   packages: Map<string, WorkspacePackage>,
 ): Promise<() => Promise<void>> {
