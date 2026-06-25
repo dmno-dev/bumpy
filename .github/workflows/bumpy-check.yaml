@@ -1,13 +1,16 @@
 # 🐸 Bumpy CI check
 # checks for missing bump files and posts/updates a PR comment with the release plan
-
+#
 # ⚠️ NOTE - DO NOT COPY THIS FILE
 # instead look at the recommended workflow in the docs
 # ➡️ https://bumpy.varlock.dev/blob/main/docs/github-actions.md ⬅️
 #
-# This repo splits the check into two mutually-exclusive jobs so it can dogfood its
-# OWN unreleased CLI on internal PRs while staying safe for fork PRs. A normal project
-# only needs the single `bunx @varlock/bumpy@latest ci check` job (the fork-safe one).
+# Difference from the recommended workflow: this repo builds and runs its OWN
+# unreleased bumpy (from the trusted `main` checkout) instead of the published
+# @latest, so we dogfood the current CLI on every PR — including forks. The PR
+# head is only ever READ via `--cwd ./pr`; it is never installed, built, or run,
+# so no untrusted code touches the pull_request_target write token. A normal
+# project just runs `bunx @varlock/bumpy@latest ci check --cwd ./pr`.
 
 name: Bumpy Check
 
@@ -18,54 +21,29 @@ permissions:
   contents: read
 
 jobs:
-  # Fork PRs (untrusted): run the PUBLISHED bumpy and never execute the PR's code.
-  # pull_request_target carries a write token + secrets, so building/running fork
-  # code — OR letting the fork's bunfig.toml/.npmrc redirect where bumpy itself is
-  # fetched from — would be a privilege-escalation hole. We fetch+run bumpy from a
-  # trusted base checkout and point it at the PR tree with --cwd. `ci check` only
-  # reads json/yaml. See docs/github-actions.md for the full rationale.
-  check-published:
-    if: github.event.pull_request.head.repo.full_name != github.repository
+  check:
     runs-on: ubuntu-latest
     steps:
-      # 1. Trusted base checkout — bunx runs from here, so the package-manager
-      #    config in effect is ours, not the PR's.
+      # 1. TRUSTED base checkout (main). We build and run bumpy from here, so the
+      #    package-manager config in effect is ours, never the PR's. Safe to
+      #    `bun install` / build because it is our own committed code.
       - uses: actions/checkout@v6
         with:
           ref: main
           persist-credentials: false
-      # 2. Untrusted PR head into ./pr — only READ from here, never resolve/run.
+      # 2. UNTRUSTED PR head into ./pr — only READ via --cwd, never built or run.
       - uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           path: pr
           persist-credentials: false
       - uses: oven-sh/setup-bun@v2
-      - run: bunx @varlock/bumpy@latest ci check --cwd ./pr
-        env:
-          GH_TOKEN: ${{ github.token }}
-
-  # Internal (non-fork) PRs: build and run THIS repo's local bumpy so we dogfood the
-  # unreleased CLI (e.g. channel-aware comments before they're published to @latest).
-  # ⚠️ DO NOT COPY — only safe because the PR head lives in this same repo, so no
-  # untrusted code runs with the privileged token. Forks fall through to check-published.
-  check-local:
-    if: github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          fetch-depth: 0 # need history to diff bump files against the PR base branch
-      - uses: oven-sh/setup-bun@v2
       - run: bun install
-      # Build first since we run the local built version of bumpy instead of the published one
+      # Build so we run this repo's bumpy rather than the published one.
       - run: bun run --filter @varlock/bumpy build
-      # run bun install again to make the now-built CLI available
+      # Re-install so the freshly-built CLI bin is linked.
       - run: bun install
-      # `--cwd .` acknowledges that the current checkout is trusted (same-repo PR).
-      # Under pull_request_target, `ci check` requires an explicit --cwd so the old
-      # unsafe single-checkout pattern can't run unnoticed.
-      - run: bunx @varlock/bumpy ci check --cwd .
+      # bunx runs from the trusted root; bumpy reads the PR's bump files via --cwd.
+      - run: bunx @varlock/bumpy ci check --cwd ./pr
         env:
           GH_TOKEN: ${{ github.token }}
