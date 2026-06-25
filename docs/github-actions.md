@@ -54,15 +54,15 @@ jobs:
 
       # ⚠️ DO NOT bun install / npm install / run any script from ./pr ⚠️
 
-      # Read bumpy's version from the TRUSTED base checkout, never from ./pr.
-      - name: Resolve bumpy version from base
+      # Read bumpy's version from the TRUSTED base checkout (never from ./pr) and
+      # run it in one step. bunx runs from the trusted root; `--cwd ./pr` only
+      # points bumpy at the PR tree to read its bump files. The version is folded
+      # straight into the command (not written to $GITHUB_ENV) to avoid CodeQL's
+      # actions/envvar-injection sink; quote it so a malformed value can't inject.
+      - name: Bumpy release-plan check
         run: |
           VERSION=$(jq -r '.devDependencies["@varlock/bumpy"] // .dependencies["@varlock/bumpy"]' package.json | sed 's/[\^~]//')
-          echo "BUMPY_VERSION=$VERSION" >> "$GITHUB_ENV"
-
-      # bunx runs from the trusted root; `--cwd ./pr` only points bumpy at the
-      # PR tree to read its bump files. Quote the version arg against injection.
-      - run: bunx "@varlock/bumpy@$BUMPY_VERSION" ci check --cwd ./pr
+          bunx "@varlock/bumpy@$VERSION" ci check --cwd ./pr
         env:
           GH_TOKEN: ${{ github.token }}
 ```
@@ -117,6 +117,18 @@ Adjust if your setup differs:
 You can also pin the version directly (`bunx @varlock/bumpy@1.2.3 ci check --cwd ./pr`), but we prefer a single source of truth.
 
 </details>
+
+### Code scanning (CodeQL) alerts
+
+CodeQL's default setup runs GitHub's Actions security queries, so adopters of this workflow will see one alert worth understanding:
+
+- **`actions/untrusted-checkout/critical`** — **expected, and safe to dismiss as a false positive here.** CodeQL flags any PR-head checkout in a privileged workflow because it can't statically prove the code is never executed. This workflow never executes it: `bunx` runs from the **trusted root** checkout (its `bunfig.toml`/lockfile are yours), `ci check --cwd ./pr` only **reads** the PR's files, and nothing under `./pr` is installed, built, or run.
+
+The workflow above is already written to avoid the other relevant query, **`actions/envvar-injection/critical`** — it folds the resolved version straight into the `bunx` command rather than writing it to `$GITHUB_ENV`. (In a `pull_request_target` workflow CodeQL treats a file-derived value as attacker-controlled, and `$GITHUB_ENV` is a code-execution sink: an attacker-set value with newlines could inject e.g. `NODE_OPTIONS`.) If you adapt the workflow, don't reintroduce a `>> "$GITHUB_ENV"` write.
+
+> **Safety invariant.** The data-only guarantee rests on one rule: **`bumpy ci check` never executes code from its `--cwd` target.** It does not build, run lifecycle/postinstall scripts, or dynamically `import`/`require` any file under that path — it only parses them as data (`.bumpy/*.md`, `package.json`, JSON config). The current implementation upholds this: `ci check` reads JSON/YAML and shells out to `git`/`gh` only, and bumpy's two code-loading paths (custom changelog formatters, custom commit-message modules) are reachable exclusively from `bumpy version` / `bumpy publish` / `ci release`, never from `ci check`.
+
+> **Want zero alerts?** A stricter pattern runs the check on the plain (unprivileged) `pull_request` event and posts the comment from a separate `workflow_run` job via an uploaded artifact — fully green with no dismissals, but considerably more machinery for a release-plan comment. The single-workflow, data-only pattern above plus the one documented dismissal is the intended recommendation.
 
 ### Don't need fork PR support?
 
