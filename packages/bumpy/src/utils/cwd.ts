@@ -43,3 +43,39 @@ export function extractCwdFlag(argv: string[]): CwdParseResult {
   }
   return { cwd, rest };
 }
+
+const DOCS_URL = 'https://github.com/dmno-dev/bumpy/blob/main/docs/github-actions.md';
+
+/**
+ * Return a migration error message if `ci check` is running in the unsafe
+ * `pull_request_target` configuration (no explicit `--cwd`), or `null` if it's
+ * fine. The CLI throws when this returns a string.
+ *
+ * This is a MIGRATION NUDGE, not a security control: a fork PR that successfully
+ * redirected the registry would be running its own replacement bumpy, which has
+ * no such guard. The value is in catching honest users still on the old
+ * single-checkout workflow and pointing them at the two-checkout pattern before
+ * a real attacker exploits it. Passing any `--cwd` (including `--cwd .` to
+ * acknowledge an already-trusted directory) satisfies the check.
+ */
+export function pullRequestTargetCwdError(opts: {
+  eventName: string | undefined;
+  cwdProvided: boolean;
+}): string | null {
+  if (opts.eventName !== 'pull_request_target' || opts.cwdProvided) return null;
+  return [
+    '`bumpy ci check` is running under pull_request_target without --cwd.',
+    '',
+    'This is the unsafe configuration. pull_request_target grants a write token and',
+    'secrets, and the current directory is the (untrusted) PR checkout — so a fork',
+    "PR's bunfig.toml/.npmrc can redirect where bumpy itself is fetched from, at the",
+    'exact version you pinned.',
+    '',
+    'Fix: check the PR head into ./pr from a trusted base checkout, then run',
+    '`bumpy ci check --cwd ./pr`. Updated workflow:',
+    `  ${DOCS_URL}`,
+    '',
+    'If the current directory is already a trusted checkout (e.g. a same-repo,',
+    'non-fork PR), pass `--cwd .` to acknowledge it and continue.',
+  ].join('\n');
+}

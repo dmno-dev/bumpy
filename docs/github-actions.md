@@ -74,6 +74,8 @@ jobs:
 - **Never execute PR code** — no `bun install` / `npm install` (postinstall scripts run), no `bun run <script>` / `npm test`, no building from the PR tree.
 - **Fetch and run bumpy from the trusted base checkout; only _read_ the PR tree** via `--cwd ./pr`. Keep `persist-credentials: false` on both checkouts.
 
+As a guardrail, `bumpy ci check` **fails** if it runs under `pull_request_target` without an explicit `--cwd` — so an outdated single-checkout workflow surfaces loudly instead of silently staying exploitable. If the working directory is genuinely trusted (e.g. a same-repo, non-fork PR), pass `--cwd .` to acknowledge it. (This is a migration nudge, not a security boundary: a PR that actually hijacked resolution would be running its own bumpy. The fix is the two-checkout layout above.)
+
 > **Using npm / pnpm / yarn?** The same pattern applies — run `npx` / `pnpm dlx` / `yarn dlx` from the trusted root and pass `--cwd ./pr` to bumpy, never the reverse. It matters even more there: pnpm and yarn honor committed config that runs code directly (pnpm's `.pnpmfile.cjs`, yarn's `yarnPath`/`plugins`), not just registry redirects — see the [Turborepo `yarnPath` RCE](https://github.com/vercel/turborepo/security/advisories/GHSA-3qcw-2rhx-2726) for the real-world version.
 
 <details>

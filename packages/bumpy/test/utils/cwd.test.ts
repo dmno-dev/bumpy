@@ -1,5 +1,5 @@
 import { test, expect, describe } from 'bun:test';
-import { extractCwdFlag } from '../../src/utils/cwd.ts';
+import { extractCwdFlag, pullRequestTargetCwdError } from '../../src/utils/cwd.ts';
 
 describe('extractCwdFlag', () => {
   test('absent flag returns args unchanged', () => {
@@ -49,5 +49,29 @@ describe('extractCwdFlag', () => {
     const { cwd, rest } = extractCwdFlag(['add', '--cwd', './--cwd-dir']);
     expect(cwd).toBe('./--cwd-dir');
     expect(rest).toEqual(['add']);
+  });
+});
+
+describe('pullRequestTargetCwdError', () => {
+  test('errors under pull_request_target without --cwd', () => {
+    const err = pullRequestTargetCwdError({ eventName: 'pull_request_target', cwdProvided: false });
+    expect(err).toContain('pull_request_target');
+    expect(err).toContain('--cwd ./pr');
+  });
+
+  test('no error when --cwd is provided (even just `--cwd .`)', () => {
+    expect(pullRequestTargetCwdError({ eventName: 'pull_request_target', cwdProvided: true })).toBeNull();
+  });
+
+  test('no error for a plain pull_request event (non-privileged)', () => {
+    expect(pullRequestTargetCwdError({ eventName: 'pull_request', cwdProvided: false })).toBeNull();
+  });
+
+  test('no error for push events', () => {
+    expect(pullRequestTargetCwdError({ eventName: 'push', cwdProvided: false })).toBeNull();
+  });
+
+  test('no error outside CI (no event name)', () => {
+    expect(pullRequestTargetCwdError({ eventName: undefined, cwdProvided: false })).toBeNull();
   });
 });
