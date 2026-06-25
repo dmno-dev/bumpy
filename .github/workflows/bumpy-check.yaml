@@ -63,6 +63,9 @@ jobs:
       - run: bun run --filter @varlock/bumpy build
       # run bun install again to make the now-built CLI available
       - run: bun install
-      - run: bunx @varlock/bumpy ci check
+      # `--cwd .` acknowledges that the current checkout is trusted (same-repo PR).
+      # Under pull_request_target, `ci check` requires an explicit --cwd so the old
+      # unsafe single-checkout pattern can't run unnoticed.
+      - run: bunx @varlock/bumpy ci check --cwd .
         env:
           GH_TOKEN: ${{ github.token }}
