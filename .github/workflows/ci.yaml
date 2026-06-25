@@ -14,5 +14,6 @@ jobs:
       - run: git config --global user.name "CI" && git config --global user.email "ci@example.com"
       - run: bun run test
 
-      # NOTE: `bumpy ci check` lives in .github/workflows/bumpy-check.yaml
+      # NOTE: `bumpy ci check` runs in .github/workflows/bumpy-check.yaml (pull_request),
+      # and the fork-PR comment is posted from .github/workflows/bumpy-comment.yaml (workflow_run).
       # see ➡️ https://bumpy.varlock.dev/blob/main/docs/github-actions.md ⬅️

@@ -28,11 +28,77 @@ These commands facilitate the following:
 
 Give the job `permissions: pull-requests: write`. This runs in the ordinary `pull_request` context — the same trust level as the rest of your CI — so none of the privileged-workflow precautions in the next section apply: you can `bun install` and run bumpy from your devDeps like any other CLI. (If the job already ran `bun install`, `bunx` picks up your pinned version from `node_modules`; otherwise it fetches the latest.)
 
-**Fork PRs get the check, but not the comment.** GitHub hands `pull_request` runs from forks a **read-only token and no secrets**, so the comment can't be posted there. `ci check` still runs and fails the job (red ✗) on a missing bump file, with the explanation in the job logs — forks stay gated correctly, you just don't get the rendered comment. For most repos that's the right trade, and it keeps you off `pull_request_target` entirely. If you do want the comment on fork PRs too, set up the dedicated workflow below.
+**Fork PRs get the check, but not the comment.** GitHub hands `pull_request` runs from forks a **read-only token and no secrets**, so the comment can't be posted there. `ci check` still runs and fails the job (red ✗) on a missing bump file, with the explanation in the job logs — forks stay gated correctly, you just don't get the rendered comment. For most repos that's the right trade. If you want the comment on fork PRs too, add the two-part setup below.
 
 ## Commenting on fork PRs
 
-Posting to a PR needs a **write** token, and GitHub only grants one to a fork PR through a privileged trigger — `pull_request_target`. That trigger runs with your write token and secrets **even though the PR is code you don't control**, so the workflow must be structured so nothing in the fork PR can influence what gets fetched or run. The one below does that — copy it as-is (changing only `main` if your base branch differs), and read the security notes before restructuring it.
+A comment is a **write**, and GitHub never gives a `pull_request` run from a fork a write token (read-only at issuance, secrets withheld). So the comment has to be posted from a privileged run in the base-repo context. The safest way is a two-part split where the privileged half **never touches the fork's code or files**:
+
+1. Your existing `pull_request` check **renders** the comment and uploads it as an artifact.
+2. A small, separate `workflow_run` workflow downloads that artifact and **posts** it.
+
+The poster never checks out the PR, never runs a package manager against fork config, and never reads a fork file — it only posts pre-rendered text. Nothing to harden, no CodeQL alert to dismiss.
+
+### 1. Render + upload (in your existing check)
+
+Add `--emit-comment` to the `ci check` step and upload what it writes:
+
+```yaml
+# in your existing `on: pull_request` job
+- run: bunx @varlock/bumpy ci check --emit-comment ./bumpy-comment
+  env:
+    GH_TOKEN: ${{ github.token }}
+- uses: actions/upload-artifact@v4
+  if: always() # upload even when the check fails — the comment explains why
+  with:
+    name: bumpy-comment
+    path: ./bumpy-comment
+```
+
+`--emit-comment` writes the rendered comment to `./bumpy-comment/comment.md` (an empty file when there's nothing to say, so the artifact is always present). This step stays unprivileged — on a fork PR it renders but can't post; same-repo PRs still comment directly from here. The poster below is what rescues forks.
+
+### 2. Post it (a separate workflow_run workflow)
+
+```yaml
+# .github/workflows/bumpy-comment.yaml
+name: Bumpy PR Comment
+on:
+  workflow_run:
+    workflows: ['CI'] # ← the NAME of the workflow that runs your check
+    types: [completed]
+permissions:
+  pull-requests: write
+
+jobs:
+  comment:
+    runs-on: ubuntu-latest
+    steps:
+      # TRUSTED: default branch only — never the PR. This is the privileged half.
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/download-artifact@v4
+        continue-on-error: true # the check may not have produced a comment
+        with:
+          name: bumpy-comment
+          path: ./bumpy-comment
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+      - run: |
+          VERSION=$(jq -r '.devDependencies["@varlock/bumpy"] // .dependencies["@varlock/bumpy"]' package.json | sed 's/[\^~]//')
+          bunx "@varlock/bumpy@$VERSION" ci comment --body-file ./bumpy-comment/comment.md
+        env:
+          GH_TOKEN: ${{ github.token }}
+```
+
+Point `workflows: [...]` at the **name** of whatever runs your check (your existing CI workflow, or a dedicated one). When it finishes, GitHub triggers this poster, which posts the rendered comment and exits. No bump-file changes → `ci comment` no-ops.
+
+> **The one safety rule.** The uploaded artifact is **untrusted** — it came from a run that executed fork code, so its contents are attacker-controlled. `bumpy ci comment` uses the body only as comment text and resolves the **target PR from the trusted `workflow_run` event** (`head_sha`), never from the artifact — that's what stops a fork from redirecting the comment onto a different PR or issue. Don't override it with a `--pr` derived from artifact data.
+
+> **Why can't the fork run post it itself?** A fork's `pull_request` token is read-only at issuance and enforced server-side — REST, GraphQL, `gh`, and raw `curl` all 403 on a comment write, and secrets aren't exposed either. The write has to originate from a privileged base-repo run, which is exactly what `workflow_run` provides.
+
+### Alternative: a single `pull_request_target` workflow
+
+If you'd rather have one file than two, a single privileged `pull_request_target` workflow can both read the PR and post the comment. It's more setup-sensitive — it checks out the (untrusted) PR head into a privileged job, so it must be carefully structured never to execute it, and it trips a CodeQL alert you have to dismiss. The `workflow_run` split above avoids all of that; prefer it unless one-file simplicity matters more to you. Copy it as-is (changing only `main` if your base branch differs), and keep the security notes intact.
 
 ```yaml
 # .github/workflows/bumpy-check.yaml
@@ -85,7 +151,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 ```
 
-### ⚠️ Security essentials
+#### ⚠️ Security essentials
 
 `pull_request_target` carries a **write token and secrets even on fork PRs** — that's what lets it comment on forks, and why a PR author must never be able to influence what runs. The workflow above handles this; three rules to preserve if you adapt it:
 
@@ -137,7 +203,7 @@ You can also pin the version directly (`bunx @varlock/bumpy@1.2.3 ci check --cwd
 
 </details>
 
-### Code scanning (CodeQL) alerts
+#### Code scanning (CodeQL) alerts
 
 CodeQL's default setup runs GitHub's Actions security queries, so adopters of this workflow will see one alert worth understanding:
 
@@ -147,7 +213,7 @@ The workflow above is already written to avoid the other relevant query, **`acti
 
 > **Safety invariant.** The data-only guarantee rests on one rule: **`bumpy ci check` never executes code from its `--cwd` target.** It does not build, run lifecycle/postinstall scripts, or dynamically `import`/`require` any file under that path — it only parses them as data (`.bumpy/*.md`, `package.json`, JSON config). The current implementation upholds this: `ci check` reads JSON/YAML and shells out to `git`/`gh` only, and bumpy's two code-loading paths (custom changelog formatters, custom commit-message modules) are reachable exclusively from `bumpy version` / `bumpy publish` / `ci release`, never from `ci check`.
 
-> **Want zero alerts?** The simplest path is the [default PR check](#pr-check) at the top — it runs on plain `pull_request` with no untrusted checkout, so CodeQL has nothing to flag (forks just don't get the comment). If you need the fork comment _and_ zero dismissals, run the check on the unprivileged `pull_request` event and post the comment from a separate `workflow_run` job via an uploaded artifact — fully green, but considerably more machinery for a release-plan comment. The single-workflow, data-only pattern above plus the one documented dismissal is the intended middle ground.
+> **Want zero alerts?** Use the [`workflow_run` split](#commenting-on-fork-prs) above instead — its privileged half never checks out PR code, so there's no `untrusted-checkout` alert and nothing to dismiss. This single-`pull_request_target` workflow is the one-file alternative, and the dismissal here is the cost of that simplicity.
 
 ## Release workflow (recommended: split jobs)
 

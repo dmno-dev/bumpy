@@ -19,6 +19,7 @@ import { randomName } from '../utils/names.ts';
 import { detectPackageManager } from '../utils/package-manager.ts';
 import { createHash } from 'node:crypto';
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { resolveCommitMessage } from '../core/commit-message.ts';
 import type { BumpyConfig, BumpFile, PackageConfig, PackageManager, ReleasePlan, PlannedRelease } from '../types.ts';
 
@@ -87,6 +88,26 @@ interface CheckOptions {
   comment?: boolean; // post a PR comment via gh (default: true in CI)
   strict?: boolean; // exit 1 if any changed packages are uncovered
   noFail?: boolean; // never exit 1, warn only
+  emitComment?: string; // also write the rendered comment to <dir>/comment.md for a downstream `ci comment`
+}
+
+const COMMENT_ARTIFACT_FILE = 'comment.md';
+
+/**
+ * Ensure the emit dir exists with an (empty) comment file. Called up-front so the
+ * artifact is deterministically present for the `workflow_run` poster even when this
+ * run makes no comment (no bump-file changes, release-PR branch, etc.) — the poster
+ * then no-ops on the empty file instead of failing to download a missing artifact.
+ */
+function initCommentArtifact(dir: string): void {
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(resolve(dir, COMMENT_ARTIFACT_FILE), '', 'utf-8');
+}
+
+/** Write the rendered comment body to the emit dir for a downstream `ci comment`. */
+function writeCommentArtifact(dir: string, body: string): void {
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(resolve(dir, COMMENT_ARTIFACT_FILE), body, 'utf-8');
 }
 
 /**
@@ -94,6 +115,10 @@ interface CheckOptions {
  * Designed for PR workflows — shows what would be released and optionally comments on the PR.
  */
 export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promise<void> {
+  // Seed an empty artifact first so it always exists for the workflow_run poster,
+  // regardless of which branch below we return from.
+  if (opts.emitComment) initCommentArtifact(opts.emitComment);
+
   const config = await loadConfig(rootDir);
   const { packages } = await discoverWorkspace(rootDir, config);
   const depGraph = new DependencyGraph(packages);
@@ -149,13 +174,11 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
     // An empty bump file signals intentionally no releases needed
     if (emptyBumpFileIds.length > 0 && parseErrors.length === 0) {
       log.success('Empty bump file found — no releases needed.');
-      if (shouldComment && prNumber) {
+      if (prNumber && (shouldComment || opts.emitComment)) {
         const prBranch = detectPrBranch(rootDir);
-        await postOrUpdatePrComment(
-          prNumber,
-          formatEmptyBumpFileComment(emptyBumpFileIds, prNumber, prBranch),
-          rootDir,
-        );
+        const body = formatEmptyBumpFileComment(emptyBumpFileIds, prNumber, prBranch);
+        if (opts.emitComment) writeCommentArtifact(opts.emitComment, body);
+        if (shouldComment) await postOrUpdatePrComment(prNumber, body, rootDir);
       }
       return;
     }
@@ -179,15 +202,14 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
       log.dim('Run `bumpy add` to declare a release, or `bumpy add --empty` to acknowledge that no release is needed.');
     }
 
-    if (shouldComment && prNumber) {
+    if (prNumber && (shouldComment || opts.emitComment)) {
       const prBranch = detectPrBranch(rootDir);
-      await postOrUpdatePrComment(
-        prNumber,
+      const body =
         parseErrors.length > 0
           ? formatBumpFileErrorsComment(parseErrors, prBranch, pm)
-          : formatNoBumpFilesComment(prBranch, pm, willFail, changedPackages),
-        rootDir,
-      );
+          : formatNoBumpFilesComment(prBranch, pm, willFail, changedPackages);
+      if (opts.emitComment) writeCommentArtifact(opts.emitComment, body);
+      if (shouldComment) await postOrUpdatePrComment(prNumber, body, rootDir);
     }
 
     if (willFail) process.exit(1);
@@ -221,7 +243,7 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
   }
 
   // Comment on PR
-  if (shouldComment && prNumber) {
+  if (prNumber && (shouldComment || opts.emitComment)) {
     const prBranch = detectPrBranch(rootDir);
     const comment = formatReleasePlanComment(
       plan,
@@ -235,7 +257,8 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
       prChannel,
       channels,
     );
-    await postOrUpdatePrComment(prNumber, comment, rootDir);
+    if (opts.emitComment) writeCommentArtifact(opts.emitComment, comment);
+    if (shouldComment) await postOrUpdatePrComment(prNumber, comment, rootDir);
   }
 
   // Fail if there were parse errors (even if some files parsed successfully)
@@ -259,6 +282,86 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
     logFn(`${missing.length} changed package(s) not covered by bump files: ${missing.join(', ')}`);
     if (willFail) process.exit(1);
   }
+}
+
+// ---- ci comment ----
+
+interface CommentOptions {
+  bodyFile?: string; // path to the rendered comment body (from `ci check --emit-comment`)
+  pr?: string; // explicit PR number override (otherwise resolved from the event)
+}
+
+/**
+ * Post a pre-rendered comment to a PR. This is the privileged half of the split
+ * fork-comment setup: the unprivileged `pull_request` run produces the body as an
+ * artifact (`ci check --emit-comment`), and this `workflow_run` run posts it.
+ *
+ * SECURITY: the body file is UNTRUSTED. The run that produced it executed fork code,
+ * so its contents (and anything else it wrote) are attacker-controlled. We use the
+ * body only as comment text, and resolve the target PR from the TRUSTED `workflow_run`
+ * event (`head_sha`) — NEVER from the artifact. Otherwise a fork could redirect the
+ * repo's comment onto an arbitrary PR or issue.
+ */
+export async function ciCommentCommand(rootDir: string, opts: CommentOptions): Promise<void> {
+  if (!opts.bodyFile) {
+    log.error('`bumpy ci comment` requires --body-file <path>.');
+    process.exit(1);
+  }
+
+  // Let gh resolve the repo without a checkout (the poster workflow may not check
+  // anything out). GITHUB_REPOSITORY is set by Actions and is trusted.
+  if (!process.env.GH_REPO && process.env.GITHUB_REPOSITORY) {
+    process.env.GH_REPO = process.env.GITHUB_REPOSITORY;
+  }
+
+  let body: string;
+  try {
+    body = readFileSync(resolve(opts.bodyFile), 'utf-8');
+  } catch {
+    // No body file — normal when the PR had no bump-file changes (empty artifact). No-op.
+    log.dim(`  No comment body at ${opts.bodyFile} — nothing to post.`);
+    return;
+  }
+  if (!body.trim()) {
+    log.dim('  Empty comment body — nothing to post.');
+    return;
+  }
+
+  const prNumber = opts.pr ? validatePrNumber(opts.pr) : resolveTargetPrNumber(rootDir);
+  if (!prNumber) {
+    log.error('Could not resolve a target PR. Pass --pr <number> explicitly.');
+    process.exit(1);
+  }
+
+  await postOrUpdatePrComment(prNumber, body, rootDir);
+}
+
+/**
+ * Resolve which PR to comment on. Under `workflow_run`, derive it from the TRUSTED
+ * event `head_sha` (never from the downloaded artifact). Otherwise fall back to the
+ * normal PR detection used by `ci check`.
+ */
+export function resolveTargetPrNumber(rootDir: string): string | null {
+  if (process.env.GITHUB_EVENT_NAME === 'workflow_run') {
+    const event = readGitHubEventPayload();
+    const headSha = event?.workflow_run?.head_sha;
+    const repo = process.env.GITHUB_REPOSITORY;
+    // Sanitize both before they reach the gh api path: a 40-hex SHA and an owner/repo slug.
+    if (headSha && /^[0-9a-f]{40}$/i.test(headSha) && repo && /^[\w.-]+\/[\w.-]+$/.test(repo)) {
+      const out = tryRunArgs(
+        ['gh', 'api', `repos/${repo}/commits/${headSha}/pulls`, '--jq', '.[] | select(.state == "open") | .number'],
+        { cwd: rootDir },
+      );
+      return (
+        out
+          ?.split('\n')
+          .map((l) => l.trim())
+          .find((l) => /^\d+$/.test(l)) ?? null
+      );
+    }
+    return null;
+  }
+  return detectPrNumber();
 }
 
 // ---- ci plan ----
@@ -1603,6 +1706,10 @@ interface GitHubEventPayload {
     number?: number;
     head?: { repo?: { id?: number } };
     base?: { repo?: { id?: number } };
+  };
+  // Present on `workflow_run` events — the trusted SHA of the run that triggered us.
+  workflow_run?: {
+    head_sha?: string;
   };
 }
 
