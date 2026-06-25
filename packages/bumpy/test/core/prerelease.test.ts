@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import {
   extractPrereleaseCounters,
   nextPrereleaseVersion,
-  writeChannelVersionsInPlace,
+  writeTransientVersionsInPlace,
   formatChannelVersionSummary,
   channelDisplayPlan,
 } from '../../src/core/prerelease.ts';
@@ -47,7 +47,7 @@ describe('nextPrereleaseVersion', () => {
   });
 });
 
-describe('writeChannelVersionsInPlace', () => {
+describe('writeTransientVersionsInPlace', () => {
   test('writes prerelease versions and exact-pins in-cycle deps, then restores', async () => {
     const dir = await createTempGitRepo();
     try {
@@ -89,7 +89,7 @@ describe('writeChannelVersionsInPlace', () => {
         makeRelease('plugin', '1.0.1-rc.1', { oldVersion: '1.0.0' }),
       ]);
 
-      const restore = await writeChannelVersionsInPlace(plan, packages);
+      const restore = await writeTransientVersionsInPlace(plan, packages);
 
       const writtenCore = JSON.parse(await readFile(resolve(coreDir, 'package.json'), 'utf-8'));
       const writtenPlugin = JSON.parse(await readFile(resolve(pluginDir, 'package.json'), 'utf-8'));

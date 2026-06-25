@@ -4,6 +4,8 @@ Prerelease versioning lets you ship `1.2.0-rc.0`, `1.2.0-beta.1`, etc. before th
 
 Bumpy's model is **branch-based**: you nominate one or more long-lived branches (e.g. `next`, `beta`) in your config as prerelease channels. CI runs the same release workflow on those branches as it does on `main` — only the version suffix and dist-tag change. When you're ready to ship stable, you merge the channel branch into `main` and the ordinary stable release flow takes over.
 
+> Want a **one-off, throwaway preview** of a single PR or commit rather than a managed release line? That's a snapshot, not a channel — see [Snapshots & PR previews](./snapshots.md) (pkg.pr.new for public packages, `bumpy publish --snapshot` for private ones).
+
 **Prerelease versions are never committed to git.** On a channel branch, every `package.json` keeps the last stable version — identical to `main`. Prerelease versions are computed at publish time and exist only in the npm registry and in git tags.
 
 No `pre enter` / `pre exit` commands. No mode files. No version churn in your branches. No hidden state that can poison unrelated merges.
@@ -20,19 +22,18 @@ This is why there's no prerelease counter to corrupt, no suffix to strip at prom
 
 Channels are designed for **long-lived release lines** — an ongoing `next` / `beta` / `rc` cycle that accumulates changes over days or weeks before promotion to stable. They're worth setting up when you expect to ship multiple prereleases through the same cycle.
 
-**For anything short-lived or ephemeral, use [pkg.pr.new](https://pkg.pr.new) instead.**
-
-pkg.pr.new publishes throwaway packages from any PR, commit, or branch — no version planning, no branch discipline, no bump files. It pairs naturally with bumpy: bumpy owns the managed release lines, pkg.pr.new owns the ephemeral previews. Between the two, most teams need nothing else.
+**For anything short-lived or ephemeral, use a [snapshot](./snapshots.md) instead** — either [pkg.pr.new](./snapshots.md#pkgprnew-public-packages) (public packages) or [`bumpy publish --snapshot`](./snapshots.md#snapshot-releases) (private packages). Both are covered on the [Snapshots & PR previews](./snapshots.md) page.
 
 Rough rule of thumb:
 
-| You want…                                                 | Use                              |
-| --------------------------------------------------------- | -------------------------------- |
-| Preview a single PR for review                            | [pkg.pr.new](https://pkg.pr.new) |
-| Per-commit canary from `main`                             | [pkg.pr.new](https://pkg.pr.new) |
-| One-off snapshot from a branch for ad-hoc testing         | [pkg.pr.new](https://pkg.pr.new) |
-| Ship a `1.2.0-rc.N` line for weeks of integration testing | Bumpy channels (this doc)        |
-| Parallel `@next` + `@beta` lines for different audiences  | Bumpy channels (this doc)        |
+| You want…                                                 | Use                                                               |
+| --------------------------------------------------------- | ----------------------------------------------------------------- |
+| Preview a single PR for review (public packages)          | [pkg.pr.new](./snapshots.md#pkgprnew-public-packages)             |
+| Preview a single PR for review (private packages)         | [`bumpy publish --snapshot`](./snapshots.md#snapshot-releases)    |
+| Per-commit canary from `main`                             | [pkg.pr.new](./snapshots.md#pkgprnew-public-packages) / snapshots |
+| One-off snapshot from a branch for ad-hoc testing         | [snapshots](./snapshots.md#snapshot-releases)                     |
+| Ship a `1.2.0-rc.N` line for weeks of integration testing | Bumpy channels (this doc)                                         |
+| Parallel `@next` + `@beta` lines for different audiences  | Bumpy channels (this doc)                                         |
 
 ---
 
@@ -158,7 +159,7 @@ PR authors do nothing different. They:
 
 Bump files don't carry channel metadata. The branch they land on determines the channel; their location tracks whether they've shipped.
 
-> Reviewing a feature PR and want to install it before merge? That's [pkg.pr.new](https://pkg.pr.new)'s job, not a channel publish. Channels only kick in once a PR has merged into the channel branch.
+> Reviewing a feature PR and want to install it before merge? That's a job for a [one-off preview](./snapshots.md) (pkg.pr.new or a snapshot), not a channel publish. Channels only kick in once a PR has merged into the channel branch.
 
 ### Versioning a prerelease
 
@@ -421,8 +422,7 @@ The directory used to hold shipped bump files matches the channel name: `.bumpy/
 
 These are intentionally out of scope for the initial channel feature. If any of these is a blocker for you, please open an issue.
 
-- **Ephemeral / preview / canary releases** — use [pkg.pr.new](https://pkg.pr.new) instead. It owns short-lived publishing (per-PR, per-commit, per-branch); bumpy channels are deliberately scoped to managed long-running release lines. See [When to use channels — and when not to](#when-to-use-channels--and-when-not-to) above.
-- **Workflow-dispatch one-off prereleases** — planned. The no-commit architecture makes this nearly free: a one-off is the same compute-and-publish step run from any SHA with an explicit preid and dist-tag, no branch state required. It will likely follow shortly after channels.
+- **Ephemeral / preview / canary releases** — covered on the [Snapshots & PR previews](./snapshots.md) page (snapshot releases for private packages, pkg.pr.new for public). Bumpy channels stay scoped to managed long-running release lines. See [When to use channels — and when not to](#when-to-use-channels--and-when-not-to) above.
 - **Stable (maintenance) channels** — long-lived branches like `1.x` publishing stable versions to a non-`latest` dist-tag. Future work; the config schema already leaves room (see note above).
 - **Prerelease changelog in the published tarball** — injecting the rendered cycle changelog into prerelease artifacts at publish time (derived content goes in the artifact, never in git). Possible later nice-to-have.
 - **Per-bump-file channel routing** — declaring `channel: beta` inside a bump file's frontmatter. Not planned; channels stay branch-derived to keep the mental model simple.

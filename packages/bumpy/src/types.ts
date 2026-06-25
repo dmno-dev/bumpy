@@ -111,6 +111,18 @@ export interface ChannelConfig {
   };
 }
 
+export interface SnapshotConfig {
+  /**
+   * How snapshot versions are made unique. The snapshot name is always the prerelease
+   * preid and the default dist-tag (`bumpy publish --snapshot pr-123` → `@pr-123`), so
+   * consumers install via the tag regardless — this only affects the underlying version.
+   * - `"sha"` → `<target>-<name>-<short-sha>` (idempotent per commit; default). Re-running
+   *   on the same commit produces the same version, which is skipped if already published.
+   * - `"timestamp"` → `<target>-<name>-<UTC timestamp>` (always unique; never idempotent).
+   */
+  versionStrategy: 'sha' | 'timestamp';
+}
+
 export interface BumpyConfig {
   baseBranch: string;
   access: 'public' | 'restricted';
@@ -121,6 +133,12 @@ export interface BumpyConfig {
    * they are derived from bump files, the registry, and git tags at publish time.
    */
   channels: Record<string, ChannelConfig>;
+  /**
+   * Snapshot release settings. Snapshots publish the pending release plan transiently
+   * under a throwaway dist-tag (e.g. for previewing a PR from a private registry) without
+   * consuming bump files, writing changelogs, committing, or tagging. See `bumpy publish --snapshot`.
+   */
+  snapshot: SnapshotConfig;
   /**
    * Customize the commit message used when versioning.
    * A string starting with "./" is treated as a path to a module that exports
@@ -221,6 +239,7 @@ export const DEFAULT_CONFIG: BumpyConfig = {
   baseBranch: 'main',
   access: 'public',
   channels: {},
+  snapshot: { versionStrategy: 'sha' },
   versionCommitMessage: undefined,
   changedFilePatterns: ['**'],
   ignoredPackageJsonFields: ['devDependencies'],

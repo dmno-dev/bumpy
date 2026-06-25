@@ -6,27 +6,35 @@ Bumpy is configured via `.bumpy/_config.json`, created by `bumpy init`. Per-pack
 
 ## Global config (`.bumpy/_config.json`)
 
-| Option                       | Type                                   | Default                          | Description                                                                                      |
-| ---------------------------- | -------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `baseBranch`                 | `string`                               | `"main"`                         | Branch used for release comparisons                                                              |
-| `access`                     | `"public" \| "restricted"`             | `"public"`                       | Default npm publish access level                                                                 |
-| `changelog`                  | `false \| string \| [string, options]` | `"default"`                      | Changelog formatter — `"default"`, `"github"`, path to a custom formatter, or `false` to disable |
-| `fixed`                      | `string[][]`                           | `[]`                             | Package groups that always bump together to the same version                                     |
-| `linked`                     | `string[][]`                           | `[]`                             | Package groups that share the highest bump level                                                 |
-| `ignore`                     | `string[]`                             | `[]`                             | Package name globs to exclude from versioning                                                    |
-| `include`                    | `string[]`                             | `[]`                             | Package name globs to explicitly include (overrides `ignore` and `privatePackages`)              |
-| `privatePackages`            | `{ version, tag }`                     | `{ version: false, tag: false }` | Whether to version and/or create git tags for private packages                                   |
-| `updateInternalDependencies` | `"patch" \| "minor" \| "out-of-range"` | `"out-of-range"`                 | When to update internal dependency version ranges                                                |
-| `dependencyBumpRules`        | `object`                               | see below                        | Controls how bumps propagate through dependency types                                            |
-| `versionCommitMessage`       | `string`                               | —                                | Customize the version commit message (see below)                                                 |
-| `changedFilePatterns`        | `string[]`                             | `["**"]`                         | Glob patterns to filter which changed files count toward marking a package as changed            |
-| `ignoredPackageJsonFields`   | `string[]`                             | `["devDependencies"]`            | `package.json` fields whose change alone doesn't require a bump file (see below)                 |
-| `publish`                    | `object`                               | see below                        | Publishing pipeline config                                                                       |
-| `gitUser`                    | `{ name, email }`                      | bumpy-bot                        | Git identity for CI commits                                                                      |
-| `versionPr`                  | `{ title, branch, preamble }`          | see below                        | Customize the version PR                                                                         |
-| `allowCustomCommands`        | `boolean \| string[]`                  | `false`                          | Allow per-package custom commands from `package.json` (see below)                                |
-| `packages`                   | `object`                               | `{}`                             | Per-package config overrides (keyed by package name)                                             |
-| `channels`                   | `object`                               | `{}`                             | Prerelease channels, keyed by channel name (see below)                                           |
+| Option                       | Type                                   | Default                          | Description                                                                                            |
+| ---------------------------- | -------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `baseBranch`                 | `string`                               | `"main"`                         | Branch used for release comparisons                                                                    |
+| `access`                     | `"public" \| "restricted"`             | `"public"`                       | Default npm publish access level                                                                       |
+| `changelog`                  | `false \| string \| [string, options]` | `"default"`                      | Changelog formatter — `"default"`, `"github"`, path to a custom formatter, or `false` to disable       |
+| `fixed`                      | `string[][]`                           | `[]`                             | Package groups that always bump together to the same version                                           |
+| `linked`                     | `string[][]`                           | `[]`                             | Package groups that share the highest bump level                                                       |
+| `ignore`                     | `string[]`                             | `[]`                             | Package name globs to exclude from versioning                                                          |
+| `include`                    | `string[]`                             | `[]`                             | Package name globs to explicitly include (overrides `ignore` and `privatePackages`)                    |
+| `privatePackages`            | `{ version, tag }`                     | `{ version: false, tag: false }` | Whether to version and/or create git tags for `"private": true` packages (never published — see below) |
+| `updateInternalDependencies` | `"patch" \| "minor" \| "out-of-range"` | `"out-of-range"`                 | When to update internal dependency version ranges                                                      |
+| `dependencyBumpRules`        | `object`                               | see below                        | Controls how bumps propagate through dependency types                                                  |
+| `versionCommitMessage`       | `string`                               | —                                | Customize the version commit message (see below)                                                       |
+| `changedFilePatterns`        | `string[]`                             | `["**"]`                         | Glob patterns to filter which changed files count toward marking a package as changed                  |
+| `ignoredPackageJsonFields`   | `string[]`                             | `["devDependencies"]`            | `package.json` fields whose change alone doesn't require a bump file (see below)                       |
+| `publish`                    | `object`                               | see below                        | Publishing pipeline config                                                                             |
+| `gitUser`                    | `{ name, email }`                      | bumpy-bot                        | Git identity for CI commits                                                                            |
+| `versionPr`                  | `{ title, branch, preamble }`          | see below                        | Customize the version PR                                                                               |
+| `allowCustomCommands`        | `boolean \| string[]`                  | `false`                          | Allow per-package custom commands from `package.json` (see below)                                      |
+| `packages`                   | `object`                               | `{}`                             | Per-package config overrides (keyed by package name)                                                   |
+| `channels`                   | `object`                               | `{}`                             | Prerelease channels, keyed by channel name (see below)                                                 |
+| `snapshot`                   | `{ versionStrategy }`                  | `{ versionStrategy: "sha" }`     | Snapshot release settings — how snapshot versions are made unique (see below)                          |
+
+### Private packages and private registries
+
+These are two different things, and bumpy treats them differently:
+
+- **Publishing to a private registry** (scoped package + `access: "restricted"` and/or a `registry`, _without_ `"private": true`) works like any other publish — bumpy versions, publishes, tags, and snapshots them normally. This is the recommended setup for private/internal packages. See [Publishing to a private registry](snapshots.md#publishing-to-a-private-registry).
+- **`"private": true` in `package.json`** is npm's "never publish" marker (`npm publish` refuses it). bumpy never publishes these. `privatePackages` only controls whether they're _versioned_ (`version`) and _git-tagged_ (`tag`) — not published. Use this for apps and internal tooling you want bumpy to bump but never ship to a registry.
 
 ### Change detection and `package.json` fields
 
@@ -141,6 +149,21 @@ The `channels` object maps long-lived branches to prerelease lines. See [prerele
 ```
 
 Channel names become `.bumpy/<name>/` subdirectories (holding bump files that shipped on the channel), so they must be filesystem-safe and can't start with `_` or collide with reserved entries.
+
+### Snapshot releases
+
+The `snapshot` object configures one-off transient previews published with `bumpy publish --snapshot <name>`. See [snapshots.md → Snapshot releases](snapshots.md#snapshot-releases) for the full workflow.
+
+```jsonc
+{
+  "snapshot": {
+    // How snapshot versions are made unique (consumers install via the tag regardless):
+    //   "sha"       → 1.4.0-pr-123-a1b2c3d  (short git SHA; idempotent per commit; default)
+    //   "timestamp" → 1.4.0-pr-123-20260623123456  (always unique)
+    "versionStrategy": "sha",
+  },
+}
+```
 
 ## Per-package config
 

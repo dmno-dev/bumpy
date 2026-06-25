@@ -146,6 +146,11 @@ async function main() {
           const { ciReleaseCommand } = await import('./commands/ci.ts');
           const expectModeFlag = ciFlags['expect-mode'];
           const autoPublishFlag = ciFlags['auto-publish'] === true;
+          if (ciFlags.snapshot === true) {
+            log.error('--snapshot requires a name, e.g. `bumpy ci release --snapshot pr-123`.');
+            process.exit(1);
+          }
+          const snapshotFlag = ciFlags.snapshot as string | undefined;
           if (expectModeFlag !== undefined && expectModeFlag !== 'version-pr' && expectModeFlag !== 'publish') {
             log.error(`Invalid --expect-mode value: "${expectModeFlag}". Must be "version-pr" or "publish".`);
             process.exit(1);
@@ -157,11 +162,18 @@ async function main() {
             log.error('--expect-mode and --auto-publish cannot be used together.');
             process.exit(1);
           }
+          // Snapshots are a self-contained one-shot release — none of the version-PR /
+          // publish split (and its flags) applies.
+          if (snapshotFlag !== undefined && (expectModeFlag !== undefined || autoPublishFlag)) {
+            log.error('--snapshot cannot be combined with --expect-mode or --auto-publish.');
+            process.exit(1);
+          }
           await ciReleaseCommand(rootDir, {
             autoPublish: autoPublishFlag,
             assertMode: expectModeFlag as 'version-pr' | 'publish' | undefined,
             tag: ciFlags.tag as string | undefined,
             branch: ciFlags.branch as string | undefined,
+            snapshot: snapshotFlag,
           });
         } else if (subcommand === 'setup') {
           const { ciSetupCommand } = await import('./commands/ci-setup.ts');
@@ -176,12 +188,17 @@ async function main() {
       case 'publish': {
         const rootDir = await findRoot();
         const { publishCommand } = await import('./commands/publish.ts');
+        if (flags.snapshot === true) {
+          log.error('--snapshot requires a name, e.g. `bumpy publish --snapshot pr-123`.');
+          process.exit(1);
+        }
         await publishCommand(rootDir, {
           dryRun: flags['dry-run'] === true,
           tag: flags.tag as string | undefined,
           noPush: flags['no-push'] === true,
           filter: flags.filter as string | undefined,
           channel: flags.channel as string | undefined,
+          snapshot: flags.snapshot as string | undefined,
         });
         break;
       }
@@ -237,6 +254,7 @@ function printHelp() {
                             (on a channel branch: moves pending bump files into .bumpy/<channel>/)
     publish                 Publish versioned packages
                             (on a channel branch: derives prerelease versions and publishes to the channel dist-tag)
+                            (--snapshot <name>: transient preview publish to a throwaway dist-tag)
     ci check                PR check — report pending releases, comment on PR
     ci plan                 Report what ci release would do (JSON + GitHub Actions outputs)
     ci release              Release — create version PR or auto-publish
@@ -267,6 +285,8 @@ function printHelp() {
     --no-push               Skip pushing git tags to remote
     --filter <names>        Publish only matching packages (e.g., "@myorg/*")
     --channel <name>        Publish a prerelease channel (default: inferred from the current branch)
+    --snapshot <name>       Publish a transient snapshot (e.g. "pr-123") to a throwaway dist-tag;
+                            does not consume bump files, commit, tag, or create releases
 
   Version options:
     --commit                Create a git commit with the version changes
@@ -280,8 +300,10 @@ function printHelp() {
   CI release options:
     --expect-mode <mode>    Assert detected mode: "version-pr" or "publish" (errors if mismatched)
     --auto-publish          Version + publish directly (default: create version PR)
-    --tag <tag>             npm dist-tag for auto-publish
+    --tag <tag>             npm dist-tag for auto-publish (or the snapshot dist-tag)
     --branch <name>         Branch name for version PR (default: bumpy/version-packages)
+    --snapshot <name>       Publish a transient snapshot (e.g. "pr-123") and comment install
+                            instructions on the PR; no version PR, no bump-file changes
 
   ${colorize('https://bumpy.varlock.dev', 'dim')}
 `);
