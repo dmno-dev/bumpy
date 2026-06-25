@@ -256,22 +256,40 @@ export async function writeBumpFile(
 }
 
 /**
- * Recover bump files that were deleted in the HEAD commit (version commit).
+ * Recover bump files that were deleted by the version commit.
  * Used during the publish-only flow (after version PR merge) to provide
  * bump file context for GitHub release body generation.
+ *
+ * Usually the version commit is HEAD (publish runs right after the version PR
+ * merges), but when publish runs several commits later — e.g. a retry after the
+ * first attempt was blocked and unrelated fixes landed on main — HEAD has moved
+ * past it. So we locate the most recent commit that actually deleted bump files
+ * rather than assuming it's HEAD~1..HEAD; the latter silently recovers nothing
+ * once HEAD diverges, leaving releases with no changelog body.
  */
 export function recoverDeletedBumpFiles(rootDir: string): BumpFile[] {
-  // Find .bumpy/*.md files deleted in the HEAD commit
-  const deleted = tryRunArgs(['git', 'diff', '--diff-filter=D', '--name-only', 'HEAD~1', 'HEAD', '--', '.bumpy/*.md'], {
+  // The most recent commit that deleted any .bumpy/*.md file — i.e. the version
+  // commit that consumed them.
+  const versionCommit = tryRunArgs(['git', 'log', '--diff-filter=D', '--format=%H', '-n', '1', '--', '.bumpy/*.md'], {
     cwd: rootDir,
-  });
+  })
+    ?.split('\n')
+    .filter(Boolean)[0]
+    ?.trim();
+  if (!versionCommit) return [];
+
+  // Read the deleted files' content from the commit's parent.
+  const parent = `${versionCommit}~1`;
+  const deleted = tryRunArgs(
+    ['git', 'diff', '--diff-filter=D', '--name-only', parent, versionCommit, '--', '.bumpy/*.md'],
+    { cwd: rootDir },
+  );
   if (!deleted) return [];
 
   const bumpFiles: BumpFile[] = [];
   for (const filePath of deleted.split('\n').filter(Boolean)) {
     if (filePath.endsWith('README.md')) continue;
-    // Read the file content from the parent commit
-    const content = tryRunArgs(['git', 'show', `HEAD~1:${filePath}`], { cwd: rootDir });
+    const content = tryRunArgs(['git', 'show', `${parent}:${filePath}`], { cwd: rootDir });
     if (!content) continue;
     const { bumpFile } = parseBumpFile(content, fileToId(filePath));
     if (bumpFile) bumpFiles.push(bumpFile);
