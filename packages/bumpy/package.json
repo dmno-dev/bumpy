@@ -39,7 +39,7 @@
     "build": "tsdown",
     "prepack": "bun run scripts/sync-skill.ts && cp ../../README.md .",
     "sync-skill": "bun run scripts/sync-skill.ts",
-    "check": "bun run tsc --noEmit",
+    "check": "tsc --noEmit",
     "test": "bun test"
   },
   "devDependencies": {
@@ -52,7 +52,8 @@
     "picocolors": "^1.1.1",
     "picomatch": "^4.0.4",
     "semver": "^7.7.2",
-    "tsdown": "catalog:"
+    "tsdown": "catalog:",
+    "typescript": "catalog:"
   },
   "bumpy": {
     "releaseTriggeringDevDeps": [

@@ -20,18 +20,28 @@ permissions:
 jobs:
   # Fork PRs (untrusted): run the PUBLISHED bumpy and never execute the PR's code.
   # pull_request_target carries a write token + secrets, so building/running fork
-  # code here would be a privilege-escalation hole. `ci check` reads json/yaml only.
+  # code — OR letting the fork's bunfig.toml/.npmrc redirect where bumpy itself is
+  # fetched from — would be a privilege-escalation hole. We fetch+run bumpy from a
+  # trusted base checkout and point it at the PR tree with --cwd. `ci check` only
+  # reads json/yaml. See docs/github-actions.md for the full rationale.
   check-published:
     if: github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     steps:
-      # Check out the PR head so bumpy can read the PR's bump files, config, and package.json.
-      # We never execute this code!
+      # 1. Trusted base checkout — bunx runs from here, so the package-manager
+      #    config in effect is ours, not the PR's.
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+          persist-credentials: false
+      # 2. Untrusted PR head into ./pr — only READ from here, never resolve/run.
       - uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.head.sha }}
+          path: pr
+          persist-credentials: false
       - uses: oven-sh/setup-bun@v2
-      - run: bunx @varlock/bumpy@latest ci check
+      - run: bunx @varlock/bumpy@latest ci check --cwd ./pr
         env:
           GH_TOKEN: ${{ github.token }}
 

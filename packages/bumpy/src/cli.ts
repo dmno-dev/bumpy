@@ -1,10 +1,9 @@
 #!/usr/bin/env node
 
+import { resolve } from 'node:path';
 import { findRoot } from './core/config.ts';
+import { extractCwdFlag } from './utils/cwd.ts';
 import { log, colorize } from './utils/logger.ts';
-
-const args = process.argv.slice(2);
-const command = args[0];
 
 function parseFlags(args: string[]): Record<string, string | boolean> {
   const flags: Record<string, string | boolean> = {};
@@ -25,9 +24,24 @@ function parseFlags(args: string[]): Record<string, string | boolean> {
 }
 
 async function main() {
-  const flags = parseFlags(args.slice(1));
-
   try {
+    // Strip and apply a global `--cwd <dir>` before anything else. Done here, inside
+    // the already-running process, so bunx/npx has already resolved & fetched bumpy
+    // from the original (trusted) directory — config files in the target tree
+    // (bunfig.toml, .npmrc) can't redirect where bumpy itself came from. See
+    // ./utils/cwd.ts and docs/github-actions.md for the security rationale.
+    const { cwd: cwdOverride, rest: args } = extractCwdFlag(process.argv.slice(2));
+    if (cwdOverride !== undefined) {
+      try {
+        process.chdir(resolve(cwdOverride));
+      } catch {
+        throw new Error(`--cwd: cannot change to directory "${cwdOverride}"`);
+      }
+    }
+
+    const command = args[0];
+    const flags = parseFlags(args.slice(1));
+
     switch (command) {
       case 'init': {
         const rootDir = await findRoot();
@@ -190,6 +204,12 @@ function printHelp() {
   ${colorize(`🐸 bumpy v${__BUMPY_VERSION__}`, 'bold')} - Modern monorepo versioning
 
   Usage: bumpy <command> [options]
+
+  Global options:
+    --cwd <dir>             Run as if started in <dir>. Used to point bumpy at an
+                            untrusted checkout (e.g. a fork PR) while bumpy itself
+                            is fetched from a trusted directory — see the
+                            pull_request_target setup in docs/github-actions.md
 
   Commands:
     init [--force]          Initialize .bumpy/ (migrates from .changeset/ if found)
