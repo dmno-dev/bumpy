@@ -141,7 +141,7 @@ That's the only workflow change. `bumpy ci release` reads the current branch, lo
 
 > Make sure the checkout step uses `fetch-depth: 0` (the [release workflow](github-actions.md) already requires this) — the channel publish trigger diffs the triggering push to detect release PR merges.
 
-> The PR check workflow (`bumpy-check.yaml`) needs no changes — it runs on `pull_request_target` and handles any base branch.
+> The PR check needs no changes for channels — `bumpy ci check` detects the PR's base branch automatically, whether it runs as a step in your normal `pull_request` workflow or in the dedicated `pull_request_target` workflow for [fork-PR comments](github-actions.md#commenting-on-fork-prs).
 
 ---
 

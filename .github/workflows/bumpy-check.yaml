@@ -28,7 +28,9 @@ jobs:
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      # Same-repo PR head — not a fork, so checkout@v7's fork-checkout block
+      # doesn't apply here and no allow-unsafe-pr-checkout flag is needed.
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0 # history to diff bump files against the PR base branch
@@ -49,16 +51,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # TRUSTED base checkout (main) — bumpy is built and run from here.
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: main
           persist-credentials: false
       # UNTRUSTED PR head into ./pr — only READ via --cwd, never built or run.
-      - uses: actions/checkout@v6
+      # checkout@v7 blocks fork-PR checkout under pull_request_target by default;
+      # allow-unsafe-pr-checkout opts in — safe because ./pr is never run.
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           path: pr
           persist-credentials: false
+          allow-unsafe-pr-checkout: true
       - uses: oven-sh/setup-bun@v2
       - run: bun install
       - run: bun run --filter @varlock/bumpy build
