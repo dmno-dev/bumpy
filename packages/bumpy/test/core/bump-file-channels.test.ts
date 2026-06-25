@@ -114,4 +114,28 @@ describe('recoverDeletedBumpFiles with channel dirs', () => {
       await cleanupTempDir(dir);
     }
   });
+
+  test('recovers from the version commit even when HEAD has moved past it', async () => {
+    const dir = await createTempGitRepo();
+    try {
+      await writeBumpFileAt(dir, '.bumpy/feature.md', 'pkg-a', 'minor');
+      gitInDir(['add', '-A'], dir);
+      gitInDir(['commit', '-m', 'add bump file'], dir);
+      gitInDir(['rm', '-r', '.bumpy'], dir);
+      gitInDir(['commit', '-m', 'version packages'], dir);
+      // Unrelated commits land on main after the version commit (e.g. CI fixes
+      // before a publish retry), so the version commit is no longer HEAD.
+      await writeFile(resolve(dir, 'ci-fix.txt'), 'fix');
+      gitInDir(['add', '-A'], dir);
+      gitInDir(['commit', '-m', 'fix ci'], dir);
+      await writeFile(resolve(dir, 'ci-fix-2.txt'), 'fix again');
+      gitInDir(['add', '-A'], dir);
+      gitInDir(['commit', '-m', 'fix ci again'], dir);
+
+      const recovered = recoverDeletedBumpFiles(dir);
+      expect(recovered.map((bf) => bf.id)).toEqual(['feature']);
+    } finally {
+      await cleanupTempDir(dir);
+    }
+  });
 });
