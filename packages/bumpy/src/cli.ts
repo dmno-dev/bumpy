@@ -2,7 +2,7 @@
 
 import { resolve } from 'node:path';
 import { findRoot } from './core/config.ts';
-import { extractCwdFlag } from './utils/cwd.ts';
+import { extractCwdFlag, pullRequestTargetCwdError } from './utils/cwd.ts';
 import { log, colorize } from './utils/logger.ts';
 
 function parseFlags(args: string[]): Record<string, string | boolean> {
@@ -123,6 +123,16 @@ async function main() {
         const ciFlags = parseFlags(args.slice(2));
 
         if (subcommand === 'check') {
+          // Nudge users still on the old single-checkout pull_request_target
+          // workflow toward the two-checkout + --cwd pattern. See ./utils/cwd.ts.
+          const cwdError = pullRequestTargetCwdError({
+            eventName: process.env.GITHUB_EVENT_NAME,
+            cwdProvided: cwdOverride !== undefined,
+          });
+          if (cwdError) {
+            log.error(cwdError);
+            process.exit(1);
+          }
           const { ciCheckCommand } = await import('./commands/ci.ts');
           await ciCheckCommand(rootDir, {
             comment: ciFlags.comment !== undefined ? ciFlags.comment === true : undefined,
