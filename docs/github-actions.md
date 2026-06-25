@@ -74,6 +74,8 @@ jobs:
 - **Never execute PR code** — no `bun install` / `npm install` (postinstall scripts run), no `bun run <script>` / `npm test`, no building from the PR tree.
 - **Fetch and run bumpy from the trusted base checkout; only _read_ the PR tree** via `--cwd ./pr`. Keep `persist-credentials: false` on both checkouts.
 
+> **Using npm / pnpm / yarn?** The same pattern applies — run `npx` / `pnpm dlx` / `yarn dlx` from the trusted root and pass `--cwd ./pr` to bumpy, never the reverse. It matters even more there: pnpm and yarn honor committed config that runs code directly (pnpm's `.pnpmfile.cjs`, yarn's `yarnPath`/`plugins`), not just registry redirects — see the [Turborepo `yarnPath` RCE](https://github.com/vercel/turborepo/security/advisories/GHSA-3qcw-2rhx-2726) for the real-world version.
+
 <details>
 <summary><strong>Why two checkouts? The registry-redirect attack (worth reading before you restructure this)</strong></summary>
 
