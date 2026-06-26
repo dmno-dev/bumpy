@@ -30,6 +30,11 @@ Give the job `permissions: pull-requests: write`. This runs in the ordinary `pul
 
 **Fork PRs get the check, but not the comment.** GitHub hands `pull_request` runs from forks a **read-only token and no secrets**, so the comment can't be posted there. `ci check` still runs and fails the job (red ✗) on a missing bump file, with the explanation in the job logs — forks stay gated correctly, you just don't get the rendered comment. For most repos that's the right trade. If you want the comment on fork PRs too, add the two-part setup below.
 
+> **Inline step vs. dedicated workflow.** Folding `ci check` into an existing CI job is the least setup and the right default for most repos. Give it its own lightweight `on: pull_request` workflow when either of these applies:
+>
+> - **Slow CI + fork comments.** The fork-comment poster below (`workflow_run`) fires on _whole-workflow_ completion, so if `ci check --emit-comment` rides inside a multi-minute CI workflow, the release-plan comment won't post until everything (lint, typecheck, build, tests) finishes. A dedicated check — no `bun install`, just `bunx bumpy` — completes in seconds, so the comment lands almost immediately.
+> - **A load-bearing gate.** If `ci check` is an early step in your test job, its non-zero exit on a missing bump file fails the job and skips the remaining steps — so a contributor who pushed code before adding the bump file loses all test signal. A separate workflow (or a separate _job_) keeps the gate independent. A separate job doesn't share the test job's `bun install`, so once you're paying for an extra checkout anyway, a dedicated workflow also buys the fast comment above.
+
 ## Commenting on fork PRs
 
 **This is optional — set it up only if you want the release-plan comment to appear on PRs from forks.** The `ci check` above already runs on fork PRs and fails them red on a missing bump file; it just can't post the comment there, because GitHub gives a fork's `pull_request` run a read-only token (secrets withheld, writes blocked server-side). Posting requires a privileged run in the base-repo context, and the safe way to get one is a small extra workflow whose privileged half **never touches the fork's code or files**:
