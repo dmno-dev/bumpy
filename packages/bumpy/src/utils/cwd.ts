@@ -53,10 +53,10 @@ const DOCS_URL = 'https://github.com/dmno-dev/bumpy/blob/main/docs/github-action
  *
  * This is a MIGRATION NUDGE, not a security control: a fork PR that successfully
  * redirected the registry would be running its own replacement bumpy, which has
- * no such guard. The value is in catching honest users still on the old
- * single-checkout workflow and pointing them at the two-checkout pattern before
- * a real attacker exploits it. Passing any `--cwd` (including `--cwd .` to
- * acknowledge an already-trusted directory) satisfies the check.
+ * no such guard. The value is in catching honest users still on a legacy
+ * pull_request_target check and steering them to the recommended pull_request +
+ * workflow_run setup. Passing any `--cwd` (including `--cwd .` to acknowledge an
+ * already-trusted directory) satisfies the check for those staying on it.
  */
 export function pullRequestTargetCwdError(opts: {
   eventName: string | undefined;
@@ -67,15 +67,16 @@ export function pullRequestTargetCwdError(opts: {
     '`bumpy ci check` is running under pull_request_target without --cwd.',
     '',
     'This is the unsafe configuration. pull_request_target grants a write token and',
-    'secrets, and the current directory is the (untrusted) PR checkout — so a fork',
-    "PR's bunfig.toml/.npmrc can redirect where bumpy itself is fetched from, at the",
-    'exact version you pinned.',
+    'secrets even on fork PRs, and the current directory is the (untrusted) PR',
+    "checkout — so a fork PR's bunfig.toml/.npmrc can redirect where bumpy itself is",
+    'fetched from, at the exact version you pinned.',
     '',
-    'Fix: check the PR head into ./pr from a trusted base checkout, then run',
-    '`bumpy ci check --cwd ./pr`. Updated workflow:',
-    `  ${DOCS_URL}`,
+    'Recommended fix: stop using pull_request_target. Run `ci check` on the plain',
+    '`pull_request` event and post fork-PR comments from a separate workflow_run job:',
+    `  ${DOCS_URL}#commenting-on-fork-prs`,
     '',
-    'If the current directory is already a trusted checkout (e.g. a same-repo,',
-    'non-fork PR), pass `--cwd .` to acknowledge it and continue.',
+    'To stay on pull_request_target, check the PR head into ./pr from a trusted base',
+    'checkout and run `bumpy ci check --cwd ./pr` (or `--cwd .` if the current',
+    'checkout is already trusted, e.g. a same-repo PR).',
   ].join('\n');
 }

