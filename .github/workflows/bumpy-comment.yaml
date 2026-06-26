@@ -27,14 +27,15 @@ jobs:
       - run: bun install
       - run: bun run --filter @varlock/bumpy build
       - run: bun install # link the freshly-built CLI bin
-      # Download AFTER checkout — checkout cleans the workspace and would wipe it.
+      # Download to runner.temp (OUTSIDE the checkout) so the untrusted artifact can't
+      # overwrite our trusted files.
       - uses: actions/download-artifact@v4
         continue-on-error: true # the check may not have produced a comment
         with:
           name: bumpy-comment
-          path: ./bumpy-comment
+          path: ${{ runner.temp }}/bumpy-comment
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ github.token }}
-      - run: bunx @varlock/bumpy ci comment --body-file ./bumpy-comment/comment.md
+      - run: bunx @varlock/bumpy ci comment --body-file "$RUNNER_TEMP/bumpy-comment/comment.md"
         env:
           GH_TOKEN: ${{ github.token }}
