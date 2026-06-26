@@ -106,7 +106,7 @@ jobs:
 
 Label-gating is the recommended default: pkg.pr.new can fire on every commit because its storage expires, but a real registry keeps every snapshot version until a retention policy prunes it. Trigger on whatever event you like — it's just a CLI command.
 
-> **Forks.** PRs from forks running on `pull_request` get a read-only token and no secrets, so they can't publish or comment. This is usually fine for private packages (contributors are internal); if you need fork snapshots, the same constraints (and `pull_request_target` caveats) apply as for [the check comment](./github-actions.md).
+> **Forks.** PRs from forks running on `pull_request` get a read-only token and no secrets, so they can't publish or comment. This is usually fine for private packages (contributors are internal); if you need fork snapshots, the same constraint applies as for [the check comment](./github-actions.md#commenting-on-fork-prs) — a privileged write has to originate from a separate base-repo run (`workflow_run`), never from the fork's own `pull_request` run.
 
 ### What a snapshot does and doesn't do
 
