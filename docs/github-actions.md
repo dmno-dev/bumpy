@@ -85,12 +85,14 @@ jobs:
         continue-on-error: true # the check may not have produced a comment
         with:
           name: bumpy-comment
-          path: ./bumpy-comment
+          # Download OUTSIDE the checkout (runner.temp) so the untrusted artifact
+          # can't overwrite trusted files.
+          path: ${{ runner.temp }}/bumpy-comment
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ github.token }}
       - run: |
           VERSION=$(jq -r '.devDependencies["@varlock/bumpy"] // .dependencies["@varlock/bumpy"]' package.json | sed 's/[\^~]//')
-          bunx "@varlock/bumpy@$VERSION" ci comment --body-file ./bumpy-comment/comment.md
+          bunx "@varlock/bumpy@$VERSION" ci comment --body-file "$RUNNER_TEMP/bumpy-comment/comment.md"
         env:
           GH_TOKEN: ${{ github.token }}
 ```
@@ -99,7 +101,9 @@ Point `workflows: [...]` at the **name** of whatever runs your check (your exist
 
 > **Heads-up: it won't run until it's on your default branch.** `workflow_run` always uses the workflow file as it exists on the default branch, so the poster doesn't fire for the PR that _adds_ it — fork comments start working once `bumpy-comment.yaml` is merged to `main`. (Same-repo PRs are unaffected; they comment directly from the check.)
 
-> **The one safety rule.** The uploaded artifact is **untrusted** — it's produced by the unprivileged `pull_request` run from fork-controlled inputs (the comment is rendered from the PR's own bump files, and the run may execute fork code), so treat its contents as attacker-controlled. `bumpy ci comment` uses the body only as comment text and resolves the **target PR from the trusted `workflow_run` event** (`head_sha`), never from the artifact — that's what stops a fork from redirecting the comment onto a different PR or issue. Don't override it with a `--pr` derived from artifact data.
+> **The one safety rule.** The uploaded artifact is **untrusted** — it's produced by the unprivileged `pull_request` run from fork-controlled inputs (the comment is rendered from the PR's own bump files, and the run may execute fork code), so treat its contents as attacker-controlled. Two things keep it safe: (1) download it to `runner.temp`, **outside the checkout**, so it can't overwrite trusted files; and (2) `bumpy ci comment` uses the body only as comment text and resolves the **target PR from the trusted `workflow_run` event** (`head_sha`), never from the artifact — that's what stops a fork from redirecting the comment onto a different PR or issue. Don't override it with a `--pr` derived from artifact data.
+
+> **If CodeQL flags this step (`actions/artifact-poisoning`):** that query fires on any `workflow_run` workflow that consumes an artifact from the triggering run. Downloading to `runner.temp` as above addresses its core recommendation (extract to a folder that can't overwrite existing files). If your repo's query is strict enough to still flag the download, it's a false positive you can dismiss — the body is used only as comment text and the PR is resolved from the trusted event, never the artifact.
 
 > **Why can't the fork run post it itself?** A fork's `pull_request` token is read-only at issuance and enforced server-side — REST, GraphQL, `gh`, and raw `curl` all 403 on a comment write, and secrets aren't exposed either. The write has to originate from a privileged base-repo run, which is exactly what `workflow_run` provides.
 
