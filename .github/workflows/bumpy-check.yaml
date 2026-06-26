@@ -1,69 +1,38 @@
-# 🐸 Bumpy CI check
-# checks for missing bump files and posts/updates a PR comment with the release plan
+# 🐸 Bumpy CI check (dogfood)
+# Runs our own unreleased bumpy on every PR and renders the release-plan comment as an
+# artifact. Runs on the UNPRIVILEGED `pull_request` event, so it's safe to build and run
+# the PR's own bumpy (fork or not) — there's no write token or secrets to protect here.
+# Posting the comment on fork PRs is the privileged half and lives in bumpy-comment.yaml
+# (workflow_run). A normal project just adds
+#   bunx @varlock/bumpy ci check --emit-comment ./bumpy-comment
+# to its existing CI workflow.
 #
-# ⚠️ NOTE - DO NOT COPY THIS FILE
-# instead look at the recommended workflow in the docs
+# ⚠️ DO NOT COPY THIS FILE — see the recommended setup in the docs:
 # ➡️ https://bumpy.varlock.dev/blob/main/docs/github-actions.md ⬅️
-#
-# This repo builds and runs its OWN unreleased bumpy so we dogfood the current
-# CLI on every PR. Two jobs, split by trust level:
-#   - non-fork PRs build and run the PR's OWN bumpy, so a PR previews its own
-#     ci-check changes. Safe because the code comes from this repo.
-#   - fork PRs build and run MAIN's bumpy and only READ the PR via `--cwd ./pr`,
-#     so no untrusted code ever touches the pull_request_target write token.
-# A normal project just runs `bunx @varlock/bumpy@latest ci check --cwd ./pr`.
-
 name: Bumpy Check
 
-on: pull_request_target # < necessary so it can post comments on fork PRs
+on: pull_request
 
 permissions:
-  pull-requests: write
+  pull-requests: write # same-repo PRs comment directly; fork PRs are read-only (the poster handles those)
   contents: read
 
 jobs:
-  # Non-fork PRs (trusted): build and run the PR's OWN bumpy so it dogfoods its
-  # own changes. `--cwd .` acknowledges that the current checkout is trusted.
-  check-local:
-    if: github.event.pull_request.head.repo.full_name == github.repository
+  check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0 # history to diff bump files against the PR base branch
       - uses: oven-sh/setup-bun@v2
       - run: bun install
-      # Build first since we run the local built version of bumpy.
       - run: bun run --filter @varlock/bumpy build
-      # Re-install so the freshly-built CLI bin is linked.
-      - run: bun install
-      - run: bunx @varlock/bumpy ci check --cwd .
+      - run: bun install # link the freshly-built CLI bin
+      - run: bunx @varlock/bumpy ci check --emit-comment ./bumpy-comment
         env:
           GH_TOKEN: ${{ github.token }}
-
-  # Fork PRs (untrusted): build and run MAIN's bumpy from a trusted checkout and
-  # only READ the PR head via `--cwd ./pr` — never install/build/run fork code.
-  check-fork:
-    if: github.event.pull_request.head.repo.full_name != github.repository
-    runs-on: ubuntu-latest
-    steps:
-      # TRUSTED base checkout (main) — bumpy is built and run from here.
-      - uses: actions/checkout@v6
+      - uses: actions/upload-artifact@v4
+        if: always() # upload even when the check fails — the comment explains why
         with:
-          ref: main
-          persist-credentials: false
-      # UNTRUSTED PR head into ./pr — only READ via --cwd, never built or run.
-      - uses: actions/checkout@v6
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          path: pr
-          persist-credentials: false
-      - uses: oven-sh/setup-bun@v2
-      - run: bun install
-      - run: bun run --filter @varlock/bumpy build
-      - run: bun install
-      # bunx runs from the trusted root; bumpy reads the PR's bump files via --cwd.
-      - run: bunx @varlock/bumpy ci check --cwd ./pr
-        env:
-          GH_TOKEN: ${{ github.token }}
+          name: bumpy-comment
+          path: ./bumpy-comment

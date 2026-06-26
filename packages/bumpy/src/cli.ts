@@ -118,9 +118,21 @@ async function main() {
       }
 
       case 'ci': {
-        const rootDir = await findRoot();
         const subcommand = args[1];
         const ciFlags = parseFlags(args.slice(2));
+
+        // `ci comment` only posts a pre-rendered body — it never reads the workspace,
+        // so it needs no bumpy root and runs fine in a checkout-less poster workflow.
+        if (subcommand === 'comment') {
+          const { ciCommentCommand } = await import('./commands/ci.ts');
+          await ciCommentCommand(process.cwd(), {
+            bodyFile: ciFlags['body-file'] as string | undefined,
+            pr: ciFlags.pr as string | undefined,
+          });
+          break;
+        }
+
+        const rootDir = await findRoot();
 
         if (subcommand === 'check') {
           // Nudge users still on the old single-checkout pull_request_target
@@ -133,11 +145,17 @@ async function main() {
             log.error(cwdError);
             process.exit(1);
           }
+          const emitComment = ciFlags['emit-comment'];
+          if (emitComment === true) {
+            log.error('--emit-comment requires a directory argument.');
+            process.exit(1);
+          }
           const { ciCheckCommand } = await import('./commands/ci.ts');
           await ciCheckCommand(rootDir, {
             comment: ciFlags.comment !== undefined ? ciFlags.comment === true : undefined,
             strict: ciFlags.strict === true,
             noFail: ciFlags['no-fail'] === true,
+            emitComment: typeof emitComment === 'string' ? emitComment : undefined,
           });
         } else if (subcommand === 'plan') {
           const { ciPlanCommand } = await import('./commands/ci.ts');
@@ -179,7 +197,9 @@ async function main() {
           const { ciSetupCommand } = await import('./commands/ci-setup.ts');
           await ciSetupCommand(rootDir);
         } else {
-          log.error(`Unknown ci subcommand: ${subcommand}. Use "ci check", "ci plan", "ci release", or "ci setup".`);
+          log.error(
+            `Unknown ci subcommand: ${subcommand}. Use "ci check", "ci comment", "ci plan", "ci release", or "ci setup".`,
+          );
           process.exit(1);
         }
         break;
@@ -256,6 +276,7 @@ function printHelp() {
                             (on a channel branch: derives prerelease versions and publishes to the channel dist-tag)
                             (--snapshot <name>: transient preview publish to a throwaway dist-tag)
     ci check                PR check — report pending releases, comment on PR
+    ci comment              Post a pre-rendered comment (workflow_run half of the fork-comment split)
     ci plan                 Report what ci release would do (JSON + GitHub Actions outputs)
     ci release              Release — create version PR or auto-publish
     ci setup                Set up a token for triggering CI on version PRs
@@ -296,6 +317,12 @@ function printHelp() {
     --comment               Force PR comment on/off (auto-detected in CI)
     --strict                Fail if any changed package is uncovered (default: only fail if no bump files at all)
     --no-fail               Warn only, never exit 1
+    --emit-comment <dir>    Also write the rendered comment to <dir>/comment.md, for a
+                            downstream "ci comment" to post (fork-comment split — see docs)
+
+  CI comment options:
+    --body-file <path>      Path to the rendered comment body (from "ci check --emit-comment")
+    --pr <number>           Target PR (default: resolved from the workflow_run event)
 
   CI release options:
     --expect-mode <mode>    Assert detected mode: "version-pr" or "publish" (errors if mismatched)

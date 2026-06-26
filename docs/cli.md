@@ -184,17 +184,34 @@ CI command for PR checks. Computes the release plan from bump files changed in t
 bumpy ci check
 bumpy ci check --strict
 bumpy ci check --no-fail
+bumpy ci check --emit-comment ./bumpy-comment
 ```
 
-| Flag        | Description                                                      |
-| ----------- | ---------------------------------------------------------------- |
-| `--comment` | Force PR comment on or off (default: auto-detect CI environment) |
-| `--strict`  | Fail if any changed package is not covered by a bump file        |
-| `--no-fail` | Warn only, never exit non-zero                                   |
+| Flag                   | Description                                                                                                                               |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `--comment`            | Force PR comment on or off (default: auto-detect CI environment)                                                                          |
+| `--strict`             | Fail if any changed package is not covered by a bump file                                                                                 |
+| `--no-fail`            | Warn only, never exit non-zero                                                                                                            |
+| `--emit-comment <dir>` | Also write the rendered comment to `<dir>/comment.md` for a downstream [`ci comment`](#bumpy-ci-comment) to post (the fork-comment split) |
 
 Requires `GH_TOKEN` environment variable (automatically available in GitHub Actions).
 
 **On channel and promotion PRs:** for a PR targeting a [prerelease channel](prereleases.md) branch, the comment is channel-aware — it shows the prerelease plan (`-<preid>.x` versions) and the target dist-tag rather than implying a stable release. For a **promotion PR** (a channel branch → `main`, or a graduation like `alpha` → `beta`), the check reads the cycle's already-shipped bump files from `.bumpy/<channel>/` and shows the consolidated stable plan, calling out that merging ends the prerelease cycle. (Feature PRs that _target_ a channel branch are checked against that branch, so only the PR's own new bump files count — see [`--base`](#bumpy-check) on the local `check` command for the equivalent locally.)
+
+## `bumpy ci comment`
+
+Posts a pre-rendered comment (from `ci check --emit-comment`) to a PR. This is the privileged half of the [fork-comment split](github-actions.md#commenting-on-fork-prs): your `pull_request` check renders the comment as an artifact, and this command — run from a `workflow_run` job — posts it.
+
+```bash
+bumpy ci comment --body-file ./bumpy-comment/comment.md
+```
+
+| Flag                 | Description                                                        |
+| -------------------- | ------------------------------------------------------------------ |
+| `--body-file <path>` | Path to the rendered comment body (required)                       |
+| `--pr <number>`      | Target PR number (default: resolved from the `workflow_run` event) |
+
+It needs no checkout and no bumpy project — it only posts. Under `workflow_run` it resolves the target PR from the **trusted** event (`head_sha`), never from the artifact, and treats the body as untrusted text. A missing or empty body file is a no-op. Requires `GH_TOKEN`.
 
 ## `bumpy ci plan`
 

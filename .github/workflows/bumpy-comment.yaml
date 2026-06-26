@@ -1,0 +1,40 @@
+# 🐸 Bumpy PR comment (dogfood)
+# Privileged half of the fork-comment split: posts the release-plan comment that
+# bumpy-check.yaml rendered. Triggered after that workflow completes. It NEVER checks
+# out or runs PR code — it builds MAIN's bumpy and posts a pre-rendered body to the PR
+# it resolves from the trusted workflow_run.head_sha. A normal project would just run
+# `bunx @varlock/bumpy ci comment` instead of building from source.
+#
+# ⚠️ DO NOT COPY THIS FILE — see the recommended setup in the docs:
+# ➡️ https://bumpy.varlock.dev/blob/main/docs/github-actions.md ⬅️
+name: Bumpy PR Comment
+
+on:
+  workflow_run:
+    workflows: ['Bumpy Check']
+    types: [completed]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  comment:
+    runs-on: ubuntu-latest
+    steps:
+      # TRUSTED: default branch (main) only — never the PR. Build our own bumpy.
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install
+      - run: bun run --filter @varlock/bumpy build
+      - run: bun install # link the freshly-built CLI bin
+      # Download AFTER checkout — checkout cleans the workspace and would wipe it.
+      - uses: actions/download-artifact@v4
+        continue-on-error: true # the check may not have produced a comment
+        with:
+          name: bumpy-comment
+          path: ./bumpy-comment
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+      - run: bunx @varlock/bumpy ci comment --body-file ./bumpy-comment/comment.md
+        env:
+          GH_TOKEN: ${{ github.token }}
