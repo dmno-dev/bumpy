@@ -386,17 +386,30 @@ This job needs **no publish credentials** — no `id-token`, no `NPM_TOKEN`. It 
 
 ### Option C: finalize instantly (event-driven)
 
-If you approve through automated tooling (a service that batch-approves staged publishes), have it fire a `repository_dispatch` the moment it approves, so the GitHub release finalizes with no cron lag. Add this trigger to the workflow above:
+If you approve through automated tooling (a service that approves staged publishes), have it fire a `repository_dispatch` the moment it approves, so the GitHub release finalizes with no cron lag. Add this trigger to the workflow above:
 
 ```yaml
 on:
   repository_dispatch:
-    types: [bumpy-finalize] # client_payload.tag pins one release; omit to reconcile all
+    types: [bumpy-finalize]
 ```
 
-and include the payload tag in the run step: `publish finalize ${{ github.event.client_payload.tag || inputs.tag }}`.
+Think of the dispatch as a **"something got approved — go reconcile" nudge, not a "finalize this one thing" command.** It carries no payload: the workflow above already runs `publish finalize` with no argument, which reconciles _every_ staged release that's now live. That's exactly what you want for a monorepo, where one release stages many packages together — the approver fires a single ping and the whole batch finalizes:
 
-> **Dispatch payload:** send `{"event_type": "bumpy-finalize", "client_payload": {"tag": "my-pkg@1.2.3"}}` to the [repository dispatch API](https://docs.github.com/en/rest/repos/repos#create-a-repository-dispatch-event). Omit `tag` to reconcile every staged release in one run.
+```bash
+# after approving the batch on npm — one ping, no payload
+gh api repos/OWNER/REPO/dispatches -f event_type=bumpy-finalize
+```
+
+Because finalize decides what to publish by probing the registry (not from the payload), this stays correct even when unrelated versions are staged — it only finalizes the ones that actually went live, and it's idempotent, so firing it more than once is harmless.
+
+> **Targeting one release (optional).** In the rare case you want to finalize a single release and leave others staged, pass its tag in the payload and thread it into the run step — `publish finalize ${{ github.event.client_payload.tag }}`:
+>
+> ```bash
+> gh api repos/OWNER/REPO/dispatches -f event_type=bumpy-finalize -F 'client_payload[tag]=my-pkg@1.2.3'
+> ```
+>
+> For most repos you won't need this — the no-payload nudge above is the norm.
 
 ## Advanced: per-package conditional builds
 
