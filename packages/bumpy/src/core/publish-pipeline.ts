@@ -260,7 +260,15 @@ export async function publishPackages(
       }
 
       // Staged publishing only applies to the standard npm flow (not custom commands),
-      // and never to snapshots (opts.noStage).
+      // and never to snapshots (opts.noStage). Staging is an npm-registry feature — no
+      // other publish target (jsr, cargo, custom commands) has an equivalent.
+      //
+      // NOTE: this is a per-*package* decision because bumpy currently gives each package
+      // exactly one publish target (see publishTargetsByPkg in commands/publish.ts). If a
+      // future multi-target model lets one package publish to npm (stageable) AND another
+      // target (live) in the same run, this — and PublishResult below — must become
+      // per-target: a package could be "npm staged, jsr live" at once, which a per-package
+      // staged/published split can't express.
       const isStaged =
         publishConfig.npmStaged && publishConfig.publishManager === 'npm' && !pkgConfig.publishCommand && !opts.noStage;
 

@@ -108,6 +108,8 @@ Requirements:
 - npm >= 11.15.0
 - The package must already exist on the npm registry (first publish cannot be staged)
 
+Staging is an **npm-registry feature** — it only applies to packages published through the standard npm flow. Packages that publish via a `publishCommand` (jsr, cargo, anything custom) have no staging equivalent, so they publish live as usual. In a mixed release, npm packages stage while custom-target packages go live immediately; each finalizes independently. Staged tracking also relies on **GitHub releases** (the staged state and finalize step live in the draft release), so it needs `gh` available — there's no staged flow without a GitHub release to track it on.
+
 ```json
 {
   "publish": {

@@ -602,6 +602,11 @@ async function runPublishFlow(
 
       const { registry, repoSlug } = registryByPkg.get(release.name) || {};
       let changed = false;
+      // `published`/`staged`/`failed` are per-package (see PublishResult), so every target
+      // of the package takes the same status. That's correct while each package has exactly
+      // one target (see publishTargetsByPkg above). If a package ever publishes to a mix of
+      // stageable (npm) and live (jsr/cargo) targets in one run, this loop must switch to a
+      // per-target result so it can mark "npm staged, jsr success" independently.
       for (const targetName of targets) {
         // Skip already-succeeded targets
         if (info.metadata.targets[targetName]?.status === 'success') continue;
