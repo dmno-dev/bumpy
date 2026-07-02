@@ -138,7 +138,7 @@ export function isGhAvailable(): boolean {
 const METADATA_START = '<!-- bumpy-metadata';
 const METADATA_END = 'bumpy-metadata -->';
 
-export type PublishTargetStatus = 'pending' | 'success' | 'failed' | 'skipped';
+export type PublishTargetStatus = 'pending' | 'success' | 'failed' | 'skipped' | 'staged';
 
 export interface PublishTargetState {
   status: PublishTargetStatus;
@@ -150,6 +150,15 @@ export interface PublishTargetState {
   url?: string;
   /** Human-readable label, e.g. "GitHub Packages" for npm targets on a GHP registry. Falls back to the target key. */
   label?: string;
+  /**
+   * npm staged-publish identifier (a UUID from `npm stage publish --json`).
+   * Present while `status: 'staged'` — the publish is staged on the registry and
+   * awaiting 2FA approval before it goes live. Consumed by `bumpy publish finalize`
+   * (and integrations like stageflight) to reconcile the release once approved.
+   */
+  stageId?: string;
+  /** ISO timestamp of when the publish was staged (awaiting approval). */
+  stagedAt?: string;
 }
 
 export interface ReleaseMetadata {
@@ -205,6 +214,13 @@ export function formatPublishedToSection(targets: Record<string, PublishTargetSt
         break;
       case 'pending':
         lines.push(`- ⏳ ${label}`);
+        break;
+      case 'staged':
+        lines.push(
+          state.url
+            ? `- 🟡 [${label}](${state.url}) — staged, awaiting approval`
+            : `- 🟡 ${label} — staged, awaiting approval`,
+        );
         break;
     }
   }
@@ -398,6 +414,33 @@ export async function finalizeRelease(tag: string, rootDir: string): Promise<voi
 /** Delete a GitHub release */
 export async function deleteRelease(tag: string, rootDir: string): Promise<void> {
   await withReleaseToken(() => runArgsAsync(['gh', 'release', 'delete', tag, '--yes'], { cwd: rootDir }));
+}
+
+/**
+ * Find releases (draft or published) that still have at least one target in the
+ * `staged` state — i.e. a staged npm publish awaiting approval that hasn't been
+ * finalized yet. Used by `bumpy publish finalize` to discover work.
+ */
+export async function findStagedReleases(rootDir: string, limit = 50): Promise<DraftReleaseInfo[]> {
+  if (!isGhAvailable()) return [];
+
+  try {
+    const json = await runArgsAsync(['gh', 'release', 'list', '--json', 'tagName,isDraft', '--limit', String(limit)], {
+      cwd: rootDir,
+    });
+    const releases: Array<{ tagName: string; isDraft: boolean }> = JSON.parse(json);
+
+    const staged: DraftReleaseInfo[] = [];
+    for (const r of releases) {
+      const info = await findReleaseByTag(r.tagName, rootDir);
+      if (info?.metadata && Object.values(info.metadata.targets).some((t) => t.status === 'staged')) {
+        staged.push(info);
+      }
+    }
+    return staged;
+  } catch {
+    return [];
+  }
 }
 
 /** Find draft releases for a package (by name prefix) that are older than the current version */

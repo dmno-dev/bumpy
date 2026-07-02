@@ -117,6 +117,8 @@ Requirements:
 }
 ```
 
+Because a staged package isn't live yet, bumpy does **not** mark the release as published: the publish target shows as **🟡 staged, awaiting approval** and the GitHub release stays a **draft** (so the `release: published` event doesn't fire prematurely). Once the version is approved and goes live, run `bumpy publish finalize` to flip it to published and link to the live package. Set up a workflow to run finalize automatically — see [Staged publishing (finalize workflow)](github-actions.md#staged-publishing-finalize-workflow).
+
 ### Version PR config
 
 The `versionPr` object customizes the PR that `bumpy ci release` creates:

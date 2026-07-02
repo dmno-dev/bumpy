@@ -1,0 +1,60 @@
+# 🐸 Bumpy finalize staged releases
+# Reconciles staged npm publishes: once a staged version is approved on npmjs.com
+# and goes live, this flips its draft GitHub release to published (firing the
+# `release: published` event) and links to the live package.
+
+# ⚠️ NOTE - DO NOT COPY THIS FILE
+# instead look at the recommended workflow in the docs
+# ➡️ https://bumpy.varlock.dev/blob/main/docs/github-actions.md ⬅️
+
+name: Finalize
+
+on:
+  # 1. Event-driven: stageflight (or any approver) fires this after approving the batch.
+  #    client_payload.tag pins the exact release; omit it to reconcile everything.
+  repository_dispatch:
+    types: [bumpy-finalize]
+  # 2. Scheduled reconcile: self-heals even without a dispatch (e.g. approval done in
+  #    the npm UI). Hourly; tune to taste.
+  schedule:
+    - cron: '17 * * * *'
+  # 3. Manual: run from the Actions tab, optionally targeting a single release.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release to finalize (name@version). Leave blank to reconcile all staged.'
+        required: false
+        type: string
+
+concurrency:
+  group: bumpy-finalize
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # update + publish (finalize) the GitHub release and tags
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+      # Node.js (npm) is needed to check whether staged versions have gone live.
+      - uses: actions/setup-node@v6
+        with:
+          node-version: latest
+      - run: bun install
+
+      # --- You wont need this part ---
+      # Build first since we use the local built version of bumpy instead of the published one
+      - run: bun run --filter @varlock/bumpy build
+      - run: bun install
+      # -------------------------------
+
+      # `tag` comes from the dispatch payload, the manual input, or is empty (reconcile all).
+      - run: bunx @varlock/bumpy publish finalize ${{ github.event.client_payload.tag || inputs.tag }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # PAT/App token so finalizing the release fires downstream `release: published` workflows
+          BUMPY_GH_TOKEN: ${{ secrets.BUMPY_GH_TOKEN }}

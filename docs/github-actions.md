@@ -306,6 +306,72 @@ jobs:
 
 `bumpy ci release --auto-publish` collapses version + publish into a single run, skipping the Version Packages PR. This forfeits the preview/review gate on version bumps — every merge to main with a bump file ships immediately. It's also incompatible with the [split-job pattern](#release-workflow-recommended-split-jobs) above, since both paths run in one command. Prefer the default flow. See [the CLI reference](cli.md#bumpy-ci-release) if you still need it.
 
+## Staged publishing (finalize workflow)
+
+With [`npmStaged`](configuration.md#staged-publishing) enabled, your release job runs `npm stage publish` instead of `npm publish`. The package is **staged** on npmjs.com, not live — it needs a 2FA approval before anyone can install it. bumpy reflects this honestly:
+
+- The publish target is marked **🟡 staged, awaiting approval** (not ✅ published).
+- The GitHub release stays a **draft** — so the `release: published` event does _not_ fire yet, and downstream release automation doesn't run against a package that isn't out.
+- The stage id is recorded in the release metadata for approval tooling to consume.
+
+Once the staged version is approved and goes live, run `bumpy publish finalize` to reconcile: it checks the registry, flips the target to ✅ with the live package URL, and publishes the GitHub release (which _then_ fires `release: published`). It's idempotent — a version that's still staged is left untouched — so it's safe to run on a schedule, manually, or from an approval webhook.
+
+```yaml
+# .github/workflows/bumpy-finalize.yml
+name: Finalize
+on:
+  # 1. Event-driven — your approval tooling fires this after approving.
+  #    client_payload.tag pins one release; omit it to reconcile everything.
+  repository_dispatch:
+    types: [bumpy-finalize]
+  # 2. Scheduled reconcile — self-heals even if approval happened in the npm UI.
+  schedule:
+    - cron: '17 * * * *'
+  # 3. Manual — run from the Actions tab, optionally targeting one release.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release to finalize (name@version). Blank = reconcile all staged.'
+        required: false
+        type: string
+
+concurrency:
+  group: bumpy-finalize
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # update + publish the GitHub release and tags
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v6 # npm is needed to check whether staged versions went live
+        with:
+          node-version: latest
+      - run: bun install
+      - run: bunx @varlock/bumpy publish finalize ${{ github.event.client_payload.tag || inputs.tag }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # PAT/App token so finalizing fires downstream `release: published` workflows
+          BUMPY_GH_TOKEN: ${{ secrets.BUMPY_GH_TOKEN }}
+```
+
+Note that this job needs **no publish credentials** — no `id-token`, no `NPM_TOKEN`. It only reads the registry and edits the GitHub release, so it's safe to run on the low-privilege default token (plus `BUMPY_GH_TOKEN` if you want the finalized release to trigger downstream workflows).
+
+The three triggers are complementary — wire up whichever fit:
+
+| Trigger               | When it fires                                        | Best for                                                     |
+| --------------------- | ---------------------------------------------------- | ------------------------------------------------------------ |
+| `repository_dispatch` | Your approval tooling sends a `bumpy-finalize` event | Instant finalize the moment a batch is approved              |
+| `schedule`            | On the cron interval                                 | A safety net so nothing stays staged if a dispatch is missed |
+| `workflow_dispatch`   | You click "Run workflow"                             | Approving in the npm UI, or one-off recovery                 |
+
+> **Dispatch payload:** send `{"event_type": "bumpy-finalize", "client_payload": {"tag": "my-pkg@1.2.3"}}` to the [repository dispatch API](https://docs.github.com/en/rest/repos/repos#create-a-repository-dispatch-event). Omit `tag` to reconcile every staged release in one run.
+
 ## Advanced: per-package conditional builds
 
 If you have one expensive package whose build you only want to run when that package itself is being released, use `ci plan`'s `packages` output to gate per-package steps:
