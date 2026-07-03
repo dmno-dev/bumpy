@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.18.1
+
+<sub>2026-07-03</sub>
+
+- [#149](https://github.com/dmno-dev/bumpy/pull/149) _(patch)_
+  Load Yarn catalogs from `.yarnrc.yml`. Yarn (>=4.10) stores catalog definitions in `.yarnrc.yml` under the `catalog`/`catalogs` keys (the same shape pnpm uses in `pnpm-workspace.yaml`), but catalog loading only read `pnpm-workspace.yaml` and `package.json`, so Yarn workspaces always saw an empty catalog map. Catalog loading and the check command's catalog diff now consult the package manager's own YAML file (`.yarnrc.yml` for Yarn).
+
 ## 1.18.0
 
 <sub>2026-06-26</sub>
