@@ -348,7 +348,7 @@ async function publishSnapshot(
       depGraph,
       config,
       rootDir,
-      { dryRun: opts.dryRun, tag: snapshot.tag, noTag: true },
+      { dryRun: opts.dryRun, tag: snapshot.tag, noTag: true, noStage: true },
       catalogs,
       detectedPm,
     );
@@ -500,13 +500,26 @@ async function runPublishFlow(
       }
     }
 
-    // Handle tag movement: if no targets succeeded yet, move tag to HEAD
+    // Handle tag movement: if nothing has been shipped yet, move tag to HEAD.
+    //
+    // "Shipped" = a build reached the registry (success OR staged) — NOT merely "the run
+    // did something". A *failed* target ships nothing, so it deliberately does NOT freeze
+    // the tag: the fix-forward workflow (push more commits to get a failed publish through)
+    // relies on the tag tracking HEAD until a build actually lands, so the final tag sits
+    // on the commit that worked.
+    //
+    // A *staged* target does freeze it: the tarball is already committed to the registry
+    // from the tagged SHA (you can only approve/reject it, not fix-and-repush), so moving
+    // the tag to HEAD on a re-run while awaiting approval would point the release at a
+    // different commit than the artifact was built from.
     for (const release of toPublish) {
       const info = releaseMetadataByPkg.get(release.name);
       if (!info) continue;
 
-      const anySucceeded = Object.values(info.metadata.targets).some((t) => t.status === 'success');
-      if (!anySucceeded) {
+      const anyShipped = Object.values(info.metadata.targets).some(
+        (t) => t.status === 'success' || t.status === 'staged',
+      );
+      if (!anyShipped) {
         // Safe to move tag to HEAD
         const tag = info.tag;
         const headSha = getHeadSha(rootDir);
@@ -525,27 +538,33 @@ async function runPublishFlow(
         if (headSha && tagSha && headSha !== tagSha) {
           const count = tryRunArgs(['git', 'rev-list', '--count', `${tag}..HEAD`], { cwd: rootDir });
           log.warn(
-            `  HEAD is ${count} commit(s) ahead of version tag ${tag} — some targets already published from tagged commit`,
+            `  HEAD is ${count} commit(s) ahead of version tag ${tag} — some targets already published or staged from tagged commit`,
           );
         }
       }
     }
   }
 
-  // Filter out packages where all targets already succeeded (from previous runs)
+  // Filter out packages where every target is already resolved from a previous run —
+  // either published (success) or staged and awaiting approval. Staged targets are
+  // deliberately treated as done here so a CI re-run never re-stages the same version;
+  // the staged → live transition is reconciled by `bumpy publish finalize`.
   const alreadyPublished: string[] = [];
   for (const release of toPublish) {
     const info = releaseMetadataByPkg.get(release.name);
     if (!info) continue;
     const targets = publishTargetsByPkg.get(release.name) || [];
-    const allDone = targets.every((t) => info.metadata.targets[t]?.status === 'success');
+    const allDone = targets.every((t) => {
+      const status = info.metadata.targets[t]?.status;
+      return status === 'success' || status === 'staged';
+    });
     if (allDone) {
       alreadyPublished.push(release.name);
     }
   }
   if (alreadyPublished.length > 0) {
     for (const name of alreadyPublished) {
-      log.dim(`  Skipping ${name} — all targets already published (per draft release metadata)`);
+      log.dim(`  Skipping ${name} — all targets already published or staged (per draft release metadata)`);
     }
     toPublish = toPublish.filter((r) => !alreadyPublished.includes(r.name));
     releasePlan.releases = toPublish;
@@ -574,6 +593,11 @@ async function runPublishFlow(
   if (result.published.length > 0) {
     log.success(`🐸 Published ${result.published.length} package(s)`);
   }
+  if (result.staged.length > 0) {
+    log.success(
+      `🐸 Staged ${result.staged.length} package(s) — awaiting approval, then run \`bumpy publish finalize\``,
+    );
+  }
   if (result.skipped.length > 0) {
     log.dim(`Skipped ${result.skipped.length}: ${result.skipped.map((s) => s.name).join(', ')}`);
   }
@@ -586,10 +610,16 @@ async function runPublishFlow(
 
       const targets = publishTargetsByPkg.get(release.name) || [];
       const published = result.published.find((p) => p.name === release.name);
+      const staged = result.staged.find((s) => s.name === release.name);
       const failed = result.failed.find((f) => f.name === release.name);
 
       const { registry, repoSlug } = registryByPkg.get(release.name) || {};
       let changed = false;
+      // `published`/`staged`/`failed` are per-package (see PublishResult), so every target
+      // of the package takes the same status. That's correct while each package has exactly
+      // one target (see publishTargetsByPkg above). If a package ever publishes to a mix of
+      // stageable (npm) and live (jsr/cargo) targets in one run, this loop must switch to a
+      // per-target result so it can mark "npm staged, jsr success" independently.
       for (const targetName of targets) {
         // Skip already-succeeded targets
         if (info.metadata.targets[targetName]?.status === 'success') continue;
@@ -600,6 +630,17 @@ async function runPublishFlow(
             status: 'success',
             publishedAt: new Date().toISOString(),
             url: buildPublishUrl(release.name, release.newVersion, targetName, { registry, repoSlug }),
+            ...(label !== targetName ? { label } : {}),
+          };
+          changed = true;
+        } else if (staged) {
+          // Staged on the registry, not yet live — record the stage id and leave the
+          // release as a draft. `bumpy publish finalize` flips this to success once approved.
+          const label = publishTargetLabel(targetName, registry);
+          info.metadata.targets[targetName] = {
+            status: 'staged',
+            stagedAt: new Date().toISOString(),
+            ...(staged.stageId ? { stageId: staged.stageId } : {}),
             ...(label !== targetName ? { label } : {}),
           };
           changed = true;
@@ -655,7 +696,7 @@ async function runPublishFlow(
   // failed and HEAD has since moved, the remote tag is at a stale SHA and a
   // plain `git push --tags` would reject. Force is safe here because the local
   // tag was just created at the SHA we successfully published from.
-  if (!opts.dryRun && !opts.noPush && result.published.length > 0) {
+  if (!opts.dryRun && !opts.noPush && (result.published.length > 0 || result.staged.length > 0)) {
     const failed = new Set(result.failed.map((f) => f.name));
     const pushed: string[] = [];
     log.step('Pushing tags...');
@@ -795,7 +836,7 @@ export async function findUnpublishedPackages(
   return unpublished;
 }
 
-async function checkIfPublished(name: string, version: string, pkgConfig?: PackageConfig): Promise<boolean> {
+export async function checkIfPublished(name: string, version: string, pkgConfig?: PackageConfig): Promise<boolean> {
   const { runAsync, runArgsAsync, tryRunArgs } = await import('../utils/shell.ts');
 
   // 1. Custom check command (user-defined, runs in shell by design)

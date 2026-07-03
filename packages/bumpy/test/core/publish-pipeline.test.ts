@@ -6,7 +6,7 @@ import { writeJson, readJson, ensureDir, writeText } from '../../src/utils/fs.ts
 import { makePkg, gitInDir } from '../helpers.ts';
 import { installShellMock, uninstallShellMock, addMockRule, getCallsMatching } from '../helpers-shell-mock.ts';
 import { DependencyGraph } from '../../src/core/dep-graph.ts';
-import { publishPackages } from '../../src/core/publish-pipeline.ts';
+import { publishPackages, parseStageId } from '../../src/core/publish-pipeline.ts';
 import type { WorkspacePackage, ReleasePlan, BumpyConfig } from '../../src/types.ts';
 import { DEFAULT_CONFIG, DEFAULT_PUBLISH_CONFIG } from '../../src/types.ts';
 
@@ -278,9 +278,13 @@ describe('publishPackages', () => {
     await writeJson(resolve(pkgDir, 'package.json'), { name: 'staged-pkg', version: '1.0.0' });
     await setupGitRepo();
 
-    // Mock npm --version (for staged validation) and the publish command
+    // Mock npm --version (for staged validation) and the publish command.
+    // `npm stage publish --json` returns the staged package + its stage id.
     addMockRule({ match: 'npm --version', response: '11.15.0' });
-    addMockRule({ match: 'npm stage publish', response: '' });
+    addMockRule({
+      match: 'npm stage publish',
+      response: JSON.stringify({ pkg: { name: 'staged-pkg', version: '1.0.1', stageId: 'stage-uuid-123' } }),
+    });
 
     const packages = new Map<string, WorkspacePackage>();
     packages.set('staged-pkg', makePkg('staged-pkg', '1.0.0', { dir: pkgDir }));
@@ -306,8 +310,82 @@ describe('publishPackages', () => {
 
     const result = await publishPackages(plan, packages, depGraph, STAGED_CONFIG, tmpDir, {});
 
-    expect(result.published).toHaveLength(1);
+    // A staged publish is NOT live — it lands in `staged`, not `published`, so the
+    // GitHub release stays a draft until finalized.
+    expect(result.published).toHaveLength(0);
+    expect(result.staged).toHaveLength(1);
+    expect(result.staged[0]!.name).toBe('staged-pkg');
+    expect(result.staged[0]!.version).toBe('1.0.1');
+    expect(result.staged[0]!.stageId).toBe('stage-uuid-123');
+
     const publishCalls = getCallsMatching('npm stage publish');
     expect(publishCalls.length).toBeGreaterThanOrEqual(1);
+    // `--json` is required to capture the stage id.
+    expect(publishCalls.some((c) => c.command.includes('--json'))).toBe(true);
+  });
+
+  test('noStage forces a live publish even when npmStaged is configured (snapshots)', async () => {
+    const pkgDir = resolve(tmpDir, 'packages/snap-pkg');
+    await ensureDir(pkgDir);
+    await writeJson(resolve(pkgDir, 'package.json'), { name: 'snap-pkg', version: '1.0.0' });
+    await setupGitRepo();
+
+    addMockRule({ match: 'npm --version', response: '11.15.0' });
+    addMockRule({ match: 'npm publish', response: '' });
+
+    const packages = new Map<string, WorkspacePackage>();
+    packages.set('snap-pkg', makePkg('snap-pkg', '1.0.0', { dir: pkgDir }));
+
+    const depGraph = new DependencyGraph(packages);
+    const plan: ReleasePlan = {
+      bumpFiles: [],
+      warnings: [],
+      releases: [
+        {
+          name: 'snap-pkg',
+          type: 'patch',
+          oldVersion: '1.0.0',
+          newVersion: '1.0.1-snap.0',
+          bumpFiles: [],
+          isDependencyBump: false,
+          isCascadeBump: false,
+          isGroupBump: false,
+          bumpSources: [],
+        },
+      ],
+    };
+
+    const result = await publishPackages(plan, packages, depGraph, STAGED_CONFIG, tmpDir, {
+      noStage: true,
+      noTag: true,
+    });
+
+    expect(result.staged).toHaveLength(0);
+    expect(result.published).toHaveLength(1);
+    // Live publish path — never `stage publish`.
+    expect(getCallsMatching('npm stage publish')).toHaveLength(0);
+    expect(getCallsMatching('npm publish').length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe('parseStageId', () => {
+  test('parses the stage id from npm stage publish --json output', () => {
+    const out = JSON.stringify({ pkg: { name: 'foo', version: '1.2.3', stageId: 'abc-123' } });
+    expect(parseStageId(out)).toBe('abc-123');
+  });
+
+  test('tolerates an array wrapper', () => {
+    const out = JSON.stringify([{ pkg: { stageId: 'in-array' } }]);
+    expect(parseStageId(out)).toBe('in-array');
+  });
+
+  test('tolerates a top-level stageId', () => {
+    expect(parseStageId(JSON.stringify({ stageId: 'top-level' }))).toBe('top-level');
+  });
+
+  test('returns undefined for empty or non-JSON output', () => {
+    expect(parseStageId('')).toBeUndefined();
+    expect(parseStageId('not json')).toBeUndefined();
+    expect(parseStageId(JSON.stringify({ pkg: {} }))).toBeUndefined();
   });
 });

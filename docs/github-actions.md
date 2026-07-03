@@ -306,6 +306,124 @@ jobs:
 
 `bumpy ci release --auto-publish` collapses version + publish into a single run, skipping the Version Packages PR. This forfeits the preview/review gate on version bumps — every merge to main with a bump file ships immediately. It's also incompatible with the [split-job pattern](#release-workflow-recommended-split-jobs) above, since both paths run in one command. Prefer the default flow. See [the CLI reference](cli.md#bumpy-ci-release) if you still need it.
 
+## Staged publishing (finalizing a release)
+
+With [`npmStaged`](configuration.md#staged-publishing) enabled, your release job runs `npm stage publish` instead of `npm publish`. The package is **staged** on npmjs.com, not live — a human still has to approve it with 2FA before anyone can install it. bumpy reflects that honestly instead of pretending the release shipped:
+
+- The publish target is marked **🟡 staged, awaiting approval** (not ✅ published).
+- The GitHub release stays a **draft** — so the `release: published` event does _not_ fire yet, and downstream release automation doesn't run against a package that isn't out.
+- The npm stage id is recorded in the release metadata.
+
+### The lifecycle
+
+A staged release goes live in three steps. **The two responsibilities are split:** npm owns approval, bumpy owns the GitHub release.
+
+1. **CI stages it.** You merge the Version Packages PR, the release job runs `npm stage publish`, and the draft GitHub release appears marked 🟡 staged.
+2. **You approve it on npm.** This is npm's 2FA gate — `bumpy publish finalize` does _not_ do this for you. List what's pending and approve it:
+   ```bash
+   npm stage list                 # find the staged version + its <stage-id>
+   npm stage approve <stage-id>   # provide 2FA — this publishes it to the registry
+   ```
+   (You can also approve from the package's page on npmjs.com. The stage id is also stored in the draft release's metadata.)
+3. **You finalize the GitHub release.** Once the version is live, `bumpy publish finalize` reconciles GitHub: it checks the registry, flips the target to ✅ with the live package URL, and publishes the release (which _then_ fires `release: published`). It's idempotent — a version that's still staged is left untouched — so it's always safe to run.
+
+### Option A: finalize manually
+
+The simplest setup is **no extra workflow at all**. After approving, run finalize from your machine (or wherever you have `gh` + `npm`):
+
+```bash
+npm stage approve <stage-id>   # step 2 — approve on npm
+bumpy publish finalize          # step 3 — update the GitHub release (reconciles all staged)
+```
+
+`bumpy publish finalize` with no argument reconciles every staged release; pass `name@version` to target one. It only reads the registry and edits the GitHub release — **no publish credentials needed**.
+
+### Option B: finalize automatically (scheduled)
+
+If you'd rather not run finalize by hand, add a workflow that reconciles on a schedule (and can also be triggered manually from the Actions tab). You still approve on npm in step 2 — this just handles step 3 for you, so a release goes from "approved" to "published on GitHub" without you touching it.
+
+```yaml
+# .github/workflows/bumpy-finalize.yml
+name: Finalize
+on:
+  # Scheduled reconcile — picks up releases you've approved on npm.
+  schedule:
+    - cron: '17 * * * *' # hourly; tune to taste
+  # Manual — run from the Actions tab, optionally targeting one release.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release to finalize (name@version). Blank = reconcile all staged.'
+        required: false
+        type: string
+
+concurrency:
+  group: bumpy-finalize
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # update + publish the GitHub release and tags
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v6 # npm is needed to check whether staged versions went live
+        with:
+          node-version: latest
+      - run: bun install
+      - run: bunx @varlock/bumpy publish finalize ${{ inputs.tag }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # PAT/App token so finalizing fires downstream `release: published` workflows
+          BUMPY_GH_TOKEN: ${{ secrets.BUMPY_GH_TOKEN }}
+```
+
+This job needs **no publish credentials** — no `id-token`, no `NPM_TOKEN`. It only reads the registry and edits the GitHub release, so the low-privilege default token is enough (plus `BUMPY_GH_TOKEN` if you want the finalized release to trigger downstream workflows).
+
+### Option C: finalize instantly (event-driven)
+
+If you approve through automated tooling (a service that approves staged publishes), have it fire a `repository_dispatch` the moment it approves, so the GitHub release finalizes with no cron lag. Add this trigger to the workflow above:
+
+```yaml
+on:
+  repository_dispatch:
+    types: [bumpy-finalize]
+```
+
+Think of the dispatch as a **"something got approved — go reconcile" nudge, not a "finalize this one thing" command.** It carries no payload: the workflow above already runs `publish finalize` with no argument, which reconciles _every_ staged release that's now live. That's exactly what you want for a monorepo, where one release stages many packages together — the approver fires a single ping and the whole batch finalizes:
+
+```bash
+# after approving the batch on npm — one ping, no payload
+gh api repos/OWNER/REPO/dispatches -f event_type=bumpy-finalize
+```
+
+Because finalize decides what to publish by probing the registry (not from the payload), this stays correct even when unrelated versions are staged — it only finalizes the ones that actually went live, and it's idempotent, so firing it more than once is harmless.
+
+> **Targeting one release (optional).** In the rare case you want to finalize a single release and leave others staged, pass its tag in the payload and thread it into the run step — `publish finalize ${{ github.event.client_payload.tag }}`:
+>
+> ```bash
+> gh api repos/OWNER/REPO/dispatches -f event_type=bumpy-finalize -F 'client_payload[tag]=my-pkg@1.2.3'
+> ```
+>
+> For most repos you won't need this — the no-payload nudge above is the norm.
+
+### If a staged publish is rejected
+
+Approval is publicly observable (the package goes live, and finalize notices), but **rejection is not** — a rejected stage looks identical to a still-pending one to `npm info` (both are simply "not live"). So bumpy can't auto-detect a rejection, and the release would otherwise sit at 🟡 forever. When you reject a stage, tell bumpy:
+
+```bash
+npm stage reject <stage-id>              # reject on npm
+bumpy publish reopen my-pkg@1.2.3        # tell bumpy — reopens the release for re-publish
+```
+
+`publish reopen` flips the staged target back to **failed**, which rejoins the normal fix-forward path: the 🟡 marker clears, the version tag un-freezes, and the **next `bumpy publish` re-stages the same version** — so push your fix and let CI re-stage it. (If you're rejecting to _abandon_ the version rather than redo it, don't reopen — just ship a different version and the draft gets superseded automatically.)
+
+If you approve/reject through tooling, have it run `bumpy publish reopen <tag>` (e.g. via a `repository_dispatch`) at rejection time, the mirror of the finalize nudge.
+
 ## Advanced: per-package conditional builds
 
 If you have one expensive package whose build you only want to run when that package itself is being released, use `ci plan`'s `packages` output to gate per-package steps:

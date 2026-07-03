@@ -15,12 +15,40 @@ export interface PublishOptions {
   tag?: string; // npm dist-tag (e.g., "next", "beta")
   /** Skip creating git tags (snapshot releases are ephemeral and never tagged) */
   noTag?: boolean;
+  /**
+   * Force live publishing even when `npmStaged` is configured. Used for snapshots,
+   * which are ephemeral dist-tag previews that must be immediately installable and
+   * so are never routed through the staged-approval flow.
+   */
+  noStage?: boolean;
 }
 
 export interface PublishResult {
   published: { name: string; version: string }[];
+  /**
+   * Packages staged (via `npm stage publish`) but not yet live — awaiting 2FA
+   * approval on the registry. Kept separate from `published` so the GitHub
+   * release can be marked "staged" (draft) rather than finalized as published.
+   */
+  staged: { name: string; version: string; stageId?: string }[];
   skipped: { name: string; reason: string }[];
   failed: { name: string; error: string }[];
+}
+
+/**
+ * Parse the stage id (a UUID) from `npm stage publish --json` output.
+ * npm returns `{ pkg: { name, version, stageId } }`; tolerate minor shape
+ * variations (array wrapper, top-level stageId) and return undefined if absent.
+ */
+export function parseStageId(output: string): string | undefined {
+  try {
+    const parsed = JSON.parse(output);
+    const entry = Array.isArray(parsed) ? parsed[0] : parsed;
+    const stageId = entry?.pkg?.stageId ?? entry?.stageId;
+    return typeof stageId === 'string' && stageId ? stageId : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -157,7 +185,7 @@ export async function publishPackages(
   catalogs: CatalogMap = new Map(),
   detectedPm: PackageManager = 'npm',
 ): Promise<PublishResult> {
-  const result: PublishResult = { published: [], skipped: [], failed: [] };
+  const result: PublishResult = { published: [], staged: [], skipped: [], failed: [] };
   const publishConfig = config.publish;
 
   // Set up npm authentication before publishing
@@ -168,7 +196,7 @@ export async function publishPackages(
     throw new Error('provenance requires publishManager "npm" — provenance attestation is an npm-specific feature');
   }
 
-  if (publishConfig.npmStaged) {
+  if (publishConfig.npmStaged && !opts.noStage) {
     if (publishConfig.publishManager !== 'npm') {
       throw new Error('npmStaged requires publishManager "npm" — staged publishing is an npm-specific feature');
     }
@@ -231,7 +259,21 @@ export async function publishPackages(
         await resolveProtocolsInPlace(pkg, packages, releasePlan, catalogs);
       }
 
+      // Staged publishing only applies to the standard npm flow (not custom commands),
+      // and never to snapshots (opts.noStage). Staging is an npm-registry feature — no
+      // other publish target (jsr, cargo, custom commands) has an equivalent.
+      //
+      // NOTE: this is a per-*package* decision because bumpy currently gives each package
+      // exactly one publish target (see publishTargetsByPkg in commands/publish.ts). If a
+      // future multi-target model lets one package publish to npm (stageable) AND another
+      // target (live) in the same run, this — and PublishResult below — must become
+      // per-target: a package could be "npm staged, jsr live" at once, which a per-package
+      // staged/published split can't express.
+      const isStaged =
+        publishConfig.npmStaged && publishConfig.publishManager === 'npm' && !pkgConfig.publishCommand && !opts.noStage;
+
       // 3. Publish
+      let publishOutput: string | undefined;
       if (pkgConfig.publishCommand) {
         // Custom publish command(s)
         const commands = Array.isArray(pkgConfig.publishCommand)
@@ -251,10 +293,10 @@ export async function publishPackages(
       } else if (!pkgConfig.skipNpmPublish) {
         // Standard publish flow
         if (publishConfig.protocolResolution === 'pack') {
-          await packThenPublish(pkg, pkgConfig, config, packManager, opts);
+          publishOutput = await packThenPublish(pkg, pkgConfig, config, packManager, opts);
         } else {
           // "in-place" already resolved above; "none" skips resolution
-          await npmPublishDirect(pkg, pkgConfig, config, opts);
+          publishOutput = await npmPublishDirect(pkg, pkgConfig, config, opts);
         }
       } else {
         result.skipped.push({ name: release.name, reason: 'skipNpmPublish' });
@@ -265,8 +307,15 @@ export async function publishPackages(
       // 3. Git tag
       createGitTag(release, rootDir, opts);
 
-      result.published.push({ name: release.name, version: release.newVersion });
-      log.success(`  Published ${release.name}@${release.newVersion}`);
+      if (isStaged) {
+        // Not live yet — staged on the registry, awaiting 2FA approval.
+        const stageId = publishOutput ? parseStageId(publishOutput) : undefined;
+        result.staged.push({ name: release.name, version: release.newVersion, stageId });
+        log.success(`  Staged ${release.name}@${release.newVersion} — awaiting approval`);
+      } else {
+        result.published.push({ name: release.name, version: release.newVersion });
+        log.success(`  Published ${release.name}@${release.newVersion}`);
+      }
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       log.error(`  Failed to publish ${release.name}: ${errMsg}`);
@@ -287,14 +336,14 @@ async function packThenPublish(
   config: BumpyConfig,
   packManager: PackageManager,
   opts: PublishOptions,
-): Promise<void> {
+): Promise<string | undefined> {
   const packArgs = getPackArgs(packManager);
   log.dim(`  Packing with: ${packArgs.join(' ')}`);
 
   if (opts.dryRun) {
     const publishArgs = buildPublishArgs(pkg, pkgConfig, config, opts, '<tarball>');
     log.dim(`  Would publish with: ${publishArgs.join(' ')}`);
-    return;
+    return undefined;
   }
 
   // Pack and capture the tarball filename
@@ -305,7 +354,7 @@ async function packThenPublish(
     // Publish the tarball
     const publishArgs = buildPublishArgs(pkg, pkgConfig, config, opts, tarball);
     log.dim(`  Publishing: ${publishArgs.join(' ')}`);
-    await runArgsAsync(publishArgs, { cwd: pkg.dir });
+    return await runArgsAsync(publishArgs, { cwd: pkg.dir });
   } finally {
     // Clean up tarball
     try {
@@ -316,18 +365,17 @@ async function packThenPublish(
   }
 }
 
-/** Publish directly from the package directory (no tarball) */
+/** Publish directly from the package directory (no tarball). Returns the publish stdout. */
 async function npmPublishDirect(
   pkg: WorkspacePackage,
   pkgConfig: WorkspacePackage['bumpy'] & {},
   config: BumpyConfig,
   opts: PublishOptions,
-): Promise<void> {
+): Promise<string | undefined> {
   const args = buildPublishArgs(pkg, pkgConfig, config, opts);
   log.dim(`  Running: ${args.join(' ')}`);
-  if (!opts.dryRun) {
-    await runArgsAsync(args, { cwd: pkg.dir });
-  }
+  if (opts.dryRun) return undefined;
+  return await runArgsAsync(args, { cwd: pkg.dir });
 }
 
 function getPackArgs(pm: PackageManager): string[] {
@@ -355,8 +403,11 @@ function buildPublishArgs(
   const args: string[] = [];
 
   // Base command
-  if (config.publish.npmStaged && publishManager === 'npm') {
-    args.push('npm', 'stage', 'publish');
+  const isStaged = config.publish.npmStaged && publishManager === 'npm' && !opts.noStage;
+  if (isStaged) {
+    // `--json` yields `{ pkg: { name, version, stageId } }` so we can record the
+    // stage id on the GitHub release for later finalization.
+    args.push('npm', 'stage', 'publish', '--json');
   } else if (publishManager === 'yarn') {
     args.push('yarn', 'npm', 'publish');
   } else {

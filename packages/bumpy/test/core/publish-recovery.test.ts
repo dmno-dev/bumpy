@@ -100,6 +100,12 @@ describe('formatPublishedToSection', () => {
     const result = formatPublishedToSection(targets);
     expect(result).toContain('- ⏳ npm');
   });
+
+  test('formats staged targets awaiting approval', () => {
+    const targets = { npm: { status: 'staged' as const, stageId: 'uuid-1', stagedAt: '2026-01-01T00:00:00Z' } };
+    const result = formatPublishedToSection(targets);
+    expect(result).toContain('- 🟡 npm — staged, awaiting approval');
+  });
 });
 
 describe('composeReleaseBody', () => {

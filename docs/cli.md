@@ -113,6 +113,39 @@ With `--snapshot <name>`, publish derives a throwaway prerelease version per pen
 2. Git tags (for packages with `skipNpmPublish` or custom `publishCommand`)
 3. npm registry query (default)
 
+## `bumpy publish finalize`
+
+Reconcile [staged](configuration.md#staged-publishing) releases that have been approved and gone live. With `npmStaged` enabled, a publish leaves the GitHub release as a draft with its target marked 🟡 staged. Once the version is approved on npmjs.com, finalize checks the registry and — if it's live — flips the target to ✅ with the live package URL and publishes the GitHub release (firing `release: published`).
+
+```bash
+bumpy publish finalize                 # reconcile every staged release
+bumpy publish finalize @myorg/pkg@1.2.3 # finalize just this one
+bumpy publish finalize --dry-run       # show what would be finalized
+```
+
+| Argument / Flag  | Description                                                       |
+| ---------------- | ----------------------------------------------------------------- |
+| `[name@version]` | Finalize only this release; omit to reconcile all staged releases |
+| `--dry-run`      | Report what would be finalized without editing any releases       |
+
+Idempotent — a version that's still staged is left untouched — so it's safe to run on a schedule, manually, or from an approval webhook. See [Staged publishing (finalizing a release)](github-actions.md#staged-publishing-finalizing-a-release) for wiring it into CI.
+
+## `bumpy publish reopen`
+
+Reopen a [staged](configuration.md#staged-publishing) release whose staged publish was **rejected** on npm. Rejection isn't publicly observable (a rejected stage looks the same as a pending one to the registry), so bumpy can't detect it — run this after `npm stage reject <stage-id>` to tell it.
+
+```bash
+npm stage reject <stage-id>          # reject on npm
+bumpy publish reopen @myorg/pkg@1.2.3 # then reopen the release
+```
+
+| Argument / Flag | Description                                          |
+| --------------- | ---------------------------------------------------- |
+| `name@version`  | The rejected release to reopen (required)            |
+| `--dry-run`     | Report what would change without editing the release |
+
+It flips the staged target back to **failed**, which rejoins the fix-forward path: the 🟡 marker clears, the version tag un-freezes, and the next `bumpy publish` re-stages the same version. To _abandon_ the version instead, don't reopen — ship a different version and the draft is superseded.
+
 ## `bumpy check`
 
 Verify that changed packages on the current branch have corresponding bump files. Compares your branch to the base branch, maps changed files to packages, and checks for matching bump files.

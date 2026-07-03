@@ -108,6 +108,8 @@ Requirements:
 - npm >= 11.15.0
 - The package must already exist on the npm registry (first publish cannot be staged)
 
+Staging is an **npm-registry feature** — it only applies to packages published through the standard npm flow. Packages that publish via a `publishCommand` (jsr, cargo, anything custom) have no staging equivalent, so they publish live as usual. In a mixed release, npm packages stage while custom-target packages go live immediately; each finalizes independently. Staged tracking also relies on **GitHub releases** (the staged state and finalize step live in the draft release), so it needs `gh` available — there's no staged flow without a GitHub release to track it on.
+
 ```json
 {
   "publish": {
@@ -116,6 +118,10 @@ Requirements:
   }
 }
 ```
+
+Because a staged package isn't live yet, bumpy does **not** mark the release as published: the publish target shows as **🟡 staged, awaiting approval** and the GitHub release stays a **draft** (so the `release: published` event doesn't fire prematurely). Going live is a two-step handoff: you **approve on npm** (`npm stage approve <stage-id>` — the 2FA gate), then run **`bumpy publish finalize`** to update the GitHub release (flip it to ✅ published, link the live package). You can run finalize by hand or on a schedule — see [Staged publishing (finalizing a release)](github-actions.md#staged-publishing-finalizing-a-release) for the full lifecycle and both setups.
+
+If you instead **reject** a stage on npm (`npm stage reject <stage-id>`), run **`bumpy publish reopen <name@version>`** — bumpy can't detect a rejection on its own, and this reopens the release so the next publish re-stages the fixed build. To abandon the version entirely, don't reopen; the next version bump supersedes the draft.
 
 ### Version PR config
 
