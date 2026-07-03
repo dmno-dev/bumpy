@@ -413,16 +413,22 @@ Because finalize decides what to publish by probing the registry (not from the p
 
 ### If a staged publish is rejected
 
-Approval is publicly observable (the package goes live, and finalize notices), but **rejection is not** — a rejected stage looks identical to a still-pending one to `npm info` (both are simply "not live"). So bumpy can't auto-detect a rejection, and the release would otherwise sit at 🟡 forever. When you reject a stage, tell bumpy:
+Approval is publicly observable (the package goes live, and finalize notices), but **rejection is not** — a rejected stage looks identical to a still-pending one to `npm info` (both are simply "not live"). So bumpy can't auto-detect a rejection, and the release would otherwise sit at 🟡 forever. When you reject a stage, tell bumpy — **this is a plain manual step; no CI, tooling, or stageflight required:**
 
 ```bash
 npm stage reject <stage-id>              # reject on npm
 bumpy publish reopen my-pkg@1.2.3        # tell bumpy — reopens the release for re-publish
 ```
 
-`publish reopen` flips the staged target back to **failed**, which rejoins the normal fix-forward path: the 🟡 marker clears, the version tag un-freezes, and the **next `bumpy publish` re-stages the same version** — so push your fix and let CI re-stage it. (If you're rejecting to _abandon_ the version rather than redo it, don't reopen — just ship a different version and the draft gets superseded automatically.)
+`publish reopen` flips the staged target back to **failed**, which rejoins the normal fix-forward path: the 🟡 marker clears, the version tag un-freezes, and the **next `bumpy publish` re-stages the same version** (whether that publish runs on your machine or in CI). Push your fix and re-publish. It needs no npm credentials — it only edits the GitHub release.
 
-If you approve/reject through tooling, have it run `bumpy publish reopen <tag>` (e.g. via a `repository_dispatch`) at rejection time, the mirror of the finalize nudge.
+You have three ways out of a rejected stage:
+
+- **Redo it** → `bumpy publish reopen <tag>`, then re-publish. Keeps the release notes/changelog; re-stages the same version.
+- **Start clean** → `gh release delete <tag>`, then re-publish. The next `bumpy publish` finds no draft and re-stages from scratch. (The nuclear option — you lose the draft's edits.)
+- **Abandon it** → do nothing. Ship a different version instead and the stale draft gets superseded automatically.
+
+If you approve/reject through tooling, have it run `bumpy publish reopen <tag>` (e.g. via a `repository_dispatch`) at rejection time — the mirror of the finalize nudge. But that's purely an automation convenience on top of the manual command above; the command is the baseline.
 
 ## Advanced: per-package conditional builds
 

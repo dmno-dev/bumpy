@@ -144,7 +144,9 @@ bumpy publish reopen @myorg/pkg@1.2.3 # then reopen the release
 | `name@version`  | The rejected release to reopen (required)            |
 | `--dry-run`     | Report what would change without editing the release |
 
-It flips the staged target back to **failed**, which rejoins the fix-forward path: the 🟡 marker clears, the version tag un-freezes, and the next `bumpy publish` re-stages the same version. To _abandon_ the version instead, don't reopen — ship a different version and the draft is superseded.
+It flips the staged target back to **failed**, which rejoins the fix-forward path: the 🟡 marker clears, the version tag un-freezes, and the next `bumpy publish` re-stages the same version. It's a fully manual escape hatch — no stageflight, tooling, or npm credentials needed (it only edits the GitHub release).
+
+Alternatives: `gh release delete <tag>` then re-publish re-stages from scratch (loses the draft's edits); or to _abandon_ the version, don't reopen at all — ship a different version and the draft is superseded. See [If a staged publish is rejected](github-actions.md#if-a-staged-publish-is-rejected).
 
 ## `bumpy check`
 
