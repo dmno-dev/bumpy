@@ -501,10 +501,17 @@ async function runPublishFlow(
     }
 
     // Handle tag movement: if nothing has been shipped yet, move tag to HEAD.
-    // "Shipped" includes staged targets: a staged tarball is already committed to the
-    // registry from the tagged SHA, so the tag must freeze there — moving it to HEAD on a
-    // re-run (while still awaiting approval) would point the release at a different commit
-    // than the artifact was built from.
+    //
+    // "Shipped" = a build reached the registry (success OR staged) — NOT merely "the run
+    // did something". A *failed* target ships nothing, so it deliberately does NOT freeze
+    // the tag: the fix-forward workflow (push more commits to get a failed publish through)
+    // relies on the tag tracking HEAD until a build actually lands, so the final tag sits
+    // on the commit that worked.
+    //
+    // A *staged* target does freeze it: the tarball is already committed to the registry
+    // from the tagged SHA (you can only approve/reject it, not fix-and-repush), so moving
+    // the tag to HEAD on a re-run while awaiting approval would point the release at a
+    // different commit than the artifact was built from.
     for (const release of toPublish) {
       const info = releaseMetadataByPkg.get(release.name);
       if (!info) continue;
