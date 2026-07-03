@@ -500,13 +500,19 @@ async function runPublishFlow(
       }
     }
 
-    // Handle tag movement: if no targets succeeded yet, move tag to HEAD
+    // Handle tag movement: if nothing has been shipped yet, move tag to HEAD.
+    // "Shipped" includes staged targets: a staged tarball is already committed to the
+    // registry from the tagged SHA, so the tag must freeze there — moving it to HEAD on a
+    // re-run (while still awaiting approval) would point the release at a different commit
+    // than the artifact was built from.
     for (const release of toPublish) {
       const info = releaseMetadataByPkg.get(release.name);
       if (!info) continue;
 
-      const anySucceeded = Object.values(info.metadata.targets).some((t) => t.status === 'success');
-      if (!anySucceeded) {
+      const anyShipped = Object.values(info.metadata.targets).some(
+        (t) => t.status === 'success' || t.status === 'staged',
+      );
+      if (!anyShipped) {
         // Safe to move tag to HEAD
         const tag = info.tag;
         const headSha = getHeadSha(rootDir);
@@ -525,7 +531,7 @@ async function runPublishFlow(
         if (headSha && tagSha && headSha !== tagSha) {
           const count = tryRunArgs(['git', 'rev-list', '--count', `${tag}..HEAD`], { cwd: rootDir });
           log.warn(
-            `  HEAD is ${count} commit(s) ahead of version tag ${tag} — some targets already published from tagged commit`,
+            `  HEAD is ${count} commit(s) ahead of version tag ${tag} — some targets already published or staged from tagged commit`,
           );
         }
       }
