@@ -306,6 +306,64 @@ jobs:
 
 `bumpy ci release --auto-publish` collapses version + publish into a single run, skipping the Version Packages PR. This forfeits the preview/review gate on version bumps — every merge to main with a bump file ships immediately. It's also incompatible with the [split-job pattern](#release-workflow-recommended-split-jobs) above, since both paths run in one command. Prefer the default flow. See [the CLI reference](cli.md#bumpy-ci-release) if you still need it.
 
+## Telling issues they're merged, not released (optional)
+
+With bumpy, a fix merges to `main` well before it's published — the Version Packages PR sits in between. But when a PR says `Closes #123`, GitHub closes that issue the instant the PR merges, so anyone watching sees "closed" and reasonably assumes it shipped. It hasn't yet.
+
+**This is optional** — set it up only if that gap bothers your issue reporters. Rather than fight GitHub's auto-close (you can't defer it, and reopening spams notifications), this leaves a clarifying comment on each auto-closed issue:
+
+> ✅ A fix has been merged to `main` in #142 and will ship in the next release. GitHub auto-closed this issue on merge, but the change isn't published yet.
+
+```yaml
+# .github/workflows/bumpy-issue-note.yml
+name: Issue Merge Note
+on:
+  pull_request_target:
+    types: [closed]
+    branches: [main] # your stable release branch — the "next release" wording assumes it
+
+permissions:
+  issues: write
+
+jobs:
+  note:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Comment on auto-closed issues
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          # closingIssuesReferences resolves every Closes/Fixes/Resolves variant — no body parsing
+          issues=$(gh api graphql \
+            -f query='
+              query($owner: String!, $repo: String!, $pr: Int!) {
+                repository(owner: $owner, name: $repo) {
+                  pullRequest(number: $pr) {
+                    closingIssuesReferences(first: 50) { nodes { number } }
+                  }
+                }
+              }' \
+            -f owner="${REPO%/*}" -f repo="${REPO#*/}" -F pr="$PR" \
+            --jq '.data.repository.pullRequest.closingIssuesReferences.nodes[].number')
+          [ -z "$issues" ] && { echo "PR #$PR closed no linked issues."; exit 0; }
+          for n in $issues; do
+            gh issue comment "$n" --repo "$REPO" --body \
+          "✅ A fix has been merged to \`main\` in #${PR} and will ship in the next release. GitHub auto-closed this issue on merge, but the change isn't published yet."
+          done
+```
+
+This needs no bumpy — it's pure `gh`, so it runs in seconds with no `bun install` or build. `pull_request_target` is what grants the `issues: write` token, but the job **never checks out or runs the PR's code** — it only reads the PR's linked issues and posts a comment. The only PR-controlled value that reaches the shell is the PR number (an integer), so there's nothing to inject.
+
+> **It won't run until it's on your default branch.** Like any `pull_request_target` workflow, GitHub uses the copy on the default branch — so it doesn't fire for the PR that _adds_ it. It starts working once merged to `main`.
+
+> **Scoped to your stable branch.** The `branches: [main]` filter is on the base branch. A merge to a [prerelease channel](prereleases.md) like `next` won't trigger it, since "the next release" would be a prerelease. Add channel branches to the filter if you want them covered.
+
+> **Want a "now released" follow-up too?** You can close the loop with a second comment when the release actually publishes — your GitHub release job already fires a `release: published` event (that's what `BUMPY_GH_TOKEN` enables). A workflow on that event can post "🎉 Released in `vX.Y.Z`" linking the release. Doing it reliably means telling issue references apart from PR references in the release body, so it's a bit more involved than this snippet — but the durable, meaningful link (the release itself) lives there.
+
 ## Advanced: per-package conditional builds
 
 If you have one expensive package whose build you only want to run when that package itself is being released, use `ci plan`'s `packages` output to gate per-package steps:
