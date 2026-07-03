@@ -222,6 +222,21 @@ async function main() {
           break;
         }
 
+        // `bumpy publish reopen <name@version>` — after `npm stage reject`, flip a rejected
+        // staged release back to failed so the next publish re-stages it.
+        if (args[1] === 'reopen') {
+          const reopenFlags = parseFlags(args.slice(2));
+          const tagArg = args[2] && !args[2].startsWith('--') ? args[2] : undefined;
+          const tag = (reopenFlags.tag as string | undefined) ?? tagArg;
+          if (!tag) {
+            log.error('`bumpy publish reopen` requires a release: `bumpy publish reopen <name@version>`');
+            process.exit(1);
+          }
+          const { reopenCommand } = await import('./commands/reopen.ts');
+          await reopenCommand(rootDir, { tag, dryRun: reopenFlags['dry-run'] === true });
+          break;
+        }
+
         const { publishCommand } = await import('./commands/publish.ts');
         if (flags.snapshot === true) {
           log.error('--snapshot requires a name, e.g. `bumpy publish --snapshot pr-123`.');
@@ -292,6 +307,8 @@ function printHelp() {
                             (--snapshot <name>: transient preview publish to a throwaway dist-tag)
     publish finalize        Finalize staged releases that have been approved and gone live
                             ([name@version]: finalize one release; otherwise reconcile all staged)
+    publish reopen          Reopen a staged release rejected on npm so it re-stages on next publish
+                            (name@version required; run after "npm stage reject")
     ci check                PR check — report pending releases, comment on PR
     ci comment              Post a pre-rendered comment (workflow_run half of the fork-comment split)
     ci plan                 Report what ci release would do (JSON + GitHub Actions outputs)
