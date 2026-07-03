@@ -564,7 +564,16 @@ async function runPublishFlow(
   }
   if (alreadyPublished.length > 0) {
     for (const name of alreadyPublished) {
-      log.dim(`  Skipping ${name} — all targets already published or staged (per draft release metadata)`);
+      const info = releaseMetadataByPkg.get(name)!;
+      const hasStaged = Object.values(info.metadata.targets).some((t) => t.status === 'staged');
+      if (hasStaged) {
+        // A staged package is intentionally skipped (don't re-stage). But if the user rejected
+        // it on npm, this skip is the wall they hit — point them at the reopen escape hatch.
+        log.dim(`  Skipping ${name} — staged, awaiting approval`);
+        log.dim(`    (rejected it on npm? run \`bumpy publish reopen ${info.tag}\` to re-stage)`);
+      } else {
+        log.dim(`  Skipping ${name} — all targets already published (per draft release metadata)`);
+      }
     }
     toPublish = toPublish.filter((r) => !alreadyPublished.includes(r.name));
     releasePlan.releases = toPublish;
