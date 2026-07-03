@@ -75,8 +75,20 @@ async function getWorkspaceGlobs(rootDir: string, pm: PackageManager): Promise<s
 /**
  * Files that may contain catalog definitions, in the order they're applied.
  * Later entries override earlier ones (matching loadCatalogs behavior).
+ * `.yarnrc.yml` is where Yarn (>=4.10) stores catalogs.
  */
-export const CATALOG_FILES = ['pnpm-workspace.yaml', 'package.json'] as const;
+export const CATALOG_FILES = ['pnpm-workspace.yaml', '.yarnrc.yml', 'package.json'] as const;
+
+/**
+ * The YAML file a given package manager stores catalog definitions in, if any.
+ * pnpm uses pnpm-workspace.yaml; Yarn (>=4.10) uses .yarnrc.yml. Both share the
+ * same `catalog` / `catalogs` shape. npm and bun keep catalogs in package.json.
+ */
+export function catalogYamlFile(pm: PackageManager): string | null {
+  if (pm === 'pnpm') return 'pnpm-workspace.yaml';
+  if (pm === 'yarn') return '.yarnrc.yml';
+  return null;
+}
 
 /**
  * Normalize a catalog name to its canonical form.
@@ -88,8 +100,12 @@ function normalizeCatalogName(name: string): string {
   return name === 'default' ? '' : name;
 }
 
-/** Parse catalog definitions from the raw contents of pnpm-workspace.yaml and root package.json */
-export function parseCatalogs(pnpmWorkspaceYaml: string | null, rootPackageJson: string | null): CatalogMap {
+/**
+ * Parse catalog definitions from the raw contents of a workspace YAML file and
+ * the root package.json. `workspaceYaml` is pnpm-workspace.yaml for pnpm or
+ * .yarnrc.yml for Yarn — both use the same `catalog` / `catalogs` shape.
+ */
+export function parseCatalogs(workspaceYaml: string | null, rootPackageJson: string | null): CatalogMap {
   const catalogs: CatalogMap = new Map();
 
   const addNamed = (raw: Record<string, Record<string, string>>): void => {
@@ -98,9 +114,9 @@ export function parseCatalogs(pnpmWorkspaceYaml: string | null, rootPackageJson:
     }
   };
 
-  if (pnpmWorkspaceYaml) {
+  if (workspaceYaml) {
     try {
-      const parsed = yaml.load(pnpmWorkspaceYaml) as {
+      const parsed = yaml.load(workspaceYaml) as {
         catalog?: Record<string, string>;
         catalogs?: Record<string, Record<string, string>>;
       } | null;
@@ -147,14 +163,16 @@ export function parseCatalogs(pnpmWorkspaceYaml: string | null, rootPackageJson:
   return catalogs;
 }
 
-/** Load catalog definitions from pnpm-workspace.yaml or root package.json */
+/** Load catalog definitions from the package manager's workspace YAML and/or root package.json */
 async function loadCatalogs(rootDir: string, pm: PackageManager): Promise<CatalogMap> {
-  // pnpm-workspace.yaml is only read for pnpm — other PMs don't recognize it
-  let pnpmYaml: string | null = null;
-  if (pm === 'pnpm') {
-    const wsFile = resolve(rootDir, 'pnpm-workspace.yaml');
+  // Only the package manager's own YAML file is consulted (pnpm-workspace.yaml
+  // for pnpm, .yarnrc.yml for Yarn) — other PMs don't recognize it.
+  let workspaceYaml: string | null = null;
+  const yamlFile = catalogYamlFile(pm);
+  if (yamlFile) {
+    const wsFile = resolve(rootDir, yamlFile);
     if (await exists(wsFile)) {
-      pnpmYaml = await readText(wsFile);
+      workspaceYaml = await readText(wsFile);
     }
   }
 
@@ -164,7 +182,7 @@ async function loadCatalogs(rootDir: string, pm: PackageManager): Promise<Catalo
     pkgJsonText = await readText(pkgJsonPath);
   }
 
-  return parseCatalogs(pnpmYaml, pkgJsonText);
+  return parseCatalogs(workspaceYaml, pkgJsonText);
 }
 
 /** Extract the catalog name from a `catalog:` / `catalog:<name>` range, normalizing the default alias */

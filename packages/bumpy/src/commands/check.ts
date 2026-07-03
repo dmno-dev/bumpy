@@ -10,6 +10,7 @@ import {
   parseCatalogs,
   diffCatalogMaps,
   isCatalogRefAffected,
+  catalogYamlFile,
   CATALOG_FILES,
 } from '../utils/package-manager.ts';
 import { readText, exists } from '../utils/fs.ts';
@@ -421,18 +422,20 @@ async function getChangedCatalogEntries(
 
   const pm = await detectPackageManager(rootDir);
 
+  // The workspace YAML that may hold catalogs: pnpm-workspace.yaml for pnpm,
+  // .yarnrc.yml for Yarn, and none for npm/bun (which use package.json).
+  const yamlFile = catalogYamlFile(pm);
+
   // Load "after" (current working tree state)
   const afterYaml =
-    pm === 'pnpm' && (await exists(resolve(rootDir, 'pnpm-workspace.yaml')))
-      ? await readText(resolve(rootDir, 'pnpm-workspace.yaml'))
-      : null;
+    yamlFile && (await exists(resolve(rootDir, yamlFile))) ? await readText(resolve(rootDir, yamlFile)) : null;
   const afterPkgJson = (await exists(resolve(rootDir, 'package.json')))
     ? await readText(resolve(rootDir, 'package.json'))
     : null;
   const afterCatalogs = parseCatalogs(afterYaml, afterPkgJson);
 
-  // Load "before" (state at base ref). pnpm-workspace.yaml is only relevant for pnpm.
-  const beforeYaml = pm === 'pnpm' ? readFileAtRef(rootDir, baseRef, 'pnpm-workspace.yaml') : null;
+  // Load "before" (state at base ref).
+  const beforeYaml = yamlFile ? readFileAtRef(rootDir, baseRef, yamlFile) : null;
   const beforePkgJson = readFileAtRef(rootDir, baseRef, 'package.json');
   const beforeCatalogs = parseCatalogs(beforeYaml, beforePkgJson);
 

@@ -1,9 +1,14 @@
 import { test, expect, describe } from 'bun:test';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { resolve } from 'node:path';
 import {
   parseCatalogs,
   diffCatalogMaps,
   isCatalogRefAffected,
   resolveCatalogDep,
+  catalogYamlFile,
+  detectWorkspaces,
   type CatalogMap,
 } from '../../src/utils/package-manager.ts';
 
@@ -22,6 +27,31 @@ catalog:
 `;
     const catalogs = parseCatalogs(yaml, null);
     expect(catalogs.get('')).toEqual({ react: '^19.0.0', lodash: '^4.17.21' });
+  });
+
+  test('parses default catalog from .yarnrc.yml (same shape as pnpm)', () => {
+    // Yarn (>=4.10) stores catalogs in .yarnrc.yml using the same catalog/catalogs keys
+    const yaml = `
+catalog:
+  react: ^19.0.0
+  lodash: ^4.17.21
+`;
+    const catalogs = parseCatalogs(yaml, null);
+    expect(catalogs.get('')).toEqual({ react: '^19.0.0', lodash: '^4.17.21' });
+  });
+
+  test('parses named catalogs from .yarnrc.yml', () => {
+    const yaml = `
+catalog:
+  lodash: ^4.17.21
+catalogs:
+  react18:
+    react: ^18.3.1
+    react-dom: ^18.3.1
+`;
+    const catalogs = parseCatalogs(yaml, null);
+    expect(catalogs.get('')).toEqual({ lodash: '^4.17.21' });
+    expect(catalogs.get('react18')).toEqual({ react: '^18.3.1', 'react-dom': '^18.3.1' });
   });
 
   test('parses named catalogs from pnpm-workspace.yaml', () => {
@@ -204,5 +234,61 @@ describe('resolveCatalogDep (sanity check after refactor)', () => {
   test('resolves catalog:default to the default catalog', () => {
     const catalogs: CatalogMap = new Map([['', { react: '^19.0.0' }]]);
     expect(resolveCatalogDep('react', 'catalog:default', catalogs)).toBe('^19.0.0');
+  });
+});
+
+describe('catalogYamlFile', () => {
+  test('pnpm uses pnpm-workspace.yaml', () => {
+    expect(catalogYamlFile('pnpm')).toBe('pnpm-workspace.yaml');
+  });
+
+  test('yarn uses .yarnrc.yml', () => {
+    expect(catalogYamlFile('yarn')).toBe('.yarnrc.yml');
+  });
+
+  test('npm and bun have no workspace catalog yaml', () => {
+    expect(catalogYamlFile('npm')).toBeNull();
+    expect(catalogYamlFile('bun')).toBeNull();
+  });
+});
+
+describe('detectWorkspaces catalog loading', () => {
+  async function withTempDir(fn: (dir: string) => Promise<void>): Promise<void> {
+    const dir = await mkdtemp(resolve(tmpdir(), 'bumpy-pm-'));
+    try {
+      await fn(dir);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }
+
+  test('loads Yarn catalogs from .yarnrc.yml (issue #148)', async () => {
+    await withTempDir(async (dir) => {
+      await writeFile(resolve(dir, 'yarn.lock'), '');
+      await writeFile(resolve(dir, 'package.json'), JSON.stringify({ name: 'root', workspaces: ['packages/*'] }));
+      await writeFile(
+        resolve(dir, '.yarnrc.yml'),
+        `catalog:\n  react: ^19.0.0\ncatalogs:\n  testing:\n    jest: ^30.0.0\n`,
+      );
+
+      const info = await detectWorkspaces(dir);
+      expect(info.packageManager).toBe('yarn');
+      expect(info.catalogs.get('')).toEqual({ react: '^19.0.0' });
+      expect(info.catalogs.get('testing')).toEqual({ jest: '^30.0.0' });
+    });
+  });
+
+  test('does not read .yarnrc.yml for a pnpm workspace', async () => {
+    await withTempDir(async (dir) => {
+      await writeFile(resolve(dir, 'pnpm-lock.yaml'), '');
+      await writeFile(resolve(dir, 'package.json'), JSON.stringify({ name: 'root' }));
+      // A stray .yarnrc.yml should be ignored when the PM is pnpm
+      await writeFile(resolve(dir, '.yarnrc.yml'), `catalog:\n  react: ^18.0.0\n`);
+      await writeFile(resolve(dir, 'pnpm-workspace.yaml'), `catalog:\n  react: ^19.0.0\n`);
+
+      const info = await detectWorkspaces(dir);
+      expect(info.packageManager).toBe('pnpm');
+      expect(info.catalogs.get('')).toEqual({ react: '^19.0.0' });
+    });
   });
 });
