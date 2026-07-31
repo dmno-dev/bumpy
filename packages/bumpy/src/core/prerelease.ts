@@ -3,6 +3,8 @@ import semver from 'semver';
 import { readText, writeText, updateJsonFields, updateJsonNestedField } from '../utils/fs.ts';
 import { runArgsAsync, tryRunArgs } from '../utils/shell.ts';
 import { listTags } from './git.ts';
+import { getNpmTarget, packagePublishes } from './targets/registry.ts';
+import { npmEffectiveRegistry } from './targets/npm.ts';
 import type { ResolvedChannel } from './channels.ts';
 import type { ReleasePlan, PlannedRelease, WorkspacePackage } from '../types.ts';
 
@@ -77,7 +79,12 @@ async function fetchGitHead(name: string, version: string, registry?: string): P
 
 /** Whether a package publishes through the npm registry (vs custom command / git-tag tracking) */
 export function usesNpmRegistry(pkg: WorkspacePackage): boolean {
-  return !pkg.bumpy?.publishCommand && !pkg.bumpy?.skipNpmPublish && !pkg.private;
+  return getNpmTarget(pkg) !== undefined;
+}
+
+/** The registry a package's npm target publishes to (full fallback chain incl. publishConfig.registry) */
+export function npmTargetRegistry(pkg: WorkspacePackage): string | undefined {
+  return npmEffectiveRegistry(pkg, pkg.bumpy || {}, getNpmTarget(pkg)?.options ?? {});
 }
 
 /** Query published prerelease state for one package at a target version */
@@ -88,7 +95,7 @@ export async function getPublishedPrereleaseState(
   rootDir: string,
 ): Promise<PublishedPrereleaseState> {
   if (usesNpmRegistry(pkg)) {
-    const versions = await fetchPublishedVersions(pkg.name, pkg.bumpy?.registry);
+    const versions = await fetchPublishedVersions(pkg.name, npmTargetRegistry(pkg));
     return {
       counters: extractPrereleaseCounters(versions, target, preid),
       stablePublished: versions.includes(target),
@@ -146,7 +153,7 @@ export async function buildChannelReleasePlan(
       const pkg = packages.get(release.name);
       if (!pkg) return;
       // Unpublishable packages can't participate in a registry-consumable cycle
-      if (pkg.private && !pkg.bumpy?.publishCommand) return;
+      if (pkg.private && !packagePublishes(pkg)) return;
 
       const target = release.newVersion; // stable target from the bump files
       const state = await getPublishedPrereleaseState(pkg, target, channel.preid, rootDir);
@@ -161,7 +168,7 @@ export async function buildChannelReleasePlan(
       if (!opts.forDisplay && state.counters.length > 0 && headSha) {
         const latest = `${target}-${channel.preid}.${Math.max(...state.counters)}`;
         const publishedFromHead = usesNpmRegistry(pkg)
-          ? (await fetchGitHead(pkg.name, latest, pkg.bumpy?.registry)) === headSha
+          ? (await fetchGitHead(pkg.name, latest, npmTargetRegistry(pkg))) === headSha
           : tryRunArgs(['git', 'rev-parse', `refs/tags/${pkg.name}@${latest}`], { cwd: rootDir }) === headSha;
         if (publishedFromHead) {
           alreadyPublished.push({ name: release.name, version: latest });
@@ -246,7 +253,7 @@ export function channelDisplayPlan(
   const releases = stablePlan.releases
     .filter((r) => {
       const pkg = packages.get(r.name);
-      return !!pkg && !(pkg.private && !pkg.bumpy?.publishCommand);
+      return !!pkg && !(pkg.private && !packagePublishes(pkg));
     })
     .map((r) => ({ ...r, newVersion: `${r.newVersion}-${channel.preid}.x` }));
   return { ...stablePlan, releases };

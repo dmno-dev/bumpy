@@ -21,7 +21,8 @@ Bumpy is configured via `.bumpy/_config.json`, created by `bumpy init`. Per-pack
 | `versionCommitMessage`       | `string`                               | —                                | Customize the version commit message (see below)                                                       |
 | `changedFilePatterns`        | `string[]`                             | `["**"]`                         | Glob patterns to filter which changed files count toward marking a package as changed                  |
 | `ignoredPackageJsonFields`   | `string[]`                             | `["devDependencies"]`            | `package.json` fields whose change alone doesn't require a bump file (see below)                       |
-| `publish`                    | `object`                               | see below                        | Publishing pipeline config                                                                             |
+| `publish`                    | `object`                               | see below                        | Publishing pipeline config (npm target defaults)                                                       |
+| `targets`                    | `object`                               | `{}`                             | Publish target defaults + named reusable target instances (see [Publish targets](#publish-targets))    |
 | `gitUser`                    | `{ name, email }`                      | bumpy-bot                        | Git identity for CI commits                                                                            |
 | `versionPr`                  | `{ title, branch, preamble }`          | see below                        | Customize the version PR                                                                               |
 | `allowCustomCommands`        | `boolean \| string[]`                  | `false`                          | Allow per-package custom commands from `package.json` (see below)                                      |
@@ -117,6 +118,103 @@ Requirements:
 }
 ```
 
+### Publish targets
+
+A package can publish to any number of **targets** — npm is just the default one. Each target is an instance of a target type; the built-in types are:
+
+| Type                 | Publishes via                       | Auth                              | Notes                                                        |
+| -------------------- | ----------------------------------- | --------------------------------- | ------------------------------------------------------------ |
+| `npm`                | `npm publish` (or configured PM)    | OIDC / `NPM_TOKEN` / `.npmrc`     | Supports dist-tags, prereleases, snapshots, staged publishes |
+| `jsr`                | `npx jsr publish`                   | OIDC (linked GitHub repo)         | Requires a `jsr.json`; no dist-tags, so no snapshots         |
+| `pypi`               | `uv build` + `uv publish`           | OIDC / `UV_PUBLISH_TOKEN`         | Requires a `pyproject.toml`; stable versions only            |
+| `vscode-marketplace` | `vsce publish --packagePath <vsix>` | `VSCE_PAT` (or Azure credentials) | Stable versions only — the Marketplace rejects prereleases   |
+| `open-vsx`           | `ovsx publish <vsix>`               | `OVSX_PAT`                        | Stable versions only                                         |
+| `custom`             | your shell command(s)               | yours                             | The declarative escape hatch for anything else               |
+
+Set a package's targets with `publishTargets` (in the root config's `packages` map or the package's own `"bumpy"` config):
+
+```jsonc
+{
+  "packages": {
+    "my-lib": { "publishTargets": ["npm"] }, // the implicit default for public packages
+    "my-vscode-extension": {
+      // a private package can publish to marketplaces while never touching npm
+      "publishTargets": ["vscode-marketplace", "open-vsx"],
+    },
+    "my-cli": {
+      "publishTargets": [
+        "npm",
+        { "type": "custom", "name": "homebrew", "command": "./scripts/update-tap.sh {{version}}" },
+      ],
+    },
+  },
+}
+```
+
+Each entry is either a **string** (a built-in type name, or a named instance from the root `targets` map) or an **inline definition** (`{ "type": ..., ...options }`). The instance `name` (defaults to the type) keys the per-target publish state in the GitHub release metadata, so keep it stable.
+
+**Shared config (`targets` map).** Root-level `targets` holds two kinds of entries:
+
+- a key matching a built-in type → **type-level defaults** for every instance of that type
+- any other key → a **named, reusable instance** (requires `"type"`), referenced by name from any package
+
+```jsonc
+{
+  "targets": {
+    "npm": { "provenance": true }, // defaults for all npm instances
+    "ghp": { "type": "npm", "registry": "https://npm.pkg.github.com" }, // named instance
+  },
+  "packages": {
+    "@myorg/*": { "publishTargets": ["npm", "ghp"] }, // publish to both registries
+  },
+}
+```
+
+The legacy `publish` block is the npm type's default options — `targets.npm` and per-instance options layer on top of it.
+
+**Execution + retries.** Targets run in declared order; one target failing doesn't block its siblings. Publish state is tracked per target in the draft GitHub release, so a partial failure (npm succeeded, Open VSX errored) retries only the failed target on the next CI run. The git tag is created as soon as any target succeeds; the release is finalized once every target has succeeded (or been skipped).
+
+**Shared artifacts.** Targets that publish the same artifact share one build: `vscode-marketplace` and `open-vsx` both publish the `.vsix` that `vsce package` produces, so it's built once and uploaded to both registries — the two published extensions are guaranteed byte-identical.
+
+**Capabilities.** Marketplace targets don't participate in [snapshot releases](snapshots.md) or prerelease [channels](prereleases.md) (the VS Code Marketplace only accepts plain `x.y.z` versions), and JSR skips snapshots (no dist-tags to install them from) — those publishes record the target as `skipped` rather than failing.
+
+**Legacy fields.** `publishCommand` maps to a `custom` target and `skipNpmPublish` to an empty target list; both keep working, but `publishTargets` wins if present.
+
+#### JSR notes
+
+- `jsr.json` must exist (name + exports), but commit its `version` as `"0.0.0"` and forget it — bumpy syncs it from package.json into the working tree at publish time. Publishes run with `--allow-dirty` for this reason.
+- `workspace:`/`catalog:` dependency specifiers in package.json are resolved automatically before publishing (JSR reads npm ranges from package.json and silently drops protocol specifiers).
+- JSR has **no create-on-first-publish**: claim each package in your scope on jsr.io first, and link the GitHub repo to publish token-lessly via OIDC (`id-token: write`). Unclaimed packages fail with guidance instead of publishing.
+- Options: `allowSlowTypes: true` passes `--allow-slow-types`; `publishArgs` appends anything else.
+- Credit: the JSR publishing behavior here (publish-time version sync, claim-first bootstrap) is modeled on [Drake Costa's](https://github.com/Saeris) setup in [mirrordown](https://github.com/mirrordown/mirrordown) — thanks Drake!
+
+#### PyPI notes
+
+bumpy's versioning spine is `package.json`, so a Python package in the workspace gets a **stub `package.json`** next to its `pyproject.toml`:
+
+```json
+{
+  "name": "my-py-tool",
+  "version": "1.2.0",
+  "private": true,
+  "bumpy": { "publishTargets": ["pypi"] }
+}
+```
+
+Bump files, changelogs, and the release PR all flow through the stub; at publish time the target syncs the version into `pyproject.toml` (`[project].version` — commit any placeholder), builds with `uv build` into an isolated per-version directory (so stale `dist/` artifacts can never ride along), and uploads with `uv publish`.
+
+- **Auth**: [PyPI trusted publishing](https://docs.pypi.org/trusted-publishers/) (OIDC) works token-lessly on GitHub Actions with `id-token: write` — `uv publish` picks it up automatically. Otherwise set `UV_PUBLISH_TOKEN`.
+- The PyPI project name comes from `pyproject.toml` `[project].name`, not the stub's npm name.
+- `dynamic = ["version"]` (setuptools-scm etc.) can't be synced — use a static version.
+- PEP 440 doesn't cover bumpy's semver prerelease/snapshot suffixes, so channel prereleases and snapshots record the target as `skipped`.
+- Options: `index` (alternative upload URL), `buildArgs` / `publishArgs`.
+
+#### VS Code extension notes
+
+- The `.vsix` is packaged with `vsce package --no-dependencies` by default — vsce's npm-based dependency detection breaks in workspace monorepos and silently ships broken extensions. Bundled extensions (the norm) don't need it; set `dependencies: true` on the target to restore vsce's default. `packageArgs` / `publishArgs` append extra flags to the respective step.
+- Marketplace auth: `VSCE_PAT` by default, or set `azureCredential: true` to publish with `--azure-credential` (short-lived tokens minted via Azure OIDC — pair with `azure/login` in CI, no long-lived PAT secret).
+- If the extension bundles a workspace sibling from `devDependencies`, list it in [`releaseTriggeringDevDeps`](#release-triggering-devdependencies) so the extension re-releases when the bundled package changes.
+
 ### Version PR config
 
 The `versionPr` object customizes the PR that `bumpy ci release` creates:
@@ -178,10 +276,11 @@ Per-package settings can be defined in two places:
 | -------------------------- | -------------------------- | -------------------------------------------------------------------------------------- |
 | `managed`                  | `boolean`                  | Opt this package in or out of versioning                                               |
 | `access`                   | `"public" \| "restricted"` | Override the global access level                                                       |
-| `publishCommand`           | `string \| string[]`       | Custom command(s) to publish this package (replaces npm publish)                       |
+| `publishTargets`           | `array`                    | Where this package publishes (see [Publish targets](#publish-targets))                 |
+| `publishCommand`           | `string \| string[]`       | _Legacy_ — custom publish command(s); prefer a `custom` entry in `publishTargets`      |
 | `buildCommand`             | `string`                   | Command to run before publishing                                                       |
 | `registry`                 | `string`                   | Custom npm registry URL                                                                |
-| `skipNpmPublish`           | `boolean`                  | Don't publish to npm (still creates git tags)                                          |
+| `skipNpmPublish`           | `boolean`                  | _Legacy_ — don't publish to npm (still creates git tags); prefer `publishTargets: []`  |
 | `checkPublished`           | `string`                   | Custom command that outputs the currently published version                            |
 | `changedFilePatterns`      | `string[]`                 | Glob patterns for changed-file detection (replaces root setting, not merged)           |
 | `dependencyBumpRules`      | `object`                   | Per-package override for dependency propagation rules                                  |
@@ -191,7 +290,7 @@ Per-package settings can be defined in two places:
 
 ### Custom commands and `allowCustomCommands`
 
-The `publishCommand`, `buildCommand`, and `checkPublished` fields run shell commands during publishing. Because these execute with CI credentials, bumpy distinguishes between two trust levels:
+The `publishCommand`, `buildCommand`, and `checkPublished` fields — and inline `publishTargets` entries carrying a `command`/`checkPublished` — run shell commands during publishing. Because these execute with CI credentials, bumpy distinguishes between two trust levels:
 
 - **Root config** (`.bumpy/_config.json` → `packages`): always trusted — repo admins control this file.
 - **Per-package config** (`package.json` → `"bumpy"`): requires opt-in via `allowCustomCommands` in the root config.
@@ -212,34 +311,35 @@ Or restrict to specific packages/globs:
 }
 ```
 
-This prevents a contributor from introducing arbitrary shell commands via a package's `package.json` without the root config explicitly allowing it.
+This prevents a contributor from introducing arbitrary shell commands via a package's `package.json` without the root config explicitly allowing it. Referencing built-in or root-defined targets by name (`"publishTargets": ["vscode-marketplace"]`) is plain data and never requires `allowCustomCommands`.
 
-### Example: custom publish for a VSCode extension
+### Example: publishing a VSCode extension
 
-In `.bumpy/_config.json` (recommended — no `allowCustomCommands` needed):
+Use the built-in targets — they package the `.vsix` once (via `vsce package`) and publish it to both registries, skip prerelease/snapshot publishes automatically, and track each registry separately for retries:
 
 ```json
 {
   "packages": {
     "my-vscode-extension": {
-      "publishCommand": "vsce publish",
-      "skipNpmPublish": true
+      "publishTargets": ["vscode-marketplace", "open-vsx"]
     }
   }
 }
 ```
 
-Or in the package's `package.json` (requires `allowCustomCommands`):
+Or in the package's own `package.json` (no `allowCustomCommands` needed — target references are plain data):
 
 ```json
 {
   "name": "my-vscode-extension",
+  "private": true,
   "bumpy": {
-    "publishCommand": "vsce publish",
-    "skipNpmPublish": true
+    "publishTargets": ["vscode-marketplace", "open-vsx"]
   }
 }
 ```
+
+Mark the extension `"private": true` so it never goes to npm; explicit `publishTargets` still publish it to the marketplaces. Auth comes from `VSCE_PAT` / `OVSX_PAT` environment variables in CI.
 
 ### Example: cascade from core to plugins (source-side)
 
@@ -327,10 +427,15 @@ See the [Changelog Formatters](./changelog-formatters.md) docs for full details 
     "provenance": true,
     "npmStaged": true
   },
+  "targets": {
+    "ghp": { "type": "npm", "registry": "https://npm.pkg.github.com" }
+  },
   "packages": {
     "@myorg/vscode-extension": {
-      "publishCommand": "vsce publish",
-      "skipNpmPublish": true
+      "publishTargets": ["vscode-marketplace", "open-vsx"]
+    },
+    "@myorg/cli": {
+      "publishTargets": ["npm", "ghp"]
     }
   },
   "allowCustomCommands": ["@myorg/deploy-*"]

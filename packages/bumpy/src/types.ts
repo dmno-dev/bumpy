@@ -64,6 +64,35 @@ export const DEP_TYPES: DepType[] = ['dependencies', 'devDependencies', 'peerDep
 
 // ---- Config ----
 
+/**
+ * A target entry in the root config's `targets` map.
+ * - Key matches a built-in target type (e.g. "npm", "vscode-marketplace") → type-level
+ *   defaults applied to every instance of that type.
+ * - Any other key → a named, reusable target instance; `type` is required and the key
+ *   becomes the instance name (used in release metadata and `publishTargets` references).
+ * Remaining fields are target-type-specific options.
+ */
+export interface TargetDefinition {
+  type?: string;
+  [option: string]: unknown;
+}
+
+/** An inline target entry in a package's `publishTargets` list */
+export interface PackageTargetEntry {
+  type: string;
+  /** Instance name — the stable key used in release metadata. Defaults to `type`. */
+  name?: string;
+  [option: string]: unknown;
+}
+
+/**
+ * Per-package publish target list. Each entry is either:
+ * - a string referencing a built-in type ("npm", "jsr") or a named instance from the
+ *   root config's `targets` map, or
+ * - an inline definition (`{ type, ...options }`).
+ */
+export type PublishTargetsInput = Array<string | PackageTargetEntry>;
+
 export interface PublishConfig {
   /** Package manager to use for packing. "auto" detects from lockfile. Default: "auto" */
   packManager: 'auto' | 'npm' | 'pnpm' | 'bun' | 'yarn';
@@ -181,6 +210,12 @@ export interface BumpyConfig {
   allowCustomCommands: boolean | string[];
   packages: Record<string, PackageConfig>;
   publish: PublishConfig;
+  /**
+   * Publish target configuration shared across packages. Keys matching a built-in
+   * target type set type-level defaults; other keys define named, reusable instances
+   * (must include `type`). See {@link TargetDefinition}.
+   */
+  targets: Record<string, TargetDefinition>;
   /** Git identity used for CI commits. Defaults to bumpy-bot. */
   gitUser: { name: string; email: string };
   /** Version PR settings */
@@ -198,9 +233,17 @@ export interface PackageConfig {
   /** Explicitly opt in or out of version management (overrides private/ignore/include) */
   managed?: boolean;
   access?: 'public' | 'restricted';
+  /**
+   * Publish targets for this package. Overrides the implicit default (npm for public
+   * packages) and the legacy `publishCommand`/`skipNpmPublish` fields. See
+   * {@link PublishTargetsInput}.
+   */
+  publishTargets?: PublishTargetsInput;
+  /** @deprecated Use `publishTargets: [{ type: "custom", command: ... }]` instead. */
   publishCommand?: string | string[];
   buildCommand?: string;
   registry?: string;
+  /** @deprecated Use `publishTargets` without an "npm" entry (e.g. `[]`) instead. */
   skipNpmPublish?: boolean;
   /** Command to check if a version is already published. Should output the published version string. */
   checkPublished?: string;
@@ -254,6 +297,7 @@ export const DEFAULT_CONFIG: BumpyConfig = {
   allowCustomCommands: false,
   packages: {},
   publish: { ...DEFAULT_PUBLISH_CONFIG },
+  targets: {},
   gitUser: { name: 'bumpy-bot', email: '276066384+bumpy-bot@users.noreply.github.com' },
   versionPr: {
     title: '🐸 Versioned release',
@@ -323,6 +367,21 @@ export interface WorkspacePackage {
   peerDependencies: Record<string, string>;
   optionalDependencies: Record<string, string>;
   bumpy?: PackageConfig; // per-package config from package.json or .bumpy.config.json
+  /**
+   * Publish targets resolved at workspace discovery (from `publishTargets` config,
+   * legacy fields, or the implicit npm default). Attached by `discoverWorkspace` so
+   * downstream consumers don't need the root config to answer "where does this
+   * package publish". May be absent for hand-constructed packages (tests) — use
+   * `getPackageTargets()` from core/targets to resolve lazily.
+   */
+  targets?: import('./core/targets/types.ts').ResolvedTarget[];
+  /**
+   * Set when target resolution failed at discovery (unknown target name, invalid
+   * targets-map entry, ...). Discovery stays usable so read-only commands (status,
+   * add, check) keep working with a warning; publish flows refuse to run until the
+   * config is fixed.
+   */
+  targetsError?: string;
 }
 
 export type PackageManager = 'npm' | 'pnpm' | 'yarn' | 'bun';
