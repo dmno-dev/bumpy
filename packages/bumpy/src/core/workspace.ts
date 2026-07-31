@@ -3,6 +3,7 @@ import { readdir, stat } from 'node:fs/promises';
 import { readJson, exists } from '../utils/fs.ts';
 import { detectWorkspaces, type CatalogMap } from '../utils/package-manager.ts';
 import { loadPackageConfig, isPackageManaged } from './config.ts';
+import { resolvePackageTargets } from './targets/registry.ts';
 import type { BumpyConfig, WorkspacePackage } from '../types.ts';
 
 export interface WorkspaceDiscoveryResult {
@@ -133,6 +134,7 @@ async function loadWorkspacePackage(
   if (!name) return null;
 
   const bumpy = await loadPackageConfig(dir, config, name);
+  const isPrivate = !!pkg.private;
 
   return {
     name,
@@ -140,11 +142,14 @@ async function loadWorkspacePackage(
     dir: resolve(dir),
     relativeDir: relative(rootDir, dir) || '.',
     packageJson: pkg,
-    private: !!pkg.private,
+    private: isPrivate,
     dependencies: (pkg.dependencies as Record<string, string>) || {},
     devDependencies: (pkg.devDependencies as Record<string, string>) || {},
     peerDependencies: (pkg.peerDependencies as Record<string, string>) || {},
     optionalDependencies: (pkg.optionalDependencies as Record<string, string>) || {},
     bumpy,
+    // Resolve publish targets once at discovery so downstream consumers can answer
+    // "where does this package publish" without the root config in hand
+    targets: resolvePackageTargets({ name, private: isPrivate }, bumpy, config),
   };
 }

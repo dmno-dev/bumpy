@@ -1,151 +1,60 @@
 import { resolve } from 'node:path';
-import { existsSync, readFileSync, writeFileSync, appendFileSync } from 'node:fs';
 import { unlink } from 'node:fs/promises';
+import semver from 'semver';
 import { readJson, updateJsonNestedField } from '../utils/fs.ts';
-import { runStreaming, runArgsAsync, tryRunArgs, sq } from '../utils/shell.ts';
+import { runStreaming } from '../utils/shell.ts';
 import { log, colorize } from '../utils/logger.ts';
 import { createTag, tagExists } from './git.ts';
 import { DependencyGraph } from './dep-graph.ts';
 import { stripProtocol } from './semver.ts';
 import { resolveCatalogDep, type CatalogMap } from '../utils/package-manager.ts';
+import { getPackageTargets } from './targets/registry.ts';
+import type { ReleaseKind, ResolvedTarget, TargetPublishContext } from './targets/types.ts';
 import type { ReleasePlan, PlannedRelease, WorkspacePackage, BumpyConfig, PackageManager } from '../types.ts';
+
+// Re-exported for callers/tests that historically imported these from the pipeline
+export { detectOidcProvider, willUseOidcExclusively } from './targets/npm.ts';
 
 export interface PublishOptions {
   dryRun?: boolean;
   tag?: string; // npm dist-tag (e.g., "next", "beta")
   /** Skip creating git tags (snapshot releases are ephemeral and never tagged) */
   noTag?: boolean;
+  /** What kind of release this is — targets can opt out of snapshots/prereleases */
+  releaseKind?: ReleaseKind;
+  /**
+   * Target instance names that already succeeded in a previous run, per package
+   * (from GitHub release metadata). These are skipped, giving per-target resume:
+   * if npm succeeded and open-vsx failed, the retry only re-runs open-vsx.
+   */
+  completedTargets?: Map<string, Set<string>>;
+}
+
+export interface TargetOutcome {
+  /** Target instance name (the release-metadata key) */
+  target: string;
+  type: string;
+  status: 'success' | 'failed' | 'skipped';
+  error?: string;
+  reason?: string;
 }
 
 export interface PublishResult {
+  /** Packages where at least one target published this run */
   published: { name: string; version: string }[];
+  /** Packages that published nothing (no targets, all targets skipped, private, ...) */
   skipped: { name: string; reason: string }[];
+  /** Packages where at least one target failed (may also appear in `published`) */
   failed: { name: string; error: string }[];
-}
-
-/**
- * Detect which CI OIDC provider is available for npm trusted publishing.
- * Returns the provider name or null if none detected.
- *
- * Supported providers:
- * - GitHub Actions: `ACTIONS_ID_TOKEN_REQUEST_URL` (set when `id-token: write` permission is granted)
- * - GitLab CI: `GITLAB_CI` + `NPM_ID_TOKEN`
- * - CircleCI: `CIRCLECI` + `NPM_ID_TOKEN`
- */
-export function detectOidcProvider(): 'github-actions' | 'gitlab' | 'circleci' | null {
-  if (process.env.ACTIONS_ID_TOKEN_REQUEST_URL) return 'github-actions';
-  if (process.env.GITLAB_CI && process.env.NPM_ID_TOKEN) return 'gitlab';
-  if (process.env.CIRCLECI && process.env.NPM_ID_TOKEN) return 'circleci';
-  return null;
-}
-
-/**
- * Returns true when OIDC trusted publishing is the only available npm auth path:
- * an OIDC provider is detected AND no token env vars or .npmrc auth are present.
- *
- * Used to gate checks that only matter when OIDC will definitely be used — e.g.
- * erroring when a brand-new package can't be bootstrapped via trusted publishing.
- * Detection alone is leaky (id-token: write is also set for provenance), so this
- * helper avoids false positives when a token fallback exists.
- */
-export function willUseOidcExclusively(rootDir: string): boolean {
-  if (!detectOidcProvider()) return false;
-  if (process.env.NPM_TOKEN || process.env.NODE_AUTH_TOKEN) return false;
-  const npmrcPath = resolve(rootDir, '.npmrc');
-  const existingNpmrc = existsSync(npmrcPath) ? readFileSync(npmrcPath, 'utf-8') : '';
-  return !existingNpmrc.includes(':_authToken=');
-}
-
-const OIDC_NPM_UPGRADE_HINTS: Record<string, string> = {
-  'github-actions': 'Add `actions/setup-node@v6` with `node-version: lts/*` to your workflow',
-  gitlab: 'Use a Node.js image with npm >= 11.5.1 or run `npm install -g npm@latest`',
-  circleci: 'Use a Node.js image with npm >= 11.5.1 or run `sudo npm install -g npm@latest`',
-};
-
-/** Compare semver triples: returns true if version >= minimum */
-function npmVersionAtLeast(version: string, minimum: [number, number, number]): boolean {
-  const [major, minor, patch] = version.split('.').map(Number);
-  const [minMajor, minMinor, minPatch] = minimum;
-  if (major! > minMajor) return true;
-  if (major! < minMajor) return false;
-  if (minor! > minMinor) return true;
-  if (minor! < minMinor) return false;
-  return patch! >= minPatch;
-}
-
-const MIN_NPM_OIDC: [number, number, number] = [11, 5, 1];
-const MIN_NPM_STAGED: [number, number, number] = [11, 15, 0];
-
-/**
- * Set up npm authentication for publishing.
- *
- * Handles three scenarios:
- * 1. **Trusted publishing (OIDC)** — GitHub Actions, GitLab CI, or CircleCI with OIDC configured.
- *    npm >= 11.5.1 authenticates automatically via OIDC token exchange.
- *    No secret needed, but we check the npm version and warn if too old.
- * 2. **Token-based auth** — `NPM_TOKEN` or `NODE_AUTH_TOKEN` env var.
- *    Writes a project-level `.npmrc` so npm can authenticate.
- * 3. **Pre-configured** — user already has `.npmrc` with auth (e.g. via `actions/setup-node`).
- */
-function setupNpmAuth(rootDir: string, publishManager: string): void {
-  // Only relevant when publishing via npm CLI
-  if (publishManager !== 'npm') return;
-
-  const npmrcPath = resolve(rootDir, '.npmrc');
-  const existingNpmrc = existsSync(npmrcPath) ? readFileSync(npmrcPath, 'utf-8') : '';
-  const hasAuthConfigured = existingNpmrc.includes(':_authToken=');
-
-  // If auth is already configured (e.g. via actions/setup-node), nothing to do
-  if (hasAuthConfigured) {
-    log.dim('  Using existing .npmrc auth configuration');
-    return;
-  }
-
-  // Scenario 1: OIDC trusted publishing
-  const oidcProvider = detectOidcProvider();
-  if (oidcProvider) {
-    const npmVersion = tryRunArgs(['npm', '--version']);
-    if (npmVersion) {
-      if (!npmVersionAtLeast(npmVersion, MIN_NPM_OIDC)) {
-        log.warn(`  npm ${npmVersion} detected — trusted publishing (OIDC) requires npm >= ${MIN_NPM_OIDC.join('.')}`);
-        log.warn(`  ${OIDC_NPM_UPGRADE_HINTS[oidcProvider]}`);
-      } else {
-        log.dim(`  OIDC detected (${oidcProvider}) — npm ${npmVersion} will authenticate via trusted publishing`);
-      }
-    }
-    return;
-  }
-
-  // Scenario 2: Token-based auth via environment variable
-  // Support NPM_TOKEN (common convention) by mapping to NODE_AUTH_TOKEN (what npm reads from .npmrc)
-  const token = process.env.NODE_AUTH_TOKEN || process.env.NPM_TOKEN;
-  if (token) {
-    if (process.env.NPM_TOKEN && !process.env.NODE_AUTH_TOKEN) {
-      process.env.NODE_AUTH_TOKEN = token;
-    }
-    const authLine = '//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}';
-    if (existingNpmrc) {
-      appendFileSync(npmrcPath, `\n${authLine}\n`);
-    } else {
-      writeFileSync(npmrcPath, `${authLine}\n`);
-    }
-    log.dim('  Configured .npmrc with auth token');
-    return;
-  }
-
-  // No auth detected — warn
-  if (process.env.CI) {
-    log.warn('  No npm authentication detected. Publishing will likely fail.');
-    log.warn('  Options:');
-    log.warn('    • Trusted publishing (OIDC): add `id-token: write` permission + npm >= 11.5.1');
-    log.warn('    • Token auth: set NPM_TOKEN or NODE_AUTH_TOKEN environment variable');
-    log.warn('    • Manual: add `actions/setup-node` with `registry-url` to your workflow');
-  }
+  /** Per-package, per-target outcomes for this run */
+  targetOutcomes: Map<string, TargetOutcome[]>;
 }
 
 /**
  * Publish all packages in the release plan.
- * Order: topological (dependencies published before dependents).
+ * Order: topological across packages (dependencies published before dependents),
+ * declared order across each package's targets. One target failing is recorded and
+ * does not block sibling targets — retries are per-target via release metadata.
  */
 export async function publishPackages(
   releasePlan: ReleasePlan,
@@ -157,36 +66,8 @@ export async function publishPackages(
   catalogs: CatalogMap = new Map(),
   detectedPm: PackageManager = 'npm',
 ): Promise<PublishResult> {
-  const result: PublishResult = { published: [], skipped: [], failed: [] };
-  const publishConfig = config.publish;
-
-  // Set up npm authentication before publishing
-  setupNpmAuth(rootDir, publishConfig.publishManager);
-
-  // Validate npm-specific publish options
-  if (publishConfig.provenance && publishConfig.publishManager !== 'npm') {
-    throw new Error('provenance requires publishManager "npm" — provenance attestation is an npm-specific feature');
-  }
-
-  if (publishConfig.npmStaged) {
-    if (publishConfig.publishManager !== 'npm') {
-      throw new Error('npmStaged requires publishManager "npm" — staged publishing is an npm-specific feature');
-    }
-    const npmVersion = tryRunArgs(['npm', '--version']);
-    if (!npmVersion) {
-      throw new Error(`npmStaged is enabled but npm was not found — install npm >= ${MIN_NPM_STAGED.join('.')}`);
-    }
-    if (!npmVersionAtLeast(npmVersion, MIN_NPM_STAGED)) {
-      throw new Error(
-        `npmStaged requires npm >= ${MIN_NPM_STAGED.join('.')} (found ${npmVersion})\n` +
-          `  Upgrade npm: npm install -g npm@latest`,
-      );
-    }
-    log.dim(`Staged publishing enabled — packages will require 2FA approval on npmjs.com`);
-  }
-
-  // Resolve "auto" pack manager to detected PM
-  const packManager = publishConfig.packManager === 'auto' ? detectedPm : publishConfig.packManager;
+  const result: PublishResult = { published: [], skipped: [], failed: [], targetOutcomes: new Map() };
+  const releaseKind = opts.releaseKind ?? 'stable';
 
   // Topological sort for correct publish order
   const topoOrder = depGraph.topologicalSort(packages);
@@ -199,23 +80,51 @@ export async function publishPackages(
     if (release) ordered.push(release);
   }
 
+  // Preflight each unique target instance once, before anything publishes.
+  // A preflight throw aborts the whole run — better than failing halfway through.
+  const preflighted = new Set<string>();
+  for (const release of ordered) {
+    const pkg = packages.get(release.name)!;
+    for (const target of getPackageTargets(pkg, config)) {
+      if (preflighted.has(target.name)) continue;
+      preflighted.add(target.name);
+      await target.plugin.preflight?.({
+        rootDir,
+        config,
+        options: target.options,
+        dryRun: !!opts.dryRun,
+      });
+    }
+  }
+
   for (const release of ordered) {
     const pkg = packages.get(release.name)!;
     const pkgConfig = pkg.bumpy || {};
+    const targets = getPackageTargets(pkg, config);
+    const completed = opts.completedTargets?.get(release.name);
 
-    // Skip private packages unless they have a custom publish command
-    if (pkg.private && !pkgConfig.publishCommand) {
-      if (config.privatePackages.tag) {
+    // Packages with no targets publish nowhere; git tags still apply per config
+    if (targets.length === 0) {
+      if (pkg.private) {
+        if (config.privatePackages.tag) createGitTag(release, rootDir, opts);
+        result.skipped.push({ name: release.name, reason: 'private' });
+      } else {
+        // Legacy skipNpmPublish behavior: no publish, but still tag the version
         createGitTag(release, rootDir, opts);
+        result.skipped.push({ name: release.name, reason: 'no publish targets' });
       }
-      result.skipped.push({ name: release.name, reason: 'private' });
       continue;
     }
 
     log.step(`Publishing ${colorize(release.name, 'cyan')}@${release.newVersion}`);
 
+    const outcomes: TargetOutcome[] = [];
+    result.targetOutcomes.set(release.name, outcomes);
+    // Artifacts shared across this package's targets, keyed by artifact kind
+    const artifacts = new Map<string, string>();
+
     try {
-      // 1. Build
+      // 1. Build (once per package, before any target)
       if (pkgConfig.buildCommand) {
         log.dim(`  Building...`);
         if (!opts.dryRun) {
@@ -223,203 +132,176 @@ export async function publishPackages(
         }
       }
 
-      // 2. Resolve workspace:/catalog: protocols if using in-place mode
-      //    (for pack mode, the PM pack command handles this; for custom commands, always resolve)
-      const needsInPlaceResolve = pkgConfig.publishCommand || publishConfig.protocolResolution === 'in-place';
+      // 2. Resolve workspace:/catalog: protocols in-place when any target reads the
+      //    manifest from the package dir (custom commands, vsce, npm in-place mode)
+      const needsInPlaceResolve = targets.some((t) => t.plugin.needsProtocolResolution?.(t.options, config));
       if (needsInPlaceResolve) {
-        // Always write resolved protocols — dryRun only skips the actual publish command
+        // Always write resolved protocols — dryRun only skips the actual publish commands
         await resolveProtocolsInPlace(pkg, packages, releasePlan, catalogs);
       }
 
-      // 3. Publish
-      if (pkgConfig.publishCommand) {
-        // Custom publish command(s)
-        const commands = Array.isArray(pkgConfig.publishCommand)
-          ? pkgConfig.publishCommand
-          : [pkgConfig.publishCommand];
-
-        for (const cmd of commands) {
-          // Shell-quote substituted values to prevent injection via package names/versions
-          const expanded = cmd
-            .replace(/\{\{version\}\}/g, sq(release.newVersion))
-            .replace(/\{\{name\}\}/g, sq(release.name));
-          log.dim(`  Running: ${expanded}`);
-          if (!opts.dryRun) {
-            await runStreaming(expanded, { cwd: pkg.dir });
-          }
+      // 3. Publish each target
+      const isPrerelease = semver.prerelease(release.newVersion) !== null;
+      for (const target of targets) {
+        const outcome = await publishOneTarget(target, {
+          pkg,
+          pkgConfig,
+          release,
+          config,
+          rootDir,
+          opts,
+          releaseKind,
+          isPrerelease,
+          completed,
+          artifacts,
+          detectedPm,
+        });
+        outcomes.push(outcome);
+        if (outcome.status === 'failed') {
+          log.error(`  Failed to publish ${release.name} → ${target.name}: ${outcome.error}`);
         }
-      } else if (!pkgConfig.skipNpmPublish) {
-        // Standard publish flow
-        if (publishConfig.protocolResolution === 'pack') {
-          await packThenPublish(pkg, pkgConfig, config, packManager, opts);
-        } else {
-          // "in-place" already resolved above; "none" skips resolution
-          await npmPublishDirect(pkg, pkgConfig, config, opts);
-        }
-      } else {
-        result.skipped.push({ name: release.name, reason: 'skipNpmPublish' });
-        createGitTag(release, rootDir, opts);
-        continue;
       }
-
-      // 3. Git tag
-      createGitTag(release, rootDir, opts);
-
-      result.published.push({ name: release.name, version: release.newVersion });
-      log.success(`  Published ${release.name}@${release.newVersion}`);
     } catch (err) {
+      // Package-level failure (build / protocol resolution) — no target ran
       const errMsg = err instanceof Error ? err.message : String(err);
       log.error(`  Failed to publish ${release.name}: ${errMsg}`);
       result.failed.push({ name: release.name, error: errMsg });
+      await cleanupArtifacts(artifacts);
+      continue;
+    }
+
+    await cleanupArtifacts(artifacts);
+
+    // 4. Git tag — the tag asserts "this version exists somewhere", so it is created
+    //    as soon as any target has succeeded (now, in a previous run, or out-of-band
+    //    per the registry guard)
+    const succeededNow = outcomes.filter((o) => o.status === 'success');
+    const failedNow = outcomes.filter((o) => o.status === 'failed');
+    const alreadyLive = (o: TargetOutcome) => o.reason === 'already published' || o.reason === 'already on registry';
+    const anySuccess = succeededNow.length > 0 || (completed?.size ?? 0) > 0 || outcomes.some(alreadyLive);
+    if (anySuccess) {
+      createGitTag(release, rootDir, opts);
+    }
+
+    // Package-level classification
+    if (succeededNow.length > 0) {
+      result.published.push({ name: release.name, version: release.newVersion });
+      const summary =
+        targets.length === 1
+          ? ''
+          : ` (${succeededNow.map((o) => o.target).join(', ')}${failedNow.length ? ` — ${failedNow.length} failed` : ''})`;
+      log.success(`  Published ${release.name}@${release.newVersion}${summary}`);
+    } else if (failedNow.length === 0) {
+      const reason = outcomes.every(alreadyLive) ? 'already published' : (outcomes[0]?.reason ?? 'all targets skipped');
+      result.skipped.push({ name: release.name, reason });
+    }
+    if (failedNow.length > 0) {
+      result.failed.push({
+        name: release.name,
+        error: failedNow.map((o) => `${o.target}: ${o.error}`).join('; '),
+      });
     }
   }
 
   return result;
 }
 
-/**
- * Pack with the PM (which resolves workspace:/catalog: protocols into the tarball),
- * then publish the tarball with npm (which supports OIDC/provenance).
- */
-async function packThenPublish(
-  pkg: WorkspacePackage,
-  pkgConfig: WorkspacePackage['bumpy'] & {},
-  config: BumpyConfig,
-  packManager: PackageManager,
-  opts: PublishOptions,
-): Promise<void> {
-  const packArgs = getPackArgs(packManager);
-  log.dim(`  Packing with: ${packArgs.join(' ')}`);
+async function publishOneTarget(
+  target: ResolvedTarget,
+  args: {
+    pkg: WorkspacePackage;
+    pkgConfig: WorkspacePackage['bumpy'] & {};
+    release: PlannedRelease;
+    config: BumpyConfig;
+    rootDir: string;
+    opts: PublishOptions;
+    releaseKind: ReleaseKind;
+    isPrerelease: boolean;
+    completed: Set<string> | undefined;
+    artifacts: Map<string, string>;
+    detectedPm: PackageManager;
+  },
+): Promise<TargetOutcome> {
+  const { pkg, release, config, opts, releaseKind, isPrerelease, completed, artifacts } = args;
+  const base = { target: target.name, type: target.type };
 
-  if (opts.dryRun) {
-    const publishArgs = buildPublishArgs(pkg, pkgConfig, config, opts, '<tarball>');
-    log.dim(`  Would publish with: ${publishArgs.join(' ')}`);
-    return;
+  // Already succeeded in a previous run (per release metadata) — don't re-publish
+  if (completed?.has(target.name)) {
+    log.dim(`  Skipping ${target.name} — already published (per release metadata)`);
+    return { ...base, status: 'skipped', reason: 'already published' };
   }
 
-  // Pack and capture the tarball filename
-  const packOutput = await runArgsAsync(packArgs, { cwd: pkg.dir });
-  const tarball = parseTarballPath(packOutput, pkg.dir, packManager);
+  // Capability gates
+  const caps = target.plugin.capabilities;
+  if (releaseKind === 'snapshot' && !caps.snapshots) {
+    log.dim(`  Skipping ${target.name} — target does not support snapshot releases`);
+    return { ...base, status: 'skipped', reason: 'snapshots not supported' };
+  }
+  if (isPrerelease && !caps.prereleases) {
+    log.dim(`  Skipping ${target.name} — target does not support prerelease versions`);
+    return { ...base, status: 'skipped', reason: 'prereleases not supported' };
+  }
+
+  // Registry-level idempotency guard: even without release metadata (gh unavailable,
+  // draft deleted), never publish a version that's already live — registries reject
+  // republishes with far less helpful errors. Runs before the artifact build so a
+  // fully-published package doesn't rebuild anything.
+  if (!opts.dryRun && target.plugin.checkPublished) {
+    const published = await target.plugin.checkPublished(pkg, release.newVersion, target.options).catch(() => null);
+    if (published === true) {
+      log.dim(`  Skipping ${target.name} — ${release.newVersion} already on registry`);
+      return { ...base, status: 'skipped', reason: 'already on registry' };
+    }
+  }
 
   try {
-    // Publish the tarball
-    const publishArgs = buildPublishArgs(pkg, pkgConfig, config, opts, tarball);
-    log.dim(`  Publishing: ${publishArgs.join(' ')}`);
-    await runArgsAsync(publishArgs, { cwd: pkg.dir });
-  } finally {
-    // Clean up tarball
+    const ctx: TargetPublishContext = {
+      pkg,
+      pkgConfig: args.pkgConfig,
+      version: release.newVersion,
+      rootDir: args.rootDir,
+      config,
+      options: target.options,
+      distTag: caps.distTags ? opts.tag : undefined,
+      dryRun: !!opts.dryRun,
+      releaseKind,
+      packManager: args.detectedPm,
+    };
+
+    // Shared artifact: build once per (package, kind), reuse across sibling targets
+    const kind = target.plugin.artifactKind?.(target.options, config);
+    if (kind) {
+      if (!artifacts.has(kind)) {
+        if (opts.dryRun) {
+          artifacts.set(kind, `<${kind}>`);
+        } else {
+          if (!target.plugin.buildArtifact) {
+            throw new Error(`target "${target.name}" declares artifact kind "${kind}" but has no buildArtifact`);
+          }
+          artifacts.set(kind, await target.plugin.buildArtifact(ctx));
+        }
+      }
+      ctx.artifactPath = artifacts.get(kind);
+    }
+
+    await target.plugin.publish(ctx);
+    return { ...base, status: 'success' };
+  } catch (err) {
+    return { ...base, status: 'failed', error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** Delete shared artifact files (tarballs, vsix) built during a package's publish */
+async function cleanupArtifacts(artifacts: Map<string, string>): Promise<void> {
+  for (const path of artifacts.values()) {
+    if (path.startsWith('<')) continue; // dry-run placeholder
     try {
-      await unlink(tarball);
+      await unlink(path);
     } catch {
       /* ignore */
     }
   }
-}
-
-/** Publish directly from the package directory (no tarball) */
-async function npmPublishDirect(
-  pkg: WorkspacePackage,
-  pkgConfig: WorkspacePackage['bumpy'] & {},
-  config: BumpyConfig,
-  opts: PublishOptions,
-): Promise<void> {
-  const args = buildPublishArgs(pkg, pkgConfig, config, opts);
-  log.dim(`  Running: ${args.join(' ')}`);
-  if (!opts.dryRun) {
-    await runArgsAsync(args, { cwd: pkg.dir });
-  }
-}
-
-function getPackArgs(pm: PackageManager): string[] {
-  switch (pm) {
-    case 'pnpm':
-      return ['pnpm', 'pack', '--json'];
-    case 'bun':
-      return ['bun', 'pm', 'pack'];
-    case 'yarn':
-      return ['yarn', 'pack'];
-    case 'npm':
-    default:
-      return ['npm', 'pack', '--json'];
-  }
-}
-
-function buildPublishArgs(
-  pkg: WorkspacePackage,
-  pkgConfig: WorkspacePackage['bumpy'] & {},
-  config: BumpyConfig,
-  opts: PublishOptions,
-  tarball?: string,
-): string[] {
-  const publishManager = config.publish.publishManager;
-  const args: string[] = [];
-
-  // Base command
-  if (config.publish.npmStaged && publishManager === 'npm') {
-    args.push('npm', 'stage', 'publish');
-  } else if (publishManager === 'yarn') {
-    args.push('yarn', 'npm', 'publish');
-  } else {
-    args.push(publishManager, 'publish');
-  }
-
-  // Tarball path (if pack-then-publish)
-  if (tarball) args.push(tarball);
-
-  // Access
-  const access = pkgConfig?.access || config.access;
-  args.push('--access', access);
-
-  // Registry
-  if (pkgConfig?.registry) args.push('--registry', pkgConfig.registry);
-
-  // Dist tag
-  if (opts.tag) args.push('--tag', opts.tag);
-
-  // Provenance attestation
-  if (config.publish.provenance && publishManager === 'npm') {
-    args.push('--provenance');
-  }
-
-  // Extra user-configured args
-  if (config.publish.publishArgs.length > 0) {
-    args.push(...config.publish.publishArgs);
-  }
-
-  return args;
-}
-
-/**
- * Parse the tarball path from pack command output.
- * npm/pnpm use --json for structured output; bun/yarn fall back to regex parsing.
- */
-function parseTarballPath(output: string, cwd: string, pm: PackageManager): string {
-  // npm and pnpm support --json which gives us a deterministic filename
-  if (pm === 'npm' || pm === 'pnpm') {
-    try {
-      const parsed = JSON.parse(output);
-      // npm returns an array, pnpm returns an object or array
-      const entry = Array.isArray(parsed) ? parsed[0] : parsed;
-      if (entry?.filename) {
-        return resolve(cwd, entry.filename);
-      }
-    } catch {
-      // JSON parse failed — fall through to regex
-    }
-  }
-
-  // Fallback for bun/yarn or if JSON parsing failed:
-  // extract any .tgz path — handles both bare filenames and quoted paths (yarn)
-  const tgzMatch = output.match(/(?:^|["'\s])([^\s"']*\.tgz)/m);
-  if (tgzMatch) {
-    const tarball = tgzMatch[1]!;
-    return tarball.startsWith('/') ? tarball : resolve(cwd, tarball);
-  }
-
-  // Last resort: last non-empty line
-  const lines = output.trim().split('\n').filter(Boolean);
-  const lastLine = lines[lines.length - 1]?.trim() || '';
-  return lastLine.startsWith('/') ? lastLine : resolve(cwd, lastLine);
+  artifacts.clear();
 }
 
 function createGitTag(release: PlannedRelease, rootDir: string, opts: PublishOptions): void {

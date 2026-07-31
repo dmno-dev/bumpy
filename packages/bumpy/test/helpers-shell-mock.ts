@@ -57,6 +57,13 @@ export function installShellMock(opts: { interceptGh?: boolean } = {}) {
     rules.push({ match: /^gh /, response: '{}' });
   }
 
+  // Registry lookups (publish-target checkPublished guards) must never hit the
+  // network in tests. Default to "not found" (= not published, publish proceeds);
+  // override with addMockRule for tests asserting already-published behavior.
+  rules.push({ match: /^npm info /, error: 'E404 not found' });
+  rules.push({ match: /@vscode\/vsce show/, error: 'not found' });
+  rules.push({ match: /ovsx get/, error: 'not found' });
+
   _setInterceptor((args, opts) => {
     const cmdString = args.join(' ');
     calls.push({ command: cmdString, args: [...args], opts });

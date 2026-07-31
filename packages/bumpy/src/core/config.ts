@@ -60,7 +60,14 @@ export async function loadPackageConfig(
   // Block custom commands from per-package config unless the root explicitly allows them.
   // Commands defined in the root config's `packages` map are always trusted.
   const CUSTOM_CMD_KEYS = ['buildCommand', 'publishCommand', 'checkPublished'] as const;
-  const disallowedKeys = CUSTOM_CMD_KEYS.filter((k) => pkgJsonConfig[k] != null);
+  const disallowedKeys: string[] = CUSTOM_CMD_KEYS.filter((k) => pkgJsonConfig[k] != null);
+  // Inline publishTargets entries that carry shell commands are custom commands too.
+  // String references and command-free option bags are plain data and always allowed.
+  const TARGET_CMD_KEYS = ['command', 'checkPublished', 'buildCommand'];
+  const hasInlineTargetCommands = (pkgJsonConfig.publishTargets ?? []).some(
+    (entry) => typeof entry === 'object' && TARGET_CMD_KEYS.some((k) => entry[k] != null),
+  );
+  if (hasInlineTargetCommands) disallowedKeys.push('publishTargets (inline commands)');
   if (disallowedKeys.length > 0 && !isCustomCommandAllowed(pkgName, rootConfig)) {
     const fields = disallowedKeys.map((k) => `"${k}"`).join(', ');
     throw new Error(
@@ -117,6 +124,10 @@ function mergeConfig(defaults: BumpyConfig, user: Partial<BumpyConfig>): BumpyCo
     publish: {
       ...defaults.publish,
       ...user.publish,
+    },
+    targets: {
+      ...defaults.targets,
+      ...user.targets,
     },
     packages: {
       ...defaults.packages,

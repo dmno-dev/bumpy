@@ -22,7 +22,8 @@ import { createHash } from 'node:crypto';
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { resolveCommitMessage } from '../core/commit-message.ts';
-import type { BumpyConfig, BumpFile, PackageConfig, PackageManager, ReleasePlan, PlannedRelease } from '../types.ts';
+import { getPackageTargets } from '../core/targets/registry.ts';
+import type { BumpyConfig, BumpFile, PackageManager, ReleasePlan, PlannedRelease, WorkspacePackage } from '../types.ts';
 
 // ---- PAT-scoped gh helpers ----
 
@@ -381,7 +382,7 @@ interface PlanRelease {
   bumpFiles: string[];
   isDependencyBump: boolean;
   isCascadeBump: boolean;
-  publishTargets: Array<{ type: string }>;
+  publishTargets: Array<{ type: string; name: string }>;
 }
 
 interface PlanOutput {
@@ -485,7 +486,7 @@ function formatPlanRelease(
     isDependencyBump: boolean;
     isCascadeBump: boolean;
   },
-  packages: Map<string, { relativeDir: string; private: boolean; bumpy?: PackageConfig }>,
+  packages: Map<string, WorkspacePackage>,
   config: BumpyConfig,
 ): PlanRelease {
   const pkg = packages.get(r.name);
@@ -498,25 +499,8 @@ function formatPlanRelease(
     bumpFiles: r.bumpFiles,
     isDependencyBump: r.isDependencyBump,
     isCascadeBump: r.isCascadeBump,
-    publishTargets: getPublishTargets(pkg, config),
+    publishTargets: pkg ? getPackageTargets(pkg, config).map((t) => ({ type: t.type, name: t.name })) : [],
   };
-}
-
-function getPublishTargets(
-  pkg: { private: boolean; bumpy?: PackageConfig } | undefined,
-  _config: BumpyConfig,
-): Array<{ type: string }> {
-  if (!pkg) return [];
-  const pkgConfig = pkg.bumpy || {};
-  if (pkg.private && !pkgConfig.publishCommand) return [];
-  const targets: Array<{ type: string }> = [];
-  if (pkgConfig.publishCommand) {
-    targets.push({ type: 'custom' });
-  }
-  if (!pkgConfig.publishCommand && !pkgConfig.skipNpmPublish) {
-    targets.push({ type: 'npm' });
-  }
-  return targets;
 }
 
 /** Write a key=value pair to $GITHUB_OUTPUT if available */

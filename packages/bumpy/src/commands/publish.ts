@@ -24,9 +24,6 @@ import {
   finalizeRelease,
   finalizeSupersededDrafts,
   composeReleaseBody,
-  buildPublishUrl,
-  publishTargetLabel,
-  resolvePackageRegistry,
   parseRepoSlug,
   isGhAvailable,
   getHeadSha,
@@ -35,11 +32,13 @@ import {
   type ReleaseMetadata,
   type PublishTargetState,
 } from '../core/github-release.ts';
+import { getPackageTargets, getNpmTarget, targetLabel } from '../core/targets/registry.ts';
+import type { ResolvedTarget } from '../core/targets/types.ts';
 import { loadFormatter } from '../core/changelog.ts';
 import { detectWorkspaces } from '../utils/package-manager.ts';
 import { CI_PLAN_CACHE_PATH } from './ci.ts';
 import { runArgsAsync, tryRunArgs } from '../utils/shell.ts';
-import type { BumpyConfig, PackageConfig, ReleasePlan, PlannedRelease, WorkspacePackage } from '../types.ts';
+import type { BumpyConfig, ReleasePlan, PlannedRelease, WorkspacePackage } from '../types.ts';
 import type { CatalogMap } from '../utils/package-manager.ts';
 import type { PackageManager } from '../types.ts';
 
@@ -239,6 +238,7 @@ async function publishChannel(
       dryRun: opts.dryRun,
       tag: opts.tag ?? channel.tag,
       noPush: opts.noPush,
+      releaseKind: 'channel',
     });
   } finally {
     if (restore) {
@@ -348,7 +348,7 @@ async function publishSnapshot(
       depGraph,
       config,
       rootDir,
-      { dryRun: opts.dryRun, tag: snapshot.tag, noTag: true },
+      { dryRun: opts.dryRun, tag: snapshot.tag, noTag: true, releaseKind: 'snapshot' },
       catalogs,
       detectedPm,
     );
@@ -387,7 +387,12 @@ async function runPublishFlow(
   detectedPm: PackageManager,
   depGraph: DependencyGraph,
   releasePlan: ReleasePlan,
-  opts: { dryRun?: boolean; tag?: string; noPush?: boolean },
+  opts: {
+    dryRun?: boolean;
+    tag?: string;
+    noPush?: boolean;
+    releaseKind?: import('../core/targets/types.ts').ReleaseKind;
+  },
 ): Promise<void> {
   let toPublish = releasePlan.releases;
 
@@ -406,7 +411,7 @@ async function runPublishFlow(
   // Only checks when OIDC is the only available auth (no token fallback), to avoid
   // false positives for users with id-token: write enabled solely for provenance.
   if (willUseOidcExclusively(rootDir)) {
-    const newPackages = await findPackagesMissingFromNpm(toPublish, packages);
+    const newPackages = await findPackagesMissingFromNpm(toPublish, packages, config);
     if (newPackages.length > 0) {
       const logFn = opts.dryRun ? log.warn : log.error;
       logFn(`Trusted publishing (OIDC) cannot create a new package. The following don't exist on npm yet:`);
@@ -421,24 +426,14 @@ async function runPublishFlow(
   const formatter = config.changelog !== false ? await loadFormatter(config.changelog, rootDir) : undefined;
   const ghAvailable = isGhAvailable();
 
-  // Determine publish targets for each package
-  const publishTargetsByPkg = new Map<string, string[]>();
-  // Registry context per package, used to label targets and build correct release URLs.
-  const registryByPkg = new Map<string, { registry?: string; repoSlug?: string }>();
+  // Determine publish targets for each package (resolved at workspace discovery)
+  const publishTargetsByPkg = new Map<string, ResolvedTarget[]>();
+  // Repo slug per package, used to build correct release URLs (e.g. GitHub Packages).
+  const repoSlugByPkg = new Map<string, string | undefined>();
   for (const release of toPublish) {
     const pkg = packages.get(release.name)!;
-    const pkgConfig = pkg.bumpy || {};
-    const targets: string[] = [];
-    if (pkgConfig.publishCommand) {
-      targets.push('custom');
-    } else if (!pkgConfig.skipNpmPublish) {
-      targets.push('npm');
-    }
-    publishTargetsByPkg.set(release.name, targets);
-    registryByPkg.set(release.name, {
-      registry: resolvePackageRegistry(pkg, pkgConfig),
-      repoSlug: parseRepoSlug(pkg.packageJson.repository) ?? process.env.GITHUB_REPOSITORY,
-    });
+    publishTargetsByPkg.set(release.name, getPackageTargets(pkg, config));
+    repoSlugByPkg.set(release.name, parseRepoSlug(pkg.packageJson.repository) ?? process.env.GITHUB_REPOSITORY);
   }
 
   // For each package, set up draft releases (if gh is available and not dry run)
@@ -474,11 +469,11 @@ async function runPublishFlow(
           ? await generateReleaseBody(release, releasePlan.bumpFiles, formatter)
           : buildReleaseBody(release, releasePlan.bumpFiles);
 
-        const { registry } = registryByPkg.get(release.name) || {};
+        const pkg = packages.get(release.name)!;
         const initialTargets: Record<string, PublishTargetState> = {};
         for (const t of targets) {
-          const label = publishTargetLabel(t, registry);
-          initialTargets[t] = { status: 'pending', ...(label !== t ? { label } : {}) };
+          const label = targetLabel(t, pkg);
+          initialTargets[t.name] = { status: 'pending', ...(label !== t.name ? { label } : {}) };
         }
         const metadata: ReleaseMetadata = {
           version: release.newVersion,
@@ -532,14 +527,18 @@ async function runPublishFlow(
     }
   }
 
-  // Filter out packages where all targets already succeeded (from previous runs)
+  // Per-target resume: collect targets that already succeeded in previous runs (from
+  // release metadata). Packages where ALL targets succeeded are dropped entirely;
+  // partially-published packages re-run only their missing targets.
+  const completedTargets = new Map<string, Set<string>>();
   const alreadyPublished: string[] = [];
   for (const release of toPublish) {
     const info = releaseMetadataByPkg.get(release.name);
     if (!info) continue;
     const targets = publishTargetsByPkg.get(release.name) || [];
-    const allDone = targets.every((t) => info.metadata.targets[t]?.status === 'success');
-    if (allDone) {
+    const done = new Set(targets.filter((t) => info.metadata.targets[t.name]?.status === 'success').map((t) => t.name));
+    if (done.size > 0) completedTargets.set(release.name, done);
+    if (targets.length > 0 && done.size === targets.length) {
       alreadyPublished.push(release.name);
     }
   }
@@ -565,6 +564,8 @@ async function runPublishFlow(
     {
       dryRun: opts.dryRun,
       tag: opts.tag,
+      releaseKind: opts.releaseKind,
+      completedTargets,
     },
     catalogs,
     detectedPm,
@@ -585,31 +586,60 @@ async function runPublishFlow(
       if (!info) continue;
 
       const targets = publishTargetsByPkg.get(release.name) || [];
-      const published = result.published.find((p) => p.name === release.name);
-      const failed = result.failed.find((f) => f.name === release.name);
+      const targetsByName = new Map(targets.map((t) => [t.name, t]));
+      const pkg = packages.get(release.name)!;
+      const repoSlug = repoSlugByPkg.get(release.name);
+      const outcomes = result.targetOutcomes.get(release.name) || [];
+      const pkgFailure = result.failed.find((f) => f.name === release.name);
 
-      const { registry, repoSlug } = registryByPkg.get(release.name) || {};
       let changed = false;
-      for (const targetName of targets) {
-        // Skip already-succeeded targets
-        if (info.metadata.targets[targetName]?.status === 'success') continue;
+      for (const outcome of outcomes) {
+        // Never downgrade a target that already succeeded in a previous run
+        if (info.metadata.targets[outcome.target]?.status === 'success') continue;
+        const target = targetsByName.get(outcome.target);
+        const label = target ? targetLabel(target, pkg) : outcome.target;
+        const labelField = label !== outcome.target ? { label } : {};
 
-        if (published) {
-          const label = publishTargetLabel(targetName, registry);
-          info.metadata.targets[targetName] = {
+        if (outcome.status === 'success' || outcome.reason === 'already on registry') {
+          // "already on registry" = the pre-publish registry guard found the version
+          // live (metadata was stale or lost) — record it as the success it is
+          info.metadata.targets[outcome.target] = {
             status: 'success',
             publishedAt: new Date().toISOString(),
-            url: buildPublishUrl(release.name, release.newVersion, targetName, { registry, repoSlug }),
-            ...(label !== targetName ? { label } : {}),
+            url: target?.plugin.publishUrl?.(pkg, release.newVersion, target.options, { repoSlug }),
+            ...labelField,
           };
           changed = true;
-        } else if (failed) {
-          const label = publishTargetLabel(targetName, registry);
-          info.metadata.targets[targetName] = {
+        } else if (outcome.status === 'failed') {
+          info.metadata.targets[outcome.target] = {
             status: 'failed',
-            error: failed.error,
+            error: outcome.error,
             lastAttempt: new Date().toISOString(),
-            ...(label !== targetName ? { label } : {}),
+            ...labelField,
+          };
+          changed = true;
+        } else if (outcome.reason !== 'already published') {
+          // Capability skips (e.g. prerelease on a target without prerelease support)
+          info.metadata.targets[outcome.target] = {
+            status: 'skipped',
+            reason: outcome.reason,
+            ...labelField,
+          };
+          changed = true;
+        }
+      }
+
+      // Package-level failure before any target ran (build / protocol resolution):
+      // mark all still-pending targets failed so the next run retries them.
+      if (outcomes.length === 0 && pkgFailure) {
+        for (const t of targets) {
+          if (info.metadata.targets[t.name]?.status === 'success') continue;
+          const label = targetLabel(t, pkg);
+          info.metadata.targets[t.name] = {
+            status: 'failed',
+            error: pkgFailure.error,
+            lastAttempt: new Date().toISOString(),
+            ...(label !== t.name ? { label } : {}),
           };
           changed = true;
         }
@@ -622,8 +652,12 @@ async function runPublishFlow(
             : composeReleaseBody('', info.metadata);
           await updateReleaseBody(info.tag, updatedBody, rootDir);
 
-          // Finalize if all targets succeeded
-          const allSucceeded = Object.values(info.metadata.targets).every((t) => t.status === 'success');
+          // Finalize once every target reached a terminal state (success, or skipped —
+          // e.g. a marketplace target on a prerelease) and at least one succeeded
+          const states = Object.values(info.metadata.targets);
+          const allSucceeded =
+            states.some((t) => t.status === 'success') &&
+            states.every((t) => t.status === 'success' || t.status === 'skipped');
           if (allSucceeded) {
             await finalizeRelease(info.tag, rootDir);
             log.dim(`  Finalized release: ${info.tag}`);
@@ -656,11 +690,14 @@ async function runPublishFlow(
   // plain `git push --tags` would reject. Force is safe here because the local
   // tag was just created at the SHA we successfully published from.
   if (!opts.dryRun && !opts.noPush && result.published.length > 0) {
+    // Skip only fully-failed packages — a partial success (npm ok, another target
+    // failed) still created its tag in the pipeline and should be pushed.
+    const published = new Set(result.published.map((p) => p.name));
     const failed = new Set(result.failed.map((f) => f.name));
     const pushed: string[] = [];
     log.step('Pushing tags...');
     for (const release of releasePlan.releases) {
-      if (failed.has(release.name)) continue;
+      if (failed.has(release.name) && !published.has(release.name)) continue;
       const tag = `${release.name}@${release.newVersion}`;
       if (!tagExists(tag, { cwd: rootDir })) continue;
       try {
@@ -760,23 +797,24 @@ async function findUnpublishedWithCache(
  * Find packages whose current version is not yet published.
  *
  * Detection strategy (per package):
- * 1. Custom `checkPublished` command → run it, compare output to current version
- * 2. `skipNpmPublish` or custom `publishCommand` → check git tags
- * 3. Default → check npm registry via `npm info`
+ * 1. Custom `checkPublished` command (legacy field) → run it, compare output
+ * 2. npm-type target → check the npm registry via `npm info`
+ * 3. Other targets with a `checkPublished` implementation → ask the plugin
+ * 4. Fallback → check git tags (how non-npm publishes are tracked)
  */
 export async function findUnpublishedPackages(
   packages: Map<string, WorkspacePackage>,
-  _config: BumpyConfig,
+  config: BumpyConfig,
 ): Promise<PlannedRelease[]> {
   const unpublished: PlannedRelease[] = [];
 
   for (const [name, pkg] of packages) {
-    // Skip private packages unless they have custom publish config
-    if (pkg.private && !pkg.bumpy?.publishCommand) continue;
+    // Skip packages that publish nowhere
+    if (getPackageTargets(pkg, config).length === 0) continue;
     // Skip ignored
     if (pkg.version === '0.0.0') continue;
 
-    const isPublished = await checkIfPublished(name, pkg.version, pkg.bumpy);
+    const isPublished = await checkIfPublished(pkg, pkg.version, config);
     if (!isPublished) {
       unpublished.push({
         name,
@@ -795,10 +833,11 @@ export async function findUnpublishedPackages(
   return unpublished;
 }
 
-async function checkIfPublished(name: string, version: string, pkgConfig?: PackageConfig): Promise<boolean> {
-  const { runAsync, runArgsAsync, tryRunArgs } = await import('../utils/shell.ts');
+async function checkIfPublished(pkg: WorkspacePackage, version: string, config: BumpyConfig): Promise<boolean> {
+  const { runAsync, tryRunArgs } = await import('../utils/shell.ts');
+  const pkgConfig = pkg.bumpy;
 
-  // 1. Custom check command (user-defined, runs in shell by design)
+  // 1. Legacy custom check command (user-defined, runs in shell by design)
   if (pkgConfig?.checkPublished) {
     try {
       const result = await runAsync(pkgConfig.checkPublished);
@@ -808,21 +847,26 @@ async function checkIfPublished(name: string, version: string, pkgConfig?: Packa
     }
   }
 
-  // 2. Non-npm packages — check git tags
-  if (pkgConfig?.skipNpmPublish || pkgConfig?.publishCommand) {
-    const tag = `${name}@${version}`;
-    return tryRunArgs(['git', 'tag', '-l', tag]) === tag;
+  // 2. A package is published only when EVERY target that can answer says so —
+  //    "npm succeeded but JSR failed" must re-enter the publish flow so the
+  //    per-target retry can finish the job.
+  const targets = getPackageTargets(pkg, config);
+  let anyUnknown = false;
+  for (const target of targets) {
+    if (!target.plugin.checkPublished) {
+      anyUnknown = true;
+      continue;
+    }
+    const published = await target.plugin.checkPublished(pkg, version, target.options);
+    if (published === false) return false;
+    if (published === null) anyUnknown = true;
   }
+  if (!anyUnknown) return true;
 
-  // 3. Default — check npm registry
-  try {
-    const args = ['npm', 'info', `${name}@${version}`, 'version'];
-    if (pkgConfig?.registry) args.push('--registry', pkgConfig.registry);
-    const result = await runArgsAsync(args);
-    return result === version;
-  } catch {
-    return false;
-  }
+  // 3. Targets that can't answer (custom without checkPublished, network failures):
+  //    git tags track their published-ness
+  const tag = `${pkg.name}@${version}`;
+  return tryRunArgs(['git', 'tag', '-l', tag]) === tag;
 }
 
 /**
@@ -842,20 +886,21 @@ async function packageExistsOnNpm(name: string, registry?: string): Promise<bool
 
 /**
  * Filter `toPublish` to package names that don't exist on npm yet.
- * Skips packages not going through the standard npm publish flow.
+ * Skips packages without an npm publish target.
  */
 async function findPackagesMissingFromNpm(
   toPublish: PlannedRelease[],
   packages: Map<string, WorkspacePackage>,
+  config: BumpyConfig,
 ): Promise<string[]> {
   const missing: string[] = [];
   await Promise.all(
     toPublish.map(async (release) => {
       const pkg = packages.get(release.name)!;
-      const pkgConfig = pkg.bumpy || {};
-      if (pkgConfig.publishCommand || pkgConfig.skipNpmPublish) return;
-      if (pkg.private && !pkgConfig.publishCommand) return;
-      const exists = await packageExistsOnNpm(release.name, pkgConfig.registry);
+      const npm = getNpmTarget(pkg, config);
+      if (!npm) return;
+      const registry = (npm.options.registry as string | undefined) ?? pkg.bumpy?.registry;
+      const exists = await packageExistsOnNpm(release.name, registry);
       if (!exists) missing.push(release.name);
     }),
   );
