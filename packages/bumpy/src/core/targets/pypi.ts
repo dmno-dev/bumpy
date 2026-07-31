@@ -4,6 +4,7 @@ import { readdir } from 'node:fs/promises';
 import { runArgsAsync, tryRunArgs } from '../../utils/shell.ts';
 import { log } from '../../utils/logger.ts';
 import type { WorkspacePackage } from '../../types.ts';
+import { stringArrayOption, stringOption } from './util.ts';
 import type { PublishTargetPlugin, TargetPublishContext } from './types.ts';
 
 /**
@@ -172,12 +173,18 @@ export const pypiTarget: PublishTargetPlugin = {
     return 'python-dist';
   },
 
-  async buildArtifact(ctx) {
+  async prepare(ctx) {
+    if (!existsSync(resolve(ctx.pkg.dir, 'pyproject.toml'))) {
+      throw new Error(`${ctx.pkg.name}: pypi target requires a pyproject.toml`);
+    }
     syncPyprojectVersion(ctx);
+  },
+
+  async buildArtifact(ctx) {
     // Isolated out-dir: `dist/` may hold stale builds of other versions, and
     // uploading a directory wholesale is how old artifacts leak into a release
     const outDir = resolve(ctx.pkg.dir, `${OUT_DIR_PREFIX}-${ctx.version}`);
-    const buildArgs = Array.isArray(ctx.options.buildArgs) ? ctx.options.buildArgs.map(String) : [];
+    const buildArgs = stringArrayOption(ctx.options, 'buildArgs');
     const args = ['uv', 'build', '--out-dir', outDir, ...buildArgs];
     log.dim(`  Building: ${args.join(' ')}`);
     await runArgsAsync(args, { cwd: ctx.pkg.dir });
@@ -185,16 +192,10 @@ export const pypiTarget: PublishTargetPlugin = {
   },
 
   async publish(ctx) {
-    const info = loadPyproject(ctx.pkg);
-    if (!info) {
-      throw new Error(`${ctx.pkg.name}: pypi target requires a pyproject.toml`);
-    }
-
     const args = ['uv', 'publish'];
-    if (typeof ctx.options.index === 'string' && ctx.options.index) {
-      args.push('--publish-url', ctx.options.index);
-    }
-    if (Array.isArray(ctx.options.publishArgs)) args.push(...ctx.options.publishArgs.map(String));
+    const index = stringOption(ctx.options, 'index');
+    if (index) args.push('--publish-url', index);
+    args.push(...stringArrayOption(ctx.options, 'publishArgs'));
 
     if (ctx.dryRun) {
       log.dim(`  Would publish with: ${args.join(' ')} <dist files>`);

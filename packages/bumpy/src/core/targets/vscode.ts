@@ -1,6 +1,7 @@
 import { resolve } from 'node:path';
 import { runArgsAsync, runStreaming, sq } from '../../utils/shell.ts';
 import { log } from '../../utils/logger.ts';
+import { stringArrayOption } from './util.ts';
 import type { WorkspacePackage } from '../../types.ts';
 import type { PublishTargetPlugin, TargetPublishContext } from './types.ts';
 
@@ -44,7 +45,7 @@ function vsixPath(ctx: TargetPublishContext): string {
 
 async function buildVsix(ctx: TargetPublishContext): Promise<string> {
   const out = vsixPath(ctx);
-  const extraArgs = Array.isArray(ctx.options.packageArgs) ? ctx.options.packageArgs.map(String) : [];
+  const extraArgs = stringArrayOption(ctx.options, 'packageArgs');
   // --no-dependencies by default: vsce's npm-based dependency detection breaks in
   // workspace monorepos (workspace:/catalog: protocols, hoisted node_modules) and
   // silently ships a broken vsix. Bundled extensions (the norm) don't need it;
@@ -108,7 +109,7 @@ export const vscodeMarketplaceTarget: PublishTargetPlugin = {
   buildArtifact: buildVsix,
 
   async publish(ctx) {
-    const extraArgs = Array.isArray(ctx.options.publishArgs) ? ctx.options.publishArgs.map(String) : [];
+    const extraArgs = stringArrayOption(ctx.options, 'publishArgs');
     const authArgs = ctx.options.azureCredential === true ? ['--azure-credential'] : [];
     const args = [...VSCE_BIN, 'publish', '--packagePath', ctx.artifactPath!, ...authArgs, ...extraArgs];
     if (ctx.dryRun) {
@@ -161,7 +162,7 @@ export const openVsxTarget: PublishTargetPlugin = {
   buildArtifact: buildVsix,
 
   async publish(ctx) {
-    const extraArgs = Array.isArray(ctx.options.publishArgs) ? ctx.options.publishArgs.map(String) : [];
+    const extraArgs = stringArrayOption(ctx.options, 'publishArgs');
     const args = [...OVSX_BIN, 'publish', ctx.artifactPath!, ...extraArgs];
     if (ctx.dryRun) {
       log.dim(`  Would publish with: ${args.join(' ')}`);

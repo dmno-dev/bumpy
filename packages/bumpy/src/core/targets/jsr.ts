@@ -1,9 +1,11 @@
 import { resolve } from 'node:path';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
+import { readJson, updateJsonFields } from '../../utils/fs.ts';
 import { runArgsAsync } from '../../utils/shell.ts';
 import { log } from '../../utils/logger.ts';
 import { buildPublishUrl } from '../github-release.ts';
 import type { WorkspacePackage } from '../../types.ts';
+import { stringArrayOption } from './util.ts';
 import type { PublishTargetPlugin } from './types.ts';
 
 /**
@@ -52,16 +54,6 @@ async function jsrApiStatus(path: string): Promise<number | null> {
   }
 }
 
-/** Sync jsr.json's version field from the version being published */
-function syncJsrJsonVersion(pkgDir: string, version: string): void {
-  const jsrJsonPath = resolve(pkgDir, 'jsr.json');
-  const jsr = JSON.parse(readFileSync(jsrJsonPath, 'utf-8'));
-  if (jsr.version !== version) {
-    jsr.version = version;
-    writeFileSync(jsrJsonPath, `${JSON.stringify(jsr, null, 2)}\n`);
-  }
-}
-
 export const jsrTarget: PublishTargetPlugin = {
   type: 'jsr',
   // JSR versions are semver (prereleases fine), but there are no dist-tags — so
@@ -89,7 +81,7 @@ export const jsrTarget: PublishTargetPlugin = {
     return status === 200;
   },
 
-  async publish(ctx) {
+  async prepare(ctx) {
     const id = scopeAndName(ctx.pkg);
     if (!id) {
       throw new Error(`${ctx.pkg.name}: JSR packages must be scoped (@scope/name)`);
@@ -102,15 +94,6 @@ export const jsrTarget: PublishTargetPlugin = {
       );
     }
 
-    const args = [...JSR_BIN, 'publish', '--allow-dirty'];
-    if (ctx.options.allowSlowTypes === true) args.push('--allow-slow-types');
-    if (Array.isArray(ctx.options.publishArgs)) args.push(...ctx.options.publishArgs.map(String));
-
-    if (ctx.dryRun) {
-      log.dim(`  Would publish with: ${args.join(' ')}`);
-      return;
-    }
-
     // JSR has no create-on-first-publish — fail with actionable guidance instead of
     // deno's opaque error when the package hasn't been claimed in the scope yet.
     const pkgStatus = await jsrApiStatus(`/scopes/${id.scope}/packages/${id.name}`);
@@ -121,7 +104,28 @@ export const jsrTarget: PublishTargetPlugin = {
       );
     }
 
-    syncJsrJsonVersion(ctx.pkg.dir, ctx.version);
+    // Sync jsr.json's version from the release (formatting-preserving in-place edit).
+    // A jsr.json without a version field can't be synced — say so instead of letting
+    // deno fail with a less helpful parse error.
+    const jsrJson = await readJson<{ version?: unknown }>(jsrJsonPath);
+    if (typeof jsrJson.version !== 'string') {
+      throw new Error(`${ctx.pkg.name}: jsr.json has no "version" field — add one (any placeholder, e.g. "0.0.0")`);
+    }
+    if (jsrJson.version !== ctx.version) {
+      await updateJsonFields(jsrJsonPath, { version: ctx.version });
+    }
+  },
+
+  async publish(ctx) {
+    const args = [...JSR_BIN, 'publish', '--allow-dirty'];
+    if (ctx.options.allowSlowTypes === true) args.push('--allow-slow-types');
+    args.push(...stringArrayOption(ctx.options, 'publishArgs'));
+
+    if (ctx.dryRun) {
+      log.dim(`  Would publish with: ${args.join(' ')}`);
+      return;
+    }
+
     log.dim(`  Publishing: ${args.join(' ')}`);
     await runArgsAsync(args, { cwd: ctx.pkg.dir });
   },

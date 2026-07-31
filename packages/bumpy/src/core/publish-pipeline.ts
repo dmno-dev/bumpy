@@ -36,7 +36,17 @@ export interface TargetOutcome {
   type: string;
   status: 'success' | 'failed' | 'skipped';
   error?: string;
+  /** Human-readable skip explanation (display only — logic switches on skipKind) */
   reason?: string;
+  /**
+   * Why a target was skipped, structurally:
+   * - 'metadata': release metadata already records success (per-target resume)
+   * - 'registry': the pre-publish guard found the version live on the registry
+   * - 'capability': the target opted out of this release kind (snapshot/prerelease)
+   * Metadata/registry skips mean the version IS live — consumers treat them as
+   * success for tagging and release-metadata purposes.
+   */
+  skipKind?: 'metadata' | 'registry' | 'capability';
 }
 
 export interface PublishResult {
@@ -177,7 +187,7 @@ export async function publishPackages(
     //    per the registry guard)
     const succeededNow = outcomes.filter((o) => o.status === 'success');
     const failedNow = outcomes.filter((o) => o.status === 'failed');
-    const alreadyLive = (o: TargetOutcome) => o.reason === 'already published' || o.reason === 'already on registry';
+    const alreadyLive = (o: TargetOutcome) => o.skipKind === 'metadata' || o.skipKind === 'registry';
     const anySuccess = succeededNow.length > 0 || (completed?.size ?? 0) > 0 || outcomes.some(alreadyLive);
     if (anySuccess) {
       createGitTag(release, rootDir, opts);
@@ -228,18 +238,18 @@ async function publishOneTarget(
   // Already succeeded in a previous run (per release metadata) — don't re-publish
   if (completed?.has(target.name)) {
     log.dim(`  Skipping ${target.name} — already published (per release metadata)`);
-    return { ...base, status: 'skipped', reason: 'already published' };
+    return { ...base, status: 'skipped', skipKind: 'metadata', reason: 'already published' };
   }
 
   // Capability gates
   const caps = target.plugin.capabilities;
   if (releaseKind === 'snapshot' && !caps.snapshots) {
     log.dim(`  Skipping ${target.name} — target does not support snapshot releases`);
-    return { ...base, status: 'skipped', reason: 'snapshots not supported' };
+    return { ...base, status: 'skipped', skipKind: 'capability', reason: 'snapshots not supported' };
   }
   if (isPrerelease && !caps.prereleases) {
     log.dim(`  Skipping ${target.name} — target does not support prerelease versions`);
-    return { ...base, status: 'skipped', reason: 'prereleases not supported' };
+    return { ...base, status: 'skipped', skipKind: 'capability', reason: 'prereleases not supported' };
   }
 
   // Registry-level idempotency guard: even without release metadata (gh unavailable,
@@ -250,7 +260,7 @@ async function publishOneTarget(
     const published = await target.plugin.checkPublished(pkg, release.newVersion, target.options).catch(() => null);
     if (published === true) {
       log.dim(`  Skipping ${target.name} — ${release.newVersion} already on registry`);
-      return { ...base, status: 'skipped', reason: 'already on registry' };
+      return { ...base, status: 'skipped', skipKind: 'registry', reason: 'already on registry' };
     }
   }
 
@@ -267,6 +277,12 @@ async function publishOneTarget(
       releaseKind,
       packManager: args.detectedPm,
     };
+
+    // Per-target pre-publish step (e.g. publish-time version sync into jsr.json /
+    // pyproject.toml). Runs after all skip gates so a skipped target never mutates files.
+    if (!opts.dryRun) {
+      await target.plugin.prepare?.(ctx);
+    }
 
     // Shared artifact: build once per (package, kind), reuse across sibling targets
     const kind = target.plugin.artifactKind?.(target.options, config);

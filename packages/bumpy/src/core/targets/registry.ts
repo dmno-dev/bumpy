@@ -175,9 +175,9 @@ export function resolvePackageTargets(
         ? resolveStringEntry(entry, config, pkg.name)
         : resolveInlineEntry(entry, config, pkg.name);
 
-    if (pkg.private && target.type === 'npm') {
+    if (pkg.private && target.plugin.capabilities.refusesPrivatePackages) {
       log.warn(
-        `  ${pkg.name}: dropping npm publish target "${target.name}" — package is "private": true (npm refuses to publish it)`,
+        `  ${pkg.name}: dropping publish target "${target.name}" — package is "private": true (${target.type} refuses to publish it)`,
       );
       continue;
     }

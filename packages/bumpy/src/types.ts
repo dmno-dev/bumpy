@@ -375,6 +375,13 @@ export interface WorkspacePackage {
    * `getPackageTargets()` from core/targets to resolve lazily.
    */
   targets?: import('./core/targets/types.ts').ResolvedTarget[];
+  /**
+   * Set when target resolution failed at discovery (unknown target name, invalid
+   * targets-map entry, ...). Discovery stays usable so read-only commands (status,
+   * add, check) keep working with a warning; publish flows refuse to run until the
+   * config is fixed.
+   */
+  targetsError?: string;
 }
 
 export type PackageManager = 'npm' | 'pnpm' | 'yarn' | 'bun';

@@ -12,6 +12,12 @@ export interface TargetCapabilities {
   prereleases: boolean;
   /** Participates in transient snapshot releases (`bumpy publish --snapshot`) */
   snapshots: boolean;
+  /**
+   * The registry refuses `"private": true` packages (npm's marker). Instances of
+   * such targets are dropped from private packages at resolve time — which is what
+   * lets a private VS Code extension publish to marketplaces while never touching npm.
+   */
+  refusesPrivatePackages?: boolean;
 }
 
 /** Context for the once-per-target-instance preflight hook, run before any publish */
@@ -65,6 +71,12 @@ export interface PublishTargetPlugin {
   /** Human-readable label for release notes / status output. Falls back to the instance name. */
   label?(options: TargetOptions, pkg?: WorkspacePackage): string;
   preflight?(ctx: TargetPreflightContext): void | Promise<void>;
+  /**
+   * Per-package pre-publish step, run after the skip gates (capabilities, resume,
+   * registry guard) and before artifact building. The home for publish-time version
+   * syncing into ecosystem manifests (jsr.json, pyproject.toml). Not called on dry runs.
+   */
+  prepare?(ctx: TargetPublishContext): void | Promise<void>;
   /**
    * Whether `version` is already live on this target.
    * Return null for "unknown" (caller falls back to git-tag tracking).

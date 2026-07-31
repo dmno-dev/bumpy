@@ -209,6 +209,33 @@ describe('target helpers', () => {
   });
 });
 
+describe('lenient discovery on broken target config', () => {
+  test('discoverWorkspace records targetsError instead of throwing', async () => {
+    const { discoverWorkspace } = await import('../../src/core/workspace.ts');
+    const dir = await mkdtemp(resolve(tmpdir(), 'bumpy-targets-lenient-'));
+    try {
+      await writeJson(resolve(dir, 'package.json'), { name: 'root', private: true, workspaces: ['packages/*'] });
+      const pkgDir = resolve(dir, 'packages/broken');
+      const { ensureDir } = await import('../../src/utils/fs.ts');
+      await ensureDir(pkgDir);
+      await writeJson(resolve(pkgDir, 'package.json'), {
+        name: 'broken',
+        version: '1.0.0',
+        bumpy: { publishTargets: ['does-not-exist'] },
+      });
+
+      // Read-only discovery must survive the bad reference...
+      const { packages } = await discoverWorkspace(dir, makeConfig());
+      const pkg = packages.get('broken')!;
+      expect(pkg.targets).toEqual([]);
+      // ...but record the error so publish flows can refuse loudly
+      expect(pkg.targetsError).toContain('does-not-exist');
+    } finally {
+      await rm(dir, { recursive: true });
+    }
+  });
+});
+
 describe('pypi pyproject.toml helpers', () => {
   const TOML = ['[project]', 'name = "my-tool"', 'version = "1.0.0"', '', '[tool.uv]', 'dev = true'].join('\n');
 

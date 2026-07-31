@@ -33,6 +33,7 @@ import {
   type PublishTargetState,
 } from '../core/github-release.ts';
 import { getPackageTargets, getNpmTarget, targetLabel } from '../core/targets/registry.ts';
+import { npmEffectiveRegistry } from '../core/targets/npm.ts';
 import type { ResolvedTarget } from '../core/targets/types.ts';
 import { loadFormatter } from '../core/changelog.ts';
 import { detectWorkspaces } from '../utils/package-manager.ts';
@@ -76,6 +77,15 @@ export async function publishCommand(
   const { packages, catalogs } = await discoverWorkspace(rootDir, config);
   const { packageManager: detectedPm } = await detectWorkspaces(rootDir);
   const depGraph = new DependencyGraph(packages);
+
+  // Discovery tolerates broken target config so read-only commands keep working;
+  // publishing with one is never safe — fail before any release side effects.
+  const brokenTargets = [...packages.values()].filter((p) => p.targetsError);
+  if (brokenTargets.length > 0) {
+    log.error('Invalid publish target configuration — fix before publishing:');
+    for (const p of brokenTargets) log.error(`  • ${p.name}: ${p.targetsError}`);
+    process.exit(1);
+  }
 
   if (!opts.dryRun && hasUncommittedChanges({ cwd: rootDir })) {
     log.warn('You have uncommitted changes. Commit or stash them before publishing.');
@@ -600,7 +610,7 @@ async function runPublishFlow(
         const label = target ? targetLabel(target, pkg) : outcome.target;
         const labelField = label !== outcome.target ? { label } : {};
 
-        if (outcome.status === 'success' || outcome.reason === 'already on registry') {
+        if (outcome.status === 'success' || outcome.skipKind === 'registry') {
           // "already on registry" = the pre-publish registry guard found the version
           // live (metadata was stale or lost) — record it as the success it is
           info.metadata.targets[outcome.target] = {
@@ -618,7 +628,7 @@ async function runPublishFlow(
             ...labelField,
           };
           changed = true;
-        } else if (outcome.reason !== 'already published') {
+        } else if (outcome.skipKind !== 'metadata') {
           // Capability skips (e.g. prerelease on a target without prerelease support)
           info.metadata.targets[outcome.target] = {
             status: 'skipped',
@@ -849,19 +859,14 @@ async function checkIfPublished(pkg: WorkspacePackage, version: string, config: 
 
   // 2. A package is published only when EVERY target that can answer says so —
   //    "npm succeeded but JSR failed" must re-enter the publish flow so the
-  //    per-target retry can finish the job.
+  //    per-target retry can finish the job. Checks are independent registry
+  //    queries, so they run in parallel.
   const targets = getPackageTargets(pkg, config);
-  let anyUnknown = false;
-  for (const target of targets) {
-    if (!target.plugin.checkPublished) {
-      anyUnknown = true;
-      continue;
-    }
-    const published = await target.plugin.checkPublished(pkg, version, target.options);
-    if (published === false) return false;
-    if (published === null) anyUnknown = true;
-  }
-  if (!anyUnknown) return true;
+  const answers = await Promise.all(
+    targets.map((target) => target.plugin.checkPublished?.(pkg, version, target.options) ?? null),
+  );
+  if (answers.some((a) => a === false)) return false;
+  if (answers.length > 0 && answers.every((a) => a === true)) return true;
 
   // 3. Targets that can't answer (custom without checkPublished, network failures):
   //    git tags track their published-ness
@@ -899,7 +904,7 @@ async function findPackagesMissingFromNpm(
       const pkg = packages.get(release.name)!;
       const npm = getNpmTarget(pkg, config);
       if (!npm) return;
-      const registry = (npm.options.registry as string | undefined) ?? pkg.bumpy?.registry;
+      const registry = npmEffectiveRegistry(pkg, pkg.bumpy || {}, npm.options);
       const exists = await packageExistsOnNpm(release.name, registry);
       if (!exists) missing.push(release.name);
     }),

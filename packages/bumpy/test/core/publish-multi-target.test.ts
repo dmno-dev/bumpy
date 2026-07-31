@@ -129,6 +129,7 @@ describe('publishPackages — multi-target', () => {
 
     const outcomes = result.targetOutcomes.get('resume')!;
     expect(outcomes.find((o) => o.target === 'done-already')!.status).toBe('skipped');
+    expect(outcomes.find((o) => o.target === 'done-already')!.skipKind).toBe('metadata');
     expect(outcomes.find((o) => o.target === 'done-already')!.reason).toBe('already published');
     expect(outcomes.find((o) => o.target === 'pending')!.status).toBe('success');
   });
@@ -256,6 +257,7 @@ describe('publishPackages — multi-target', () => {
 
     const outcomes = result.targetOutcomes.get('guarded')!;
     expect(outcomes[0]!.status).toBe('skipped');
+    expect(outcomes[0]!.skipKind).toBe('registry');
     expect(outcomes[0]!.reason).toBe('already on registry');
     expect(getCallsMatching('publish-cmd')).toHaveLength(0);
     // Version exists → tag still created (resume semantics)

@@ -4,6 +4,7 @@ import { readJson, exists } from '../utils/fs.ts';
 import { detectWorkspaces, type CatalogMap } from '../utils/package-manager.ts';
 import { loadPackageConfig, isPackageManaged } from './config.ts';
 import { resolvePackageTargets } from './targets/registry.ts';
+import { log } from '../utils/logger.ts';
 import type { BumpyConfig, WorkspacePackage } from '../types.ts';
 
 export interface WorkspaceDiscoveryResult {
@@ -136,6 +137,19 @@ async function loadWorkspacePackage(
   const bumpy = await loadPackageConfig(dir, config, name);
   const isPrivate = !!pkg.private;
 
+  // Resolve publish targets once at discovery so downstream consumers can answer
+  // "where does this package publish" without the root config in hand. A config
+  // mistake here must not brick read-only commands (status/add/check) — record the
+  // error and let publish flows refuse loudly instead.
+  let targets: WorkspacePackage['targets'] = [];
+  let targetsError: string | undefined;
+  try {
+    targets = resolvePackageTargets({ name, private: isPrivate }, bumpy, config);
+  } catch (err) {
+    targetsError = err instanceof Error ? err.message : String(err);
+    log.warn(`${name}: invalid publish target config — ${targetsError}`);
+  }
+
   return {
     name,
     version: (pkg.version as string) || '0.0.0',
@@ -148,8 +162,7 @@ async function loadWorkspacePackage(
     peerDependencies: (pkg.peerDependencies as Record<string, string>) || {},
     optionalDependencies: (pkg.optionalDependencies as Record<string, string>) || {},
     bumpy,
-    // Resolve publish targets once at discovery so downstream consumers can answer
-    // "where does this package publish" without the root config in hand
-    targets: resolvePackageTargets({ name, private: isPrivate }, bumpy, config),
+    targets,
+    ...(targetsError ? { targetsError } : {}),
   };
 }

@@ -4,6 +4,7 @@ import { readText, writeText, updateJsonFields, updateJsonNestedField } from '..
 import { runArgsAsync, tryRunArgs } from '../utils/shell.ts';
 import { listTags } from './git.ts';
 import { getNpmTarget, packagePublishes } from './targets/registry.ts';
+import { npmEffectiveRegistry } from './targets/npm.ts';
 import type { ResolvedChannel } from './channels.ts';
 import type { ReleasePlan, PlannedRelease, WorkspacePackage } from '../types.ts';
 
@@ -81,11 +82,9 @@ export function usesNpmRegistry(pkg: WorkspacePackage): boolean {
   return getNpmTarget(pkg) !== undefined;
 }
 
-/** The registry a package's npm target publishes to, if configured */
+/** The registry a package's npm target publishes to (full fallback chain incl. publishConfig.registry) */
 export function npmTargetRegistry(pkg: WorkspacePackage): string | undefined {
-  const npm = getNpmTarget(pkg);
-  const registry = npm?.options.registry;
-  return typeof registry === 'string' && registry ? registry : pkg.bumpy?.registry;
+  return npmEffectiveRegistry(pkg, pkg.bumpy || {}, getNpmTarget(pkg)?.options ?? {});
 }
 
 /** Query published prerelease state for one package at a target version */

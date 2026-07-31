@@ -7,8 +7,8 @@ import { assembleReleasePlan } from '../core/release-plan.ts';
 import { getCurrentBranch, getChangedFiles } from '../core/git.ts';
 import { channelNames, resolveActiveChannel, type ResolvedChannel } from '../core/channels.ts';
 import { buildChannelReleasePlan } from '../core/prerelease.ts';
-import { resolvePackageRegistry } from '../core/github-release.ts';
 import { getPackageTargets, targetLabel } from '../core/targets/registry.ts';
+import { npmEffectiveRegistry } from '../core/targets/npm.ts';
 import type { BumpFile, BumpyConfig, PackageConfig, PlannedRelease, WorkspacePackage } from '../types.ts';
 
 interface StatusOptions {
@@ -307,12 +307,7 @@ function getPublishTargets(
 ): Array<{ type: string; name: string; label: string; registry?: string }> {
   if (!pkg) return [];
   return getPackageTargets(pkg, config).map((t) => {
-    const registry =
-      typeof t.options.registry === 'string' && t.options.registry
-        ? t.options.registry
-        : t.type === 'npm'
-          ? resolvePackageRegistry(pkg, pkgConfig)
-          : undefined;
+    const registry = t.type === 'npm' ? npmEffectiveRegistry(pkg, pkgConfig, t.options) : undefined;
     return {
       type: t.type,
       name: t.name,

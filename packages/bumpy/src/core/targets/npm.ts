@@ -67,7 +67,14 @@ function npmOptions(config: BumpyConfig, options: TargetOptions): PublishConfig 
   return { ...config.publish, ...options } as PublishConfig & TargetOptions;
 }
 
-function effectiveRegistry(
+/**
+ * The registry an npm-type target instance publishes to, resolved through the full
+ * fallback chain: instance options -> bumpy `registry` field -> package.json
+ * `publishConfig.registry`. The single source of truth for "which registry" —
+ * every consumer (publish args, existence checks, prerelease counters, labels,
+ * URLs) must go through this so they can never disagree.
+ */
+export function npmEffectiveRegistry(
   pkg: WorkspacePackage,
   pkgConfig: PackageConfig,
   options: TargetOptions,
@@ -179,7 +186,7 @@ function buildPublishArgs(ctx: TargetPublishContext, tarball?: string): string[]
   args.push('--access', access);
 
   // Registry
-  const registry = effectiveRegistry(ctx.pkg, ctx.pkgConfig, ctx.options);
+  const registry = npmEffectiveRegistry(ctx.pkg, ctx.pkgConfig, ctx.options);
   if (registry) args.push('--registry', registry);
 
   // Dist tag
@@ -233,7 +240,7 @@ export function parseTarballPath(output: string, cwd: string, pm: PackageManager
 
 export const npmTarget: PublishTargetPlugin = {
   type: 'npm',
-  capabilities: { distTags: true, prereleases: true, snapshots: true },
+  capabilities: { distTags: true, prereleases: true, snapshots: true, refusesPrivatePackages: true },
 
   detect(pkg) {
     return !pkg.private;
@@ -243,7 +250,7 @@ export const npmTarget: PublishTargetPlugin = {
     // Refines the common cases (e.g. "GitHub Packages"); named instances otherwise
     // label themselves via the metadata key.
     const registry = pkg
-      ? effectiveRegistry(pkg, pkg.bumpy || {}, options)
+      ? npmEffectiveRegistry(pkg, pkg.bumpy || {}, options)
       : typeof options.registry === 'string'
         ? options.registry
         : undefined;
@@ -280,7 +287,7 @@ export const npmTarget: PublishTargetPlugin = {
   async checkPublished(pkg, version, options) {
     try {
       const args = ['npm', 'info', `${pkg.name}@${version}`, 'version'];
-      const registry = effectiveRegistry(pkg, pkg.bumpy || {}, options);
+      const registry = npmEffectiveRegistry(pkg, pkg.bumpy || {}, options);
       if (registry) args.push('--registry', registry);
       const result = await runArgsAsync(args);
       return result.trim() === version;
@@ -320,7 +327,7 @@ export const npmTarget: PublishTargetPlugin = {
 
   publishUrl(pkg, version, options, extra) {
     return buildPublishUrl(pkg.name, version, 'npm', {
-      registry: effectiveRegistry(pkg, pkg.bumpy || {}, options),
+      registry: npmEffectiveRegistry(pkg, pkg.bumpy || {}, options),
       repoSlug: extra.repoSlug,
     });
   },
