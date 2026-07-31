@@ -116,11 +116,12 @@ function syncPyprojectVersion(ctx: TargetPublishContext): void {
     );
   }
   if (info.version === ctx.version) return;
+  // Validate even on dry runs — only the write is skipped
   const updated = updatePyprojectVersion(info.raw, ctx.version);
   if (updated === null) {
     throw new Error(`${ctx.pkg.name}: could not find a static [project] version in pyproject.toml to sync`);
   }
-  writeFileSync(path, updated);
+  if (!ctx.dryRun) writeFileSync(path, updated);
 }
 
 export const pypiTarget: PublishTargetPlugin = {

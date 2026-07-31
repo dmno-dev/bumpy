@@ -111,7 +111,7 @@ export const jsrTarget: PublishTargetPlugin = {
     if (typeof jsrJson.version !== 'string') {
       throw new Error(`${ctx.pkg.name}: jsr.json has no "version" field — add one (any placeholder, e.g. "0.0.0")`);
     }
-    if (jsrJson.version !== ctx.version) {
+    if (!ctx.dryRun && jsrJson.version !== ctx.version) {
       await updateJsonFields(jsrJsonPath, { version: ctx.version });
     }
   },

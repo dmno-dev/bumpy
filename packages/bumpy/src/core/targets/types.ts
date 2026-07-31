@@ -74,7 +74,9 @@ export interface PublishTargetPlugin {
   /**
    * Per-package pre-publish step, run after the skip gates (capabilities, resume,
    * registry guard) and before artifact building. The home for publish-time version
-   * syncing into ecosystem manifests (jsr.json, pyproject.toml). Not called on dry runs.
+   * syncing into ecosystem manifests (jsr.json, pyproject.toml). Also called on dry
+   * runs so config validation surfaces there — check `ctx.dryRun` and skip file
+   * mutations only.
    */
   prepare?(ctx: TargetPublishContext): void | Promise<void>;
   /**

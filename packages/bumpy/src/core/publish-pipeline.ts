@@ -279,10 +279,11 @@ async function publishOneTarget(
     };
 
     // Per-target pre-publish step (e.g. publish-time version sync into jsr.json /
-    // pyproject.toml). Runs after all skip gates so a skipped target never mutates files.
-    if (!opts.dryRun) {
-      await target.plugin.prepare?.(ctx);
-    }
+    // pyproject.toml). Runs after all skip gates so a skipped target never mutates
+    // files. Also runs on dry runs — its validation (missing manifests, unclaimed
+    // packages) is exactly what dry runs exist to surface; plugins skip only their
+    // file writes when ctx.dryRun is set.
+    await target.plugin.prepare?.(ctx);
 
     // Shared artifact: build once per (package, kind), reuse across sibling targets
     const kind = target.plugin.artifactKind?.(target.options, config);
