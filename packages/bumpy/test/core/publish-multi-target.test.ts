@@ -351,6 +351,112 @@ describe('publishPackages — multi-target', () => {
     });
   });
 
+  describe('pypi target', () => {
+    const realFetch = globalThis.fetch;
+    let pypiVersionStatus = 404;
+
+    beforeEach(() => {
+      pypiVersionStatus = 404;
+      globalThis.fetch = (async (url: string | URL) => {
+        const u = String(url);
+        if (u.startsWith('https://pypi.org/pypi/')) return new Response('{}', { status: pypiVersionStatus });
+        return new Response('{}', { status: 404 });
+      }) as typeof fetch;
+    });
+
+    afterEach(() => {
+      globalThis.fetch = realFetch;
+    });
+
+    const PYPROJECT = [
+      '[build-system]',
+      'requires = ["hatchling"]',
+      '',
+      '[project]',
+      'name = "My_Py.Tool"',
+      'version = "0.0.0"',
+      'description = "demo"',
+      '',
+      '[tool.other]',
+      'version = "9.9.9"',
+    ].join('\n');
+
+    async function setupPyPkg() {
+      const pkgDir = await setupPkg('py-tool', { private: true });
+      const { writeText } = await import('../../src/utils/fs.ts');
+      await writeText(resolve(pkgDir, 'pyproject.toml'), PYPROJECT);
+      addMockRule({ match: 'uv --version', response: 'uv 0.9.0' });
+      addMockRule({ match: 'uv build', response: '' });
+      addMockRule({ match: 'uv publish', response: '' });
+      return makePkg('py-tool', '1.0.0', {
+        dir: pkgDir,
+        private: true,
+        bumpy: { publishTargets: ['pypi'] },
+      });
+    }
+
+    test('syncs pyproject version, builds isolated dist, publishes explicit files', async () => {
+      const pkg = await setupPyPkg();
+      // simulate uv build producing distributions in the requested out-dir
+      const { ensureDir: mkdir, writeText } = await import('../../src/utils/fs.ts');
+      const outDir = resolve(pkg.dir, '.bumpy-pypi-dist-1.0.1');
+      await mkdir(outDir);
+      await writeText(resolve(outDir, 'my_py_tool-1.0.1-py3-none-any.whl'), '');
+      await writeText(resolve(outDir, 'my_py_tool-1.0.1.tar.gz'), '');
+
+      const { packages, depGraph, plan } = planFor(pkg);
+      const result = await publishPackages(plan, packages, depGraph, DEFAULT_CONFIG, tmpDir, {});
+
+      expect(result.failed).toHaveLength(0);
+      expect(result.published.map((p) => p.name)).toEqual(['py-tool']);
+
+      // version synced into [project] only — [tool.other] version untouched
+      const { readText } = await import('../../src/utils/fs.ts');
+      const toml = await readText(resolve(pkg.dir, 'pyproject.toml'));
+      expect(toml).toContain('version = "1.0.1"');
+      expect(toml).toContain('version = "9.9.9"');
+
+      const build = getCallsMatching(/^uv build/);
+      expect(build).toHaveLength(1);
+      expect(build[0]!.command).toContain('--out-dir');
+      const publish = getCallsMatching(/^uv publish/);
+      expect(publish).toHaveLength(1);
+      expect(publish[0]!.command).toContain('my_py_tool-1.0.1-py3-none-any.whl');
+      expect(publish[0]!.command).toContain('my_py_tool-1.0.1.tar.gz');
+    });
+
+    test('version already on PyPI is skipped via the registry guard (PEP 503 name normalization)', async () => {
+      const pkg = await setupPyPkg();
+      pypiVersionStatus = 200;
+
+      const { packages, depGraph, plan } = planFor(pkg);
+      const result = await publishPackages(plan, packages, depGraph, DEFAULT_CONFIG, tmpDir, {});
+
+      const outcomes = result.targetOutcomes.get('py-tool')!;
+      expect(outcomes[0]!.status).toBe('skipped');
+      expect(outcomes[0]!.reason).toBe('already on registry');
+      expect(getCallsMatching(/^uv publish/)).toHaveLength(0);
+    });
+
+    test('prerelease versions are skipped (PEP 440 mismatch)', async () => {
+      const pkg = await setupPyPkg();
+      const packages = new Map([[pkg.name, pkg]]);
+      const depGraph = new DependencyGraph(packages);
+      const plan: ReleasePlan = {
+        bumpFiles: [],
+        warnings: [],
+        releases: [makeRelease('py-tool', '1.0.0', '1.1.0-next.0')],
+      };
+
+      const result = await publishPackages(plan, packages, depGraph, DEFAULT_CONFIG, tmpDir, {});
+      const outcomes = result.targetOutcomes.get('py-tool')!;
+      expect(outcomes[0]!.status).toBe('skipped');
+      expect(outcomes[0]!.reason).toBe('prereleases not supported');
+      // preflight's `uv --version` check still runs; no build/publish happens
+      expect(getCallsMatching(/^uv (build|publish)/)).toHaveLength(0);
+    });
+  });
+
   test('npm + named GitHub Packages instance publish to both registries', async () => {
     const pkgDir = await setupPkg('dual-reg');
     const pkg = makePkg('dual-reg', '1.0.0', {

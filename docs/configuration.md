@@ -126,6 +126,7 @@ A package can publish to any number of **targets** — npm is just the default o
 | -------------------- | ----------------------------------- | --------------------------------- | ------------------------------------------------------------ |
 | `npm`                | `npm publish` (or configured PM)    | OIDC / `NPM_TOKEN` / `.npmrc`     | Supports dist-tags, prereleases, snapshots, staged publishes |
 | `jsr`                | `npx jsr publish`                   | OIDC (linked GitHub repo)         | Requires a `jsr.json`; no dist-tags, so no snapshots         |
+| `pypi`               | `uv build` + `uv publish`           | OIDC / `UV_PUBLISH_TOKEN`         | Requires a `pyproject.toml`; stable versions only            |
 | `vscode-marketplace` | `vsce publish --packagePath <vsix>` | `VSCE_PAT` (or Azure credentials) | Stable versions only — the Marketplace rejects prereleases   |
 | `open-vsx`           | `ovsx publish <vsix>`               | `OVSX_PAT`                        | Stable versions only                                         |
 | `custom`             | your shell command(s)               | yours                             | The declarative escape hatch for anything else               |
@@ -186,6 +187,27 @@ The legacy `publish` block is the npm type's default options — `targets.npm` a
 - JSR has **no create-on-first-publish**: claim each package in your scope on jsr.io first, and link the GitHub repo to publish token-lessly via OIDC (`id-token: write`). Unclaimed packages fail with guidance instead of publishing.
 - Options: `allowSlowTypes: true` passes `--allow-slow-types`; `publishArgs` appends anything else.
 - Credit: the JSR publishing behavior here (publish-time version sync, claim-first bootstrap) is modeled on [Drake Costa's](https://github.com/Saeris) setup in [mirrordown](https://github.com/mirrordown/mirrordown) — thanks Drake!
+
+#### PyPI notes
+
+bumpy's versioning spine is `package.json`, so a Python package in the workspace gets a **stub `package.json`** next to its `pyproject.toml`:
+
+```json
+{
+  "name": "my-py-tool",
+  "version": "1.2.0",
+  "private": true,
+  "bumpy": { "publishTargets": ["pypi"] }
+}
+```
+
+Bump files, changelogs, and the release PR all flow through the stub; at publish time the target syncs the version into `pyproject.toml` (`[project].version` — commit any placeholder), builds with `uv build` into an isolated per-version directory (so stale `dist/` artifacts can never ride along), and uploads with `uv publish`.
+
+- **Auth**: [PyPI trusted publishing](https://docs.pypi.org/trusted-publishers/) (OIDC) works token-lessly on GitHub Actions with `id-token: write` — `uv publish` picks it up automatically. Otherwise set `UV_PUBLISH_TOKEN`.
+- The PyPI project name comes from `pyproject.toml` `[project].name`, not the stub's npm name.
+- `dynamic = ["version"]` (setuptools-scm etc.) can't be synced — use a static version.
+- PEP 440 doesn't cover bumpy's semver prerelease/snapshot suffixes, so channel prereleases and snapshots record the target as `skipped`.
+- Options: `index` (alternative upload URL), `buildArgs` / `publishArgs`.
 
 #### VS Code extension notes
 

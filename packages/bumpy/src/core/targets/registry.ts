@@ -2,6 +2,7 @@ import { log } from '../../utils/logger.ts';
 import { npmTarget } from './npm.ts';
 import { customTarget } from './custom.ts';
 import { jsrTarget } from './jsr.ts';
+import { pypiTarget } from './pypi.ts';
 import { vscodeMarketplaceTarget, openVsxTarget } from './vscode.ts';
 import type {
   BumpyConfig,
@@ -21,6 +22,7 @@ const BUILT_IN_TARGETS: Record<string, PublishTargetPlugin> = {
   [npmTarget.type]: npmTarget,
   [customTarget.type]: customTarget,
   [jsrTarget.type]: jsrTarget,
+  [pypiTarget.type]: pypiTarget,
   [vscodeMarketplaceTarget.type]: vscodeMarketplaceTarget,
   [openVsxTarget.type]: openVsxTarget,
 };

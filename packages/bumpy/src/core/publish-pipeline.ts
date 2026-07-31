@@ -1,5 +1,5 @@
 import { resolve } from 'node:path';
-import { unlink } from 'node:fs/promises';
+import { rm } from 'node:fs/promises';
 import semver from 'semver';
 import { readJson, updateJsonNestedField } from '../utils/fs.ts';
 import { runStreaming } from '../utils/shell.ts';
@@ -291,12 +291,12 @@ async function publishOneTarget(
   }
 }
 
-/** Delete shared artifact files (tarballs, vsix) built during a package's publish */
+/** Delete shared artifacts (tarballs, vsix files, python dist dirs) built during a package's publish */
 async function cleanupArtifacts(artifacts: Map<string, string>): Promise<void> {
   for (const path of artifacts.values()) {
     if (path.startsWith('<')) continue; // dry-run placeholder
     try {
-      await unlink(path);
+      await rm(path, { recursive: true, force: true });
     } catch {
       /* ignore */
     }

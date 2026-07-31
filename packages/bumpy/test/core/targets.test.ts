@@ -12,6 +12,7 @@ import {
   targetLabel,
 } from '../../src/core/targets/registry.ts';
 import { loadPackageConfig } from '../../src/core/config.ts';
+import { parsePyproject, updatePyprojectVersion } from '../../src/core/targets/pypi.ts';
 import type { BumpyConfig } from '../../src/types.ts';
 
 function configWithTargets(targets: BumpyConfig['targets']): BumpyConfig {
@@ -205,6 +206,37 @@ describe('target helpers', () => {
     const targets = resolvePackageTargets(pkg, { publishTargets: ['vscode-marketplace', 'open-vsx'] }, makeConfig());
     expect(targetLabel(targets[0]!, pkg)).toBe('VS Code Marketplace');
     expect(targetLabel(targets[1]!, pkg)).toBe('Open VSX');
+  });
+});
+
+describe('pypi pyproject.toml helpers', () => {
+  const TOML = ['[project]', 'name = "my-tool"', 'version = "1.0.0"', '', '[tool.uv]', 'dev = true'].join('\n');
+
+  test('parsePyproject extracts name/version from [project] only', () => {
+    const info = parsePyproject(TOML);
+    expect(info.name).toBe('my-tool');
+    expect(info.version).toBe('1.0.0');
+    expect(info.dynamicVersion).toBe(false);
+  });
+
+  test('parsePyproject detects dynamic version', () => {
+    const info = parsePyproject('[project]\nname = "x"\ndynamic = ["version", "readme"]\n');
+    expect(info.version).toBeUndefined();
+    expect(info.dynamicVersion).toBe(true);
+  });
+
+  test('updatePyprojectVersion rewrites only the [project] version, preserving formatting', () => {
+    const withOther = `# comment\n${TOML}\n\n[tool.other]\nversion = "3.3.3"\n`;
+    const updated = updatePyprojectVersion(withOther, '2.5.0')!;
+    expect(updated).toContain('version = "2.5.0"');
+    expect(updated).toContain('version = "3.3.3"');
+    expect(updated).toContain('# comment');
+    expect(updated).not.toContain('"1.0.0"');
+  });
+
+  test('updatePyprojectVersion returns null when no static version exists', () => {
+    expect(updatePyprojectVersion('[project]\nname = "x"\n', '1.0.0')).toBeNull();
+    expect(updatePyprojectVersion('[tool.poetry]\nversion = "1.0.0"\n', '2.0.0')).toBeNull();
   });
 });
 
