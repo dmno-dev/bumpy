@@ -8,21 +8,21 @@ There are several great tools in the release management space, each with differe
 
 ## Changesets
 
-[Changesets](https://github.com/changesets/changesets) is the most direct comparison — bumpy uses the same bump-file-per-PR model and is designed as a successor to it. Changesets is mature, widely adopted, and battle-tested across many large monorepos.
+[Changesets](https://github.com/changesets/changesets) is the most direct comparison — bumpy uses the same bump-file-per-PR model and is designed as a successor to it. Changesets is mature, widely adopted, and battle-tested across many large monorepos. The v3 release (August 2026) fixed many long-standing v2 complaints — forced peer-dep major bumps, unresolved `workspace:` ranges, no non-interactive `add`, publish ordering — which narrows the gap, though the remaining differences below are structural.
 
 **Where changesets shines:**
 
 - Proven at scale with years of production use across the ecosystem
 - Large community with extensive documentation and third-party integrations
-- Stable, well-understood behavior
+- v3 modernized the core: sane peer-dep bumps, publishes routed through pnpm/yarn, dependency-ordered publishing, better failure recovery
 
 **Where bumpy differs:**
 
-- **Dependency propagation** — changesets hardcodes aggressive peer dep behavior (a minor bump can trigger major bumps on dependents). Bumpy uses a [configurable three-phase algorithm](./version-propagation.md) with sensible defaults.
-- **Workspace protocols** — changesets uses `npm publish` even in pnpm/yarn workspaces, so `workspace:^` and `catalog:` protocols may not be resolved correctly. Bumpy resolves these before publishing.
-- **Custom publish commands** — changesets is locked to `npm publish`. Bumpy supports per-package custom commands for VSCode extensions, Docker images, JSR, etc.
+- **Dependency propagation** — changesets hardcodes peer dep behavior (v2 forced major bumps on dependents; v3 forces patch — assuming every peer change is non-breaking). Bumpy uses a [configurable three-phase algorithm](./version-propagation.md) that matches the triggering bump level by default.
+- **Catalogs & protocol resolution** — changesets v3 resolves `workspace:^` by delegating to pnpm/yarn at publish time, but `catalog:` support is still open. Bumpy resolves all workspace protocols and catalogs (pnpm, Bun, Yarn) itself, so resolution also works with custom publish targets.
+- **Custom publish commands** — changesets only publishes npm packages. Bumpy supports per-package custom commands for VSCode extensions, Docker images, JSR, etc.
 - **CI setup** — changesets requires a [GitHub App](https://github.com/apps/changeset-bot) and a [separate GitHub Action](https://github.com/changesets/action). Bumpy uses two CLI commands (`bumpy ci check` + `bumpy ci release`) that run directly in your workflows.
-- **Non-interactive CLI** — `bumpy add` works fully non-interactively, which is important for CI/CD and AI-assisted workflows.
+- **Prereleases** — changesets uses a committed global "pre mode" (improved bookkeeping in v3, but still a shared state file with known footguns). Bumpy uses [branch-based channels](./prereleases.md) with no committed prerelease state.
 
 For a detailed breakdown with links to specific changesets issues, see [Differences from Changesets](./differences-from-changesets.md).
 
