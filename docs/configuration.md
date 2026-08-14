@@ -174,20 +174,42 @@ Per-package settings can be defined in two places:
 
 `package.json` settings take precedence over global config.
 
-| Option                     | Type                       | Description                                                                            |
-| -------------------------- | -------------------------- | -------------------------------------------------------------------------------------- |
-| `managed`                  | `boolean`                  | Opt this package in or out of versioning                                               |
-| `access`                   | `"public" \| "restricted"` | Override the global access level                                                       |
-| `publishCommand`           | `string \| string[]`       | Custom command(s) to publish this package (replaces npm publish)                       |
-| `buildCommand`             | `string`                   | Command to run before publishing                                                       |
-| `registry`                 | `string`                   | Custom npm registry URL                                                                |
-| `skipNpmPublish`           | `boolean`                  | Don't publish to npm (still creates git tags)                                          |
-| `checkPublished`           | `string`                   | Custom command that outputs the currently published version                            |
-| `changedFilePatterns`      | `string[]`                 | Glob patterns for changed-file detection (replaces root setting, not merged)           |
-| `dependencyBumpRules`      | `object`                   | Per-package override for dependency propagation rules                                  |
-| `cascadeTo`                | `object`                   | Explicit cascade targets — glob pattern mapped to `{ trigger, bumpAs }`                |
-| `cascadeFrom`              | `object`                   | Explicit cascade sources — glob pattern mapped to `{ trigger, bumpAs }`                |
-| `releaseTriggeringDevDeps` | `string[]`                 | devDependencies that affect published output — a change requires a release (see below) |
+| Option                     | Type                       | Description                                                                              |
+| -------------------------- | -------------------------- | ---------------------------------------------------------------------------------------- |
+| `managed`                  | `boolean`                  | Opt this package in or out of versioning                                                 |
+| `directBump`               | `boolean`                  | When `false`, the package only receives propagated bumps — never direct ones (see below) |
+| `access`                   | `"public" \| "restricted"` | Override the global access level                                                         |
+| `publishCommand`           | `string \| string[]`       | Custom command(s) to publish this package (replaces npm publish)                         |
+| `buildCommand`             | `string`                   | Command to run before publishing                                                         |
+| `registry`                 | `string`                   | Custom npm registry URL                                                                  |
+| `skipNpmPublish`           | `boolean`                  | Don't publish to npm (still creates git tags)                                            |
+| `checkPublished`           | `string`                   | Custom command that outputs the currently published version                              |
+| `changedFilePatterns`      | `string[]`                 | Glob patterns for changed-file detection (replaces root setting, not merged)             |
+| `dependencyBumpRules`      | `object`                   | Per-package override for dependency propagation rules                                    |
+| `cascadeTo`                | `object`                   | Explicit cascade targets — glob pattern mapped to `{ trigger, bumpAs }`                  |
+| `cascadeFrom`              | `object`                   | Explicit cascade sources — glob pattern mapped to `{ trigger, bumpAs }`                  |
+| `releaseTriggeringDevDeps` | `string[]`                 | devDependencies that affect published output — a change requires a release (see below)   |
+
+### `directBump: false` — packages that only follow
+
+Some packages are derived artifacts of another package and should never be bumped on their own — the typical case is platform-specific binary packages published alongside a core package (the esbuild/napi-rs pattern, where the core references each binary via exact-version `optionalDependencies`).
+
+Put the binaries in a `fixed` group with the core so they version in lockstep, and mark them `directBump: false` so they can only receive propagated bumps:
+
+```jsonc
+{
+  "fixed": [["mycli", "@mycli/bin-*"]],
+  "packages": {
+    "@mycli/bin-*": { "directBump": false },
+  },
+}
+```
+
+Effects:
+
+- `bumpy add` and `bumpy generate` never select or suggest them — you only ever bump `mycli`, and the fixed group pulls the binaries along.
+- A bump file that directly names one (with a type other than `none`) is an error at plan time.
+- `bumpy check` treats changes in a `directBump: false` package as covered when a bump file covers any other member of its fixed group, and points there when one is missing.
 
 ### Custom commands and `allowCustomCommands`
 

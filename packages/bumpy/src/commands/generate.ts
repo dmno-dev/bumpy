@@ -68,6 +68,9 @@ export async function generateCommand(rootDir: string, opts: GenerateOptions): P
   // Build scope → package name mapping for CC resolution
   const scopeMap = buildScopeMap(packages, config);
 
+  // Packages with directBump: false only receive propagated bumps — never suggest them
+  const isDirectlyBumpable = (name: string) => packages.get(name)?.bumpy?.directBump !== false;
+
   // Collect releases from all commits
   const releaseMap = new Map<string, { type: BumpType; messages: string[] }>();
 
@@ -84,7 +87,7 @@ export async function generateCommand(rootDir: string, opts: GenerateOptions): P
 
       let pkgNames: string[] = [];
       if (cc.scope) {
-        const resolved = resolveScope(cc.scope, scopeMap, packages);
+        const resolved = resolveScope(cc.scope, scopeMap, packages).filter(isDirectlyBumpable);
         if (resolved.length > 0) {
           pkgNames = resolved;
         }
@@ -101,7 +104,7 @@ export async function generateCommand(rootDir: string, opts: GenerateOptions): P
       // CC commit but scope didn't resolve (or no scope) — use file-based detection
       // with the CC-derived bump level
       const files = getFilesChangedInCommit(commit.hash, { cwd: rootDir });
-      const touchedPkgs = mapFilesToPackages(files, packages, rootDir);
+      const touchedPkgs = mapFilesToPackages(files, packages, rootDir).filter(isDirectlyBumpable);
 
       if (touchedPkgs.length > 0) {
         for (const name of touchedPkgs) {
@@ -113,7 +116,7 @@ export async function generateCommand(rootDir: string, opts: GenerateOptions): P
     } else {
       // Non-conventional commit — use file paths to detect packages, default to patch
       const files = getFilesChangedInCommit(commit.hash, { cwd: rootDir });
-      const touchedPkgs = mapFilesToPackages(files, packages, rootDir);
+      const touchedPkgs = mapFilesToPackages(files, packages, rootDir).filter(isDirectlyBumpable);
 
       if (touchedPkgs.length > 0) {
         fileBasedCount++;

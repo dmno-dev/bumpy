@@ -40,7 +40,9 @@ export async function addCommand(rootDir: string, opts: AddOptions): Promise<voi
   if (opts.none) {
     const { packages } = await discoverWorkspace(rootDir, config);
     const changedFiles = getChangedFiles(rootDir, config.baseBranch);
-    const changedPackages = await findChangedPackages(changedFiles, packages, rootDir, config);
+    const changedPackages = (await findChangedPackages(changedFiles, packages, rootDir, config)).filter(
+      (name) => packages.get(name)?.bumpy?.directBump !== false,
+    );
 
     if (changedPackages.length === 0) {
       log.info('No changed packages detected.');
@@ -71,6 +73,15 @@ export async function addCommand(rootDir: string, opts: AddOptions): Promise<voi
   if (opts.packages) {
     // Non-interactive mode
     releases = parsePackagesFlag(opts.packages);
+    const { packages: pkgs } = await discoverWorkspace(rootDir, config);
+    for (const r of releases) {
+      if (r.type !== 'none' && pkgs.get(r.name)?.bumpy?.directBump === false) {
+        throw new Error(
+          `"${r.name}" has "directBump": false — it only receives propagated bumps ` +
+            '(fixed/linked group, cascade, dependency). Bump the package that drives it instead.',
+        );
+      }
+    }
     summary = opts.message || '';
     filename = opts.name ? slugify(opts.name) : randomName();
   } else {
@@ -97,8 +108,14 @@ export async function addCommand(rootDir: string, opts: AddOptions): Promise<voi
       }
     }
 
-    // Build items for the bump select prompt
-    const bumpSelectItems: BumpSelectItem[] = [...pkgs.values()].map((pkg) => {
+    // Build items for the bump select prompt (directBump: false packages are never
+    // directly bumpable — they only follow their group/cascade sources)
+    const selectablePkgs = [...pkgs.values()].filter((pkg) => pkg.bumpy?.directBump !== false);
+    if (selectablePkgs.length === 0) {
+      p.cancel('All managed packages have "directBump": false — nothing to select.');
+      process.exit(1);
+    }
+    const bumpSelectItems: BumpSelectItem[] = selectablePkgs.map((pkg) => {
       const item: BumpSelectItem = {
         name: pkg.name,
         version: pkg.version,

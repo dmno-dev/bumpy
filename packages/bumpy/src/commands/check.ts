@@ -1,7 +1,7 @@
 import { relative, resolve } from 'node:path';
 import picomatch from 'picomatch';
 import { log, colorize } from '../utils/logger.ts';
-import { loadConfig, loadPackageConfig, getBumpyDir, matchGlob } from '../core/config.ts';
+import { loadConfig, loadPackageConfig, getBumpyDir, matchGlob, resolveFixedGroups } from '../core/config.ts';
 import { discoverWorkspace } from '../core/workspace.ts';
 import { readBumpFiles, filterBranchBumpFiles } from '../core/bump-file.ts';
 import { getChangedFiles, getFileStatuses, getBaseCompareRef, readFileAtRef } from '../core/git.ts';
@@ -163,8 +163,15 @@ export async function checkCommand(rootDir: string, opts: CheckOptions = {}): Pr
     return;
   }
 
-  // Check which changed packages are missing bump files
-  const missing = changedPackages.filter((name) => !coveredPackages.has(name));
+  // Check which changed packages are missing bump files. Packages with
+  // directBump: false can't have their own bump file — they count as covered
+  // when a fixed-group member is covered, and otherwise point there.
+  const { missing, hints } = resolveDirectBumpCoverage(
+    changedPackages.filter((name) => !coveredPackages.has(name)),
+    coveredPackages,
+    packages,
+    config,
+  );
 
   // An empty bump file covers all remaining packages (in non-strict mode)
   // It acts as a blanket acknowledgment that non-publishable changes are expected
@@ -195,7 +202,8 @@ export async function checkCommand(rootDir: string, opts: CheckOptions = {}): Pr
 
   (willFail ? log.error : log.warn)(`${missing.length} changed package(s) missing bump files:\n`);
   for (const name of missing) {
-    console.log(`  ${colorize(name, 'yellow')}`);
+    const hint = hints.get(name);
+    console.log(`  ${colorize(name, 'yellow')}${hint ? ` — ${hint}` : ''}`);
   }
 
   if (effectiveBumpFiles.length > 0) {
@@ -235,6 +243,42 @@ function printBumpFileList(
           : '';
     log.dim(`  ${bumpyRelDir}/${id}.md${statusLabel}`);
   }
+}
+
+/**
+ * Coverage adjustment for `directBump: false` packages. Such a package never gets its
+ * own bump file — its changes ship by bumping another member of its fixed group. So a
+ * missing directBump package counts as covered when any other fixed-group member is
+ * covered; otherwise it stays missing, with a hint pointing at the bumpable members.
+ */
+export function resolveDirectBumpCoverage(
+  missing: string[],
+  covered: Set<string>,
+  packages: Map<string, WorkspacePackage>,
+  config: BumpyConfig,
+): { missing: string[]; hints: Map<string, string> } {
+  const fixedGroups = resolveFixedGroups(config, packages.keys());
+  const stillMissing: string[] = [];
+  const hints = new Map<string, string>();
+
+  for (const name of missing) {
+    if (packages.get(name)?.bumpy?.directBump !== false) {
+      stillMissing.push(name);
+      continue;
+    }
+    const group = fixedGroups.find((members) => members.includes(name));
+    if (group?.some((member) => member !== name && covered.has(member))) continue;
+
+    stillMissing.push(name);
+    const bumpable = (group ?? []).filter((m) => m !== name && packages.get(m)?.bumpy?.directBump !== false);
+    hints.set(
+      name,
+      bumpable.length > 0
+        ? `has directBump: false — add a bump for its fixed-group member ${bumpable.join(' or ')} instead`
+        : 'has directBump: false — it only receives propagated bumps; add it to a fixed group or bump its cascade source',
+    );
+  }
+  return { missing: stillMissing, hints };
 }
 
 /** Map changed files to the packages they belong to */

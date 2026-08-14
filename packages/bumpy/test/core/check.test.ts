@@ -2,7 +2,7 @@ import { test, expect, describe, beforeEach, afterEach } from 'bun:test';
 import { resolve } from 'node:path';
 import { mkdir, writeFile, rm } from 'node:fs/promises';
 import { extractBumpFileIdsFromChangedFiles, filterBranchBumpFiles } from '../../src/core/bump-file.ts';
-import { findChangedPackages } from '../../src/commands/check.ts';
+import { findChangedPackages, resolveDirectBumpCoverage } from '../../src/commands/check.ts';
 import { makeBumpFile, makePkg, makeConfig } from '../helpers.ts';
 
 describe('extractBumpFileIdsFromChangedFiles', () => {
@@ -131,5 +131,40 @@ describe('findChangedPackages', () => {
 
     const result = await findChangedPackages(changed, packages, rootDir, makeConfig());
     expect(result).toEqual(['pkg-a']);
+  });
+});
+
+describe('resolveDirectBumpCoverage', () => {
+  const packages = new Map([
+    ['cli', makePkg('cli', '1.0.0')],
+    ['@cli/bin-darwin', makePkg('@cli/bin-darwin', '1.0.0', { bumpy: { directBump: false } })],
+    ['@cli/bin-linux', makePkg('@cli/bin-linux', '1.0.0', { bumpy: { directBump: false } })],
+    ['other', makePkg('other', '1.0.0')],
+  ]);
+  const config = makeConfig({ fixed: [['cli', '@cli/bin-*']] });
+
+  test('normal packages pass through unchanged', () => {
+    const { missing, hints } = resolveDirectBumpCoverage(['other'], new Set(), packages, config);
+    expect(missing).toEqual(['other']);
+    expect(hints.size).toBe(0);
+  });
+
+  test('directBump package is covered when a fixed-group member is covered', () => {
+    const { missing } = resolveDirectBumpCoverage(['@cli/bin-darwin'], new Set(['cli']), packages, config);
+    expect(missing).toEqual([]);
+  });
+
+  test('uncovered directBump package stays missing with a hint naming bumpable members', () => {
+    const { missing, hints } = resolveDirectBumpCoverage(['@cli/bin-darwin', 'other'], new Set(), packages, config);
+    expect(missing).toEqual(['@cli/bin-darwin', 'other']);
+    expect(hints.get('@cli/bin-darwin')).toContain('cli');
+    expect(hints.has('other')).toBe(false);
+  });
+
+  test('directBump package outside any fixed group gets a generic hint', () => {
+    const loosePackages = new Map([['loner', makePkg('loner', '1.0.0', { bumpy: { directBump: false } })]]);
+    const { missing, hints } = resolveDirectBumpCoverage(['loner'], new Set(), loosePackages, makeConfig());
+    expect(missing).toEqual(['loner']);
+    expect(hints.get('loner')).toContain('fixed group');
   });
 });

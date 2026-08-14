@@ -1,6 +1,6 @@
-import { matchGlob } from './config.ts';
+import { matchGlob, resolveFixedGroups } from './config.ts';
 import { DependencyGraph } from './dep-graph.ts';
-import { bumpVersion, satisfies } from './semver.ts';
+import { bumpVersion, compareVersions, satisfies } from './semver.ts';
 import {
   type BumpyConfig,
   type BumpType,
@@ -64,8 +64,32 @@ export function assembleReleasePlan(
   const planned = new Map<string, PlannedBump>();
   const warnings: string[] = [];
 
+  // Fixed groups resolved to concrete members, and a member → group lookup.
+  // Members of a fixed group version from the group's highest current version
+  // (sync-to-highest), so drifted groups reconverge instead of bumping in parallel.
+  const fixedGroups = resolveFixedGroups(config, packages.keys());
+  const fixedGroupOf = new Map<string, string[]>();
+  for (const members of fixedGroups) {
+    for (const member of members) {
+      if (!fixedGroupOf.has(member)) fixedGroupOf.set(member, members);
+    }
+  }
+
+  /** The version a package bumps from: its own, or the highest in its fixed group. */
+  const versionBase = (name: string): string => {
+    const members = fixedGroupOf.get(name);
+    if (!members) return packages.get(name)!.version;
+    let max = packages.get(name)!.version;
+    for (const member of members) {
+      const v = packages.get(member)!.version;
+      if (compareVersions(v, max) > 0) max = v;
+    }
+    return max;
+  };
+
   // Step 1: Collect explicit bumps from bump files
   const cascadeOverrides = new Map<string, Map<string, BumpType>>(); // pkg → (glob → bumpType)
+  const directBumpViolations: string[] = [];
 
   for (const bf of bumpFiles) {
     for (const release of bf.releases) {
@@ -75,6 +99,12 @@ export function assembleReleasePlan(
       // 'none' means "no direct bump needed" — just skip it.
       // Cascading bumps from other packages can still add this package later.
       if (bump === 'none') continue;
+
+      // Packages with directBump: false only receive propagated bumps
+      if (packages.get(release.name)!.bumpy?.directBump === false) {
+        directBumpViolations.push(`  ${bf.id}.md → ${release.name}: ${bump}`);
+        continue;
+      }
 
       const existing = planned.get(release.name);
       if (existing) {
@@ -105,6 +135,15 @@ export function assembleReleasePlan(
     }
   }
 
+  if (directBumpViolations.length > 0) {
+    throw new Error(
+      'Bump file(s) directly bump package(s) configured with "directBump": false — ' +
+        'these packages only receive propagated bumps (fixed/linked group, cascade, dependency):\n' +
+        `${directBumpViolations.join('\n')}\n` +
+        'Bump the package that drives them instead (e.g. their fixed-group member), or use type "none".',
+    );
+  }
+
   // Step 2: Propagation loop (iterative until stable)
   let changed = true;
   let iterations = 0;
@@ -117,7 +156,7 @@ export function assembleReleasePlan(
     // Phase A: Fix out-of-range dependencies (always runs)
     for (const [pkgName, bump] of planned) {
       const pkg = packages.get(pkgName)!;
-      const newVersion = bumpVersion(pkg.version, bump.type);
+      const newVersion = bumpVersion(versionBase(pkgName), bump.type);
       // On a channel, the published version carries a prerelease suffix — check
       // range satisfaction against that, since prereleases never satisfy normal ranges
       const versionForRangeCheck = opts.prereleasePreid ? `${newVersion}-${opts.prereleasePreid}.0` : newVersion;
@@ -326,13 +365,26 @@ export function assembleReleasePlan(
     }
   }
 
+  // Warn when a fixed group with planned releases has drifted versions — members
+  // are synced to a bump of the group's highest version, so some may jump.
+  for (const members of fixedGroups) {
+    const plannedMembers = members.filter((m) => planned.has(m));
+    if (plannedMembers.length === 0) continue;
+    const versions = new Set(members.map((m) => packages.get(m)!.version));
+    if (versions.size > 1) {
+      const detail = members.map((m) => `${m}@${packages.get(m)!.version}`).join(', ');
+      const target = bumpVersion(versionBase(members[0]!), planned.get(plannedMembers[0]!)!.type);
+      warnings.push(`Fixed group versions have drifted (${detail}) — syncing all members to ${target}.`);
+    }
+  }
+
   // Step 3: Calculate new versions
   const releases: PlannedRelease[] = [];
   for (const [name, bump] of planned) {
     const pkg = packages.get(name);
     if (!pkg) continue;
 
-    const newVersion = bumpVersion(pkg.version, bump.type);
+    const newVersion = bumpVersion(versionBase(name), bump.type);
     releases.push({
       name,
       type: bump.type,
@@ -347,7 +399,7 @@ export function assembleReleasePlan(
         const srcPkg = packages.get(srcName);
         return {
           name: srcName,
-          newVersion: srcPkg && srcBump ? bumpVersion(srcPkg.version, srcBump.type) : 'unknown',
+          newVersion: srcPkg && srcBump ? bumpVersion(versionBase(srcName), srcBump.type) : 'unknown',
           bumpType: contributedType,
         };
       }),

@@ -88,6 +88,15 @@ function findPackageConfig(config: BumpyConfig, pkgName: string): PackageConfig 
   return {};
 }
 
+/**
+ * Resolve `config.fixed` glob groups to concrete package-name groups.
+ * Returns one entry per configured group (possibly empty if nothing matches).
+ */
+export function resolveFixedGroups(config: BumpyConfig, packageNames: Iterable<string>): string[][] {
+  const names = [...packageNames];
+  return config.fixed.map((group) => names.filter((name) => group.some((pattern) => matchGlob(name, pattern))));
+}
+
 /** Simple glob matching for package names (supports * and **) */
 export function matchGlob(name: string, pattern: string): boolean {
   // Exact match

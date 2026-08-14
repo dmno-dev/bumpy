@@ -318,6 +318,10 @@
           "type": "boolean",
           "description": "Explicitly opt this package in or out of version management"
         },
+        "directBump": {
+          "type": "boolean",
+          "description": "When false, this package can never be bumped directly by a bump file — it only receives propagated bumps (fixed/linked group, cascade, dependency). Use for derived artifacts like platform binary packages kept in a fixed group with their core package."
+        },
         "access": {
           "type": "string",
           "enum": ["public", "restricted"],

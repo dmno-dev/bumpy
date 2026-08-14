@@ -123,6 +123,7 @@ It's a file-level flag (a bump file has one shared body), so it applies to every
 ## Important notes
 
 - Only include packages that have **actual code changes** — bumpy handles dependency propagation automatically
+- Never list a package configured with `directBump: false` (check `.bumpy/_config.json` `packages` and each `package.json` `"bumpy"` field) — such packages only receive propagated bumps; bump the package that drives them (e.g. their fixed-group member) instead
 - If the user hasn't made any changes yet, ask what they're planning to change
 - If the change doesn't affect any publishable packages (e.g., only root config files), suggest using `bumpy add --empty` to satisfy CI checks
 - One bump file per logical change — don't combine unrelated changes
