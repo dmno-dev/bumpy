@@ -73,6 +73,10 @@ Packages in a `fixed` group always share the **same version number**. When any p
 
 Example: propagation bumps `@myorg/types` as patch → `@myorg/core` also gets a patch bump to stay in sync.
 
+Group members version from the group's **highest current version**, not each package's own. If versions have drifted (a botched manual publish, a package added to the group late), the next release syncs every member to a bump of the highest version and reconverges the group — with a warning in the plan explaining the jump.
+
+For groups where one package drives and the others only follow (e.g. platform binary packages alongside a core package), mark the followers with [`directBump: false`](configuration.md#directbump-false--packages-that-only-follow) so they can never be bumped directly — only pulled along by the group.
+
 ### Linked groups
 
 Packages in a `linked` group share the **same bump level** but keep independent version numbers. Only packages already in the release plan are affected — linked groups don't pull in packages that have no bump files. Entries can be specific names or glob patterns.

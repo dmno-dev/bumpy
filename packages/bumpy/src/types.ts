@@ -197,6 +197,19 @@ export interface BumpyConfig {
 export interface PackageConfig {
   /** Explicitly opt in or out of version management (overrides private/ignore/include) */
   managed?: boolean;
+  /**
+   * When `false`, this package can never be bumped directly by a bump file — it only
+   * receives propagated bumps (fixed/linked groups, cascades, dependency updates).
+   *
+   * Use this for derived artifacts that version in lockstep with a driver package —
+   * the typical case is platform-specific binary packages (`@mycli/bin-*`) published
+   * alongside a core package and kept in a `fixed` group with it. Effects:
+   * - `bumpy add` / `bumpy generate` never select or suggest the package
+   * - a bump file that directly names it (with a type other than `none`) is an error
+   * - `bumpy check` considers its changes covered when a bump file covers any other
+   *   member of its fixed group, and points there when one is missing
+   */
+  directBump?: boolean;
   access?: 'public' | 'restricted';
   publishCommand?: string | string[];
   buildCommand?: string;

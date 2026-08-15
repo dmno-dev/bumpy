@@ -362,6 +362,114 @@ describe('assembleReleasePlan', () => {
         { name: 'plugin-a', newVersion: '2.1.0', bumpType: 'minor' }, // from linked group upgrade
       ]);
     });
+
+    test('drifted fixed group syncs all members to a bump of the highest version', () => {
+      const packages = new Map([
+        ['core', makePkg('core', '1.2.0')],
+        ['bin', makePkg('bin', '1.0.3')], // drifted below core
+      ]);
+
+      const bumpFiles: BumpFile[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'minor' }], summary: 'Feature' }];
+      const graph = new DependencyGraph(packages);
+      const config = makeConfig({ fixed: [['core', 'bin']] });
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, config);
+
+      const core = plan.releases.find((r) => r.name === 'core')!;
+      const bin = plan.releases.find((r) => r.name === 'bin')!;
+      // Both bump from the group's highest version (1.2.0), reconverging the group
+      expect(core.newVersion).toBe('1.3.0');
+      expect(bin.oldVersion).toBe('1.0.3');
+      expect(bin.newVersion).toBe('1.3.0');
+      expect(plan.warnings.some((w) => w.includes('drifted') && w.includes('bin@1.0.3'))).toBe(true);
+    });
+
+    test('in-sync fixed group produces no drift warning', () => {
+      const packages = new Map([
+        ['core', makePkg('core', '1.0.0')],
+        ['bin', makePkg('bin', '1.0.0')],
+      ]);
+      const bumpFiles: BumpFile[] = [{ id: 'cs1', releases: [{ name: 'core', type: 'patch' }], summary: 'Fix' }];
+      const graph = new DependencyGraph(packages);
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig({ fixed: [['core', 'bin']] }));
+
+      expect(plan.releases.every((r) => r.newVersion === '1.0.1')).toBe(true);
+      expect(plan.warnings.filter((w) => w.includes('drifted'))).toHaveLength(0);
+    });
+
+    test('drifted fixed group: Phase A range checks use the synced version', () => {
+      // core is dragged from 1.0.0 to 2.0.1 by its drifted group — app's ^1.0.0
+      // range on core must be detected as broken against the synced version.
+      const packages = new Map([
+        ['core', makePkg('core', '1.0.0')],
+        ['types', makePkg('types', '2.0.0')],
+        ['app', makePkg('app', '1.0.0', { dependencies: { core: '^1.0.0' } })],
+      ]);
+      const bumpFiles: BumpFile[] = [{ id: 'cs1', releases: [{ name: 'types', type: 'patch' }], summary: 'Fix' }];
+      const graph = new DependencyGraph(packages);
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, makeConfig({ fixed: [['core', 'types']] }));
+
+      const byName = new Map(plan.releases.map((r) => [r.name, r]));
+      expect(byName.get('core')!.newVersion).toBe('2.0.1');
+      expect(byName.get('app')).toBeDefined(); // out-of-range dep bump triggered
+      expect(byName.get('app')!.type).toBe('patch');
+    });
+  });
+
+  // ---- directBump: false ----
+
+  describe('directBump: false', () => {
+    const makeBinPackages = () =>
+      new Map([
+        ['cli', makePkg('cli', '1.0.0')],
+        ['@cli/bin-darwin', makePkg('@cli/bin-darwin', '1.0.0', { bumpy: { directBump: false } })],
+        ['@cli/bin-linux', makePkg('@cli/bin-linux', '1.0.0', { bumpy: { directBump: false } })],
+      ]);
+
+    test('group bumps still flow to directBump: false members', () => {
+      const packages = makeBinPackages();
+      const bumpFiles: BumpFile[] = [{ id: 'cs1', releases: [{ name: 'cli', type: 'minor' }], summary: 'Feature' }];
+      const graph = new DependencyGraph(packages);
+      const config = makeConfig({ fixed: [['cli', '@cli/bin-*']] });
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, config);
+
+      expect(plan.releases).toHaveLength(3);
+      const darwin = plan.releases.find((r) => r.name === '@cli/bin-darwin')!;
+      expect(darwin.type).toBe('minor');
+      expect(darwin.newVersion).toBe('1.1.0');
+      expect(darwin.isGroupBump).toBe(true);
+    });
+
+    test('bump file directly naming a directBump: false package throws', () => {
+      const packages = makeBinPackages();
+      const bumpFiles: BumpFile[] = [
+        { id: 'cs1', releases: [{ name: '@cli/bin-darwin', type: 'patch' }], summary: 'Oops' },
+      ];
+      const graph = new DependencyGraph(packages);
+      const config = makeConfig({ fixed: [['cli', '@cli/bin-*']] });
+
+      expect(() => assembleReleasePlan(bumpFiles, packages, graph, config)).toThrow(/directBump/);
+      expect(() => assembleReleasePlan(bumpFiles, packages, graph, config)).toThrow(/@cli\/bin-darwin/);
+    });
+
+    test('type "none" for a directBump: false package is allowed', () => {
+      const packages = makeBinPackages();
+      const bumpFiles: BumpFile[] = [
+        {
+          id: 'cs1',
+          releases: [
+            { name: 'cli', type: 'patch' },
+            { name: '@cli/bin-darwin', type: 'none' },
+          ],
+          summary: 'Fix',
+        },
+      ];
+      const graph = new DependencyGraph(packages);
+      const config = makeConfig({ fixed: [['cli', '@cli/bin-*']] });
+      const plan = assembleReleasePlan(bumpFiles, packages, graph, config);
+
+      // All three release via the group, none rejected
+      expect(plan.releases.map((r) => r.newVersion)).toEqual(['1.0.1', '1.0.1', '1.0.1']);
+    });
   });
 
   // ---- Phase C: proactive propagation ----
