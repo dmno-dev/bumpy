@@ -1,4 +1,4 @@
-import semver from 'semver';
+import { isPrerelease } from 'verkit';
 import { tryRunArgs } from '../utils/shell.ts';
 import { fetchPublishedVersions, usesNpmRegistry } from './prerelease.ts';
 import type { BumpyConfig, ReleasePlan, PlannedRelease, WorkspacePackage } from '../types.ts';
@@ -161,7 +161,7 @@ export function formatSnapshotVersionSummary(releases: PlannedRelease[]): string
 
 /** Guard: a snapshot version must be a valid prerelease (never collides with a stable release) */
 export function assertSnapshotPrerelease(version: string): void {
-  if (semver.prerelease(version) === null) {
+  if (isPrerelease(version) !== true) {
     throw new Error(`Snapshot version "${version}" is not a prerelease — refusing to publish (would land on @latest).`);
   }
 }

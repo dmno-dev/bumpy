@@ -1,5 +1,5 @@
 import { resolve } from 'node:path';
-import semver from 'semver';
+import { tryParse } from 'verkit';
 import { readText, writeText, updateJsonFields, updateJsonNestedField } from '../utils/fs.ts';
 import { runArgsAsync, tryRunArgs } from '../utils/shell.ts';
 import { listTags } from './git.ts';
@@ -29,12 +29,13 @@ export interface PublishedPrereleaseState {
 export function extractPrereleaseCounters(versions: string[], target: string, preid: string): number[] {
   const counters: number[] = [];
   for (const v of versions) {
-    const parsed = semver.parse(v);
+    const parsed = tryParse(v);
     if (!parsed) continue;
     if (`${parsed.major}.${parsed.minor}.${parsed.patch}` !== target) continue;
-    if (parsed.prerelease.length !== 2) continue;
-    if (parsed.prerelease[0] !== preid) continue;
-    const n = parsed.prerelease[1];
+    const prerelease = parsed.prerelease ?? [];
+    if (prerelease.length !== 2) continue;
+    if (prerelease[0] !== preid) continue;
+    const n = prerelease[1];
     if (typeof n === 'number') counters.push(n);
   }
   return counters;

@@ -1,4 +1,4 @@
-import semver from 'semver';
+import { isPrerelease } from 'verkit';
 import { log, colorize } from '../utils/logger.ts';
 import { loadConfig } from '../core/config.ts';
 import { discoverWorkspace } from '../core/workspace.ts';
@@ -107,7 +107,7 @@ export async function publishCommand(
   // happen — committed versions are always stable — so a suffixed version here
   // means something went wrong. Refuse loudly rather than publish it.
   if (Object.keys(config.channels || {}).length > 0) {
-    const prereleases = toPublish.filter((r) => semver.prerelease(r.newVersion) !== null);
+    const prereleases = toPublish.filter((r) => isPrerelease(r.newVersion) === true);
     if (prereleases.length > 0) {
       log.error('Refusing to publish prerelease versions outside a channel:');
       for (const r of prereleases) log.error(`  • ${r.name}@${r.newVersion}`);
@@ -490,7 +490,7 @@ async function runPublishFlow(
 
         try {
           await createDraftRelease(tag, title, body, rootDir, headSha || undefined, {
-            prerelease: semver.prerelease(release.newVersion) !== null,
+            prerelease: isPrerelease(release.newVersion) === true,
           });
           log.dim(`  Created draft release: ${title}`);
           releaseMetadataByPkg.set(release.name, { tag, metadata, existingBody: body });

@@ -14,7 +14,7 @@
     },
     "packages/bumpy": {
       "name": "@varlock/bumpy",
-      "version": "1.16.1",
+      "version": "1.18.1",
       "bin": {
         "bumpy": "./dist/cli.mjs",
       },
@@ -23,13 +23,12 @@
         "@types/bun": "latest",
         "@types/js-yaml": "^4.0.9",
         "@types/picomatch": "^4.0.3",
-        "@types/semver": "^7.7.0",
         "js-yaml": "^4.1.0",
         "picocolors": "^1.1.1",
         "picomatch": "^4.0.4",
-        "semver": "^7.7.2",
         "tsdown": "catalog:",
         "typescript": "catalog:",
+        "verkit": "^0.4.0",
       },
     },
     "packages/website": {
@@ -198,8 +197,6 @@
 
     "@types/picomatch": ["@types/picomatch@4.0.3", "", {}, "sha512-iG0T6+nYJ9FAPmx9SsUlnwcq1ZVRuCXcVEvWnntoPlrOpwtSTKNDC9uVAxTsC3PUvJ+99n4RpAcNgBbHX3JSnQ=="],
 
-    "@types/semver": ["@types/semver@7.7.1", "", {}, "sha512-FmgJfu+MOcQ370SD0ev7EI8TlCAfKYU+B4m5T3yXc1CiRN94g/SZPtsCkk506aUDtlMnFZvasDwHHUcZUEaYuA=="],
-
     "@varlock/bumpy": ["@varlock/bumpy@workspace:packages/bumpy"],
 
     "@varlock/bumpy-website": ["@varlock/bumpy-website@workspace:packages/website"],
@@ -309,5 +306,7 @@
     "unrun": ["unrun@0.2.35", "", { "dependencies": { "rolldown": "1.0.0-rc.15" }, "peerDependencies": { "synckit": "^0.11.11" }, "optionalPeers": ["synckit"], "bin": { "unrun": "dist/cli.mjs" } }, "sha512-nDP7mA4Fu5owDarQtLiiN3lq7tJZHFEAVIchnwP8U3wMeEkLoUNT37Hva85H05Rdw8CArpGmtY+lBjpk9fruVQ=="],
 
     "varlock": ["varlock@0.8.1", "", { "bin": { "varlock": "bin/cli.js" } }, "sha512-ZvIeQa493AKNqh2BaB96WLksN4R4rceWxbPFto9XbFpzqX00WgI8NhYxkrMw+WDDuTL0ca8mWss6l9u2gwKpRA=="],
+
+    "verkit": ["verkit@0.4.0", "", {}, "sha512-sXMwN6DMHeouPfCxkxWkKAmxphWKEenHYY5H1nIBzU3PmDsmJp6kBXJdshjVdpMZuWCmL9SH7KFRx29AylpP6g=="],
   }
 }
