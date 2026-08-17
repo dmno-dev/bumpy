@@ -1,8 +1,8 @@
-import semver from 'semver';
+import { compare, increment, isValid, satisfies as verkitSatisfies } from 'verkit';
 import type { BumpType } from '../types.ts';
 
 export function bumpVersion(version: string, type: BumpType): string {
-  const result = semver.inc(version, type);
+  const result = increment(version, type);
   if (!result) throw new Error(`Failed to bump ${version} by ${type}`);
   return result;
 }
@@ -21,16 +21,16 @@ export function satisfies(version: string, range: string, currentVersion?: strin
     if (cleanRange === '^' || cleanRange === '~') {
       if (!currentVersion) return true; // can't resolve without current version
       const resolved = `${cleanRange}${currentVersion}`;
-      return semver.satisfies(version, resolved);
+      return verkitSatisfies(version, resolved);
     }
-    return semver.satisfies(version, cleanRange);
+    return verkitSatisfies(version, cleanRange);
   }
   // catalog: references can't be range-checked without catalog data,
   // so treat them as always satisfied (don't trigger out-of-range bumps)
   if (range.startsWith('catalog:')) return true;
 
   if (!range || range === '*') return true;
-  return semver.satisfies(version, range);
+  return verkitSatisfies(version, range);
 }
 
 /** Strip workspace: protocol from version ranges */
@@ -40,9 +40,9 @@ export function stripProtocol(range: string): string {
 
 /** Compare two versions: -1 if a < b, 0 if equal, 1 if a > b */
 export function compareVersions(a: string, b: string): number {
-  return semver.compare(a, b);
+  return compare(a, b);
 }
 
 export function isValidVersion(version: string): boolean {
-  return semver.valid(version) !== null;
+  return isValid(version);
 }

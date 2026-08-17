@@ -1,5 +1,5 @@
 import { describe, test, expect, afterEach } from 'bun:test';
-import semver from 'semver';
+import { isLess, isPrerelease, isValid, normalize } from 'verkit';
 import {
   sanitizeSnapshotName,
   resolveSnapshot,
@@ -28,7 +28,7 @@ describe('sanitizeSnapshotName', () => {
 
   test('produces a valid semver prerelease identifier', () => {
     const name = sanitizeSnapshotName('feature/Foo_Bar');
-    expect(semver.valid(`1.2.3-${name}.0`)).not.toBeNull();
+    expect(isValid(`1.2.3-${name}.0`)).toBe(true);
   });
 
   test('throws when nothing alphanumeric remains', () => {
@@ -94,19 +94,19 @@ describe('snapshotVersion', () => {
   test('sha → <target>-<name>-<sha>', () => {
     const v = snapshotVersion('1.4.0', base({ strategy: 'sha', suffix: 'a1b2c3d' }));
     expect(v).toBe('1.4.0-pr-123-a1b2c3d');
-    expect(semver.valid(v)).toBe(v);
-    expect(semver.prerelease(v)).not.toBeNull();
+    expect(normalize(v)).toBe(v);
+    expect(isPrerelease(v)).toBe(true);
   });
 
   test('timestamp → <target>-<name>-<timestamp>', () => {
     const v = snapshotVersion('2.0.0', base({ strategy: 'timestamp', suffix: '20260623123456' }));
     expect(v).toBe('2.0.0-pr-123-20260623123456');
-    expect(semver.valid(v)).toBe(v);
+    expect(normalize(v)).toBe(v);
   });
 
   test('snapshot versions sort below their stable target', () => {
     const v = snapshotVersion('1.4.0', base({}));
-    expect(semver.lt(v, '1.4.0')).toBe(true);
+    expect(isLess(v, '1.4.0')).toBe(true);
   });
 });
 
