@@ -294,7 +294,12 @@ function printRelease(r: PlannedRelease, packages: Map<string, WorkspacePackage>
     ? colorize(' ← dependency bump', 'dim')
     : r.isCascadeBump
       ? colorize(' ← cascade', 'dim')
-      : '';
+      : r.isGroupBump
+        ? colorize(
+            ` ← group${r.bumpSources.length > 0 ? ` (${r.bumpSources.map((s) => s.name).join(', ')})` : ''}`,
+            'dim',
+          )
+        : '';
   console.log(`  ${r.name}: ${r.oldVersion} → ${colorize(r.newVersion, 'cyan')}${suffix}${dir}`);
 }
 

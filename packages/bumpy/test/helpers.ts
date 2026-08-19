@@ -55,7 +55,10 @@ export function makeRelease(
   name: string,
   newVersion: string,
   opts: Partial<
-    Pick<PlannedRelease, 'type' | 'oldVersion' | 'bumpFiles' | 'isDependencyBump' | 'isCascadeBump' | 'isGroupBump'>
+    Pick<
+      PlannedRelease,
+      'type' | 'oldVersion' | 'bumpFiles' | 'isDependencyBump' | 'isCascadeBump' | 'isGroupBump' | 'followOnly'
+    >
   > & {
     bumpSources?: Array<{ name: string; newVersion: string; bumpType?: BumpType }>;
   } = {},
@@ -70,6 +73,7 @@ export function makeRelease(
     isCascadeBump: opts.isCascadeBump ?? false,
     isGroupBump: opts.isGroupBump ?? false,
     bumpSources: (opts.bumpSources ?? []).map((s) => ({ ...s, bumpType: s.bumpType ?? opts.type ?? 'patch' })),
+    ...(opts.followOnly ? { followOnly: true } : {}),
   };
 }
 

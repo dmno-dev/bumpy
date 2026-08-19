@@ -210,6 +210,7 @@ Effects:
 - `bumpy add` and `bumpy generate` never select or suggest them — you only ever bump `mycli`, and the fixed group pulls the binaries along.
 - A bump file that directly names one (with a type other than `none`) is an error at plan time.
 - `bumpy check` treats changes in a `directBump: false` package as covered when a bump file covers any other member of its fixed group, and points there when one is missing.
+- Release summaries (version PR body, PR check comment) collapse them under the package that drove the bump — one section for `mycli` plus a "released together" line naming the binaries, instead of a section per binary repeating the same change summary. Their `CHANGELOG.md` entries read "Released in lockstep with `mycli` v1.2.0".
 
 ### Custom commands and `allowCustomCommands`
 

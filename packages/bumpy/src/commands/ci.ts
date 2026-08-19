@@ -381,6 +381,7 @@ interface PlanRelease {
   bumpFiles: string[];
   isDependencyBump: boolean;
   isCascadeBump: boolean;
+  followOnly?: boolean;
   publishTargets: Array<{ type: string }>;
 }
 
@@ -484,6 +485,7 @@ function formatPlanRelease(
     bumpFiles: string[];
     isDependencyBump: boolean;
     isCascadeBump: boolean;
+    followOnly?: boolean;
   },
   packages: Map<string, { relativeDir: string; private: boolean; bumpy?: PackageConfig }>,
   config: BumpyConfig,
@@ -498,6 +500,7 @@ function formatPlanRelease(
     bumpFiles: r.bumpFiles,
     isDependencyBump: r.isDependencyBump,
     isCascadeBump: r.isCascadeBump,
+    ...(r.followOnly ? { followOnly: true } : {}),
     publishTargets: getPublishTargets(pkg, config),
   };
 }
@@ -1356,9 +1359,12 @@ export function formatReleasePlanComment(
   lines.push(preamble);
   lines.push('');
 
-  // Package list grouped by bump type
+  // Package list grouped by bump type. Follow-only packages (directBump: false)
+  // render as a compact sub-line under the package that drove their bump.
+  const { followersOf, attached } = attachFollowerReleases(plan.releases);
   const groups: Record<string, PlannedRelease[]> = { major: [], minor: [], patch: [] };
   for (const r of plan.releases) {
+    if (attached.has(r.name)) continue;
     groups[r.type]?.push(r);
   }
 
@@ -1371,6 +1377,11 @@ export function formatReleasePlanComment(
     for (const r of releases) {
       const suffix = r.isDependencyBump ? ' _(dep)_' : r.isCascadeBump ? ' _(cascade)_' : '';
       lines.push(`- \`${r.name}\` ${r.oldVersion} → **${r.newVersion}${versionSuffix}**${suffix}`);
+      const followers = followersOf.get(r.name);
+      if (followers && followers.length > 0) {
+        const names = followers.map((f) => `\`${f.name}\``).join(', ');
+        lines.push(`  - 🔗 _released together (fixed group):_ ${names}`);
+      }
     }
     lines.push('');
   }
@@ -1589,6 +1600,31 @@ export function formatNoBumpFilesComment(
   return lines.join('\n');
 }
 
+/**
+ * Group follow-only releases (`directBump: false`) under the release that drove them,
+ * so summaries show one entry for the driver plus a compact "released together" list
+ * instead of a full section per follower. A follower's driver is its first bump source
+ * with its own non-follow-only release in the plan; followers with no resolvable
+ * driver render normally.
+ */
+export function attachFollowerReleases(releases: PlannedRelease[]): {
+  followersOf: Map<string, PlannedRelease[]>;
+  attached: Set<string>;
+} {
+  const byName = new Map(releases.map((r) => [r.name, r]));
+  const followersOf = new Map<string, PlannedRelease[]>();
+  const attached = new Set<string>();
+  for (const r of releases) {
+    if (!r.followOnly) continue;
+    const driver = r.bumpSources.map((s) => byName.get(s.name)).find((src) => src && !src.followOnly);
+    if (!driver) continue;
+    if (!followersOf.has(driver.name)) followersOf.set(driver.name, []);
+    followersOf.get(driver.name)!.push(r);
+    attached.add(r.name);
+  }
+  return { followersOf, attached };
+}
+
 function bumpSectionHeader(type: string): string {
   // I think pixelated css gets stripped but may as well leave it
   // wrapping in <a> prevents Gmail dark mode from inverting the image
@@ -1626,8 +1662,13 @@ export function formatVersionPrBody(
 ): string {
   const changesBaseUrl = repo && prNumber ? `https://github.com/${repo}/pull/${prNumber}/changes` : null;
 
+  // Follow-only packages (directBump: false) collapse into a single line under
+  // the package that drove their bump instead of getting their own section.
+  const { followersOf, attached } = attachFollowerReleases(plan.releases);
+
   const groups: Record<string, PlannedRelease[]> = { major: [], minor: [], patch: [] };
   for (const r of plan.releases) {
+    if (attached.has(r.name)) continue;
     groups[r.type]?.push(r);
   }
 
@@ -1658,6 +1699,18 @@ export function formatVersionPrBody(
         const diffLinks = pkgDir ? buildDiffLinks(pkgDir, changesBaseUrl) : '';
         lines.push(`#### \`${r.name}\` ${r.oldVersion} → **${r.newVersion}**${suffix}${diffLinks}`);
         lines.push('');
+
+        const followers = followersOf.get(r.name);
+        if (followers && followers.length > 0) {
+          const names = followers.map((f) => {
+            const dir = packageDirs.get(f.name);
+            return dir && changesBaseUrl
+              ? `[\`${f.name}\`](${changesBaseUrl}#diff-${sha256Hex(`${dir}/CHANGELOG.md`)})`
+              : `\`${f.name}\``;
+          });
+          lines.push(`<sub>🔗 Released together at **${r.newVersion}** (fixed group): ${names.join(', ')}</sub>`);
+          lines.push('');
+        }
 
         if (!includeSummaries) continue;
 

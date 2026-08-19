@@ -362,6 +362,12 @@ export interface PlannedRelease {
   isGroupBump: boolean;
   /** Packages whose bumps caused this dependency/cascade/group bump, with their new versions */
   bumpSources: Array<{ name: string; newVersion: string; bumpType: BumpType }>;
+  /**
+   * Set when the package has `directBump: false` — it releases only by following its
+   * group/cascade sources. Summary renderers collapse these under the package that
+   * drove the bump instead of giving them their own section.
+   */
+  followOnly?: boolean;
 }
 
 export interface ReleasePlan {

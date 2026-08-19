@@ -1,5 +1,8 @@
 import { describe, test, expect } from 'bun:test';
 import { formatVersionPrBody } from '../../src/commands/ci.ts';
+import { assembleReleasePlan } from '../../src/core/release-plan.ts';
+import { DependencyGraph } from '../../src/core/dep-graph.ts';
+import { makePkg, makeConfig } from '../helpers.ts';
 import type { ReleasePlan, PlannedRelease, BumpFile } from '../../src/types.ts';
 
 // GitHub rejects PR bodies longer than 65536 characters. bumpy should degrade
@@ -55,6 +58,63 @@ describe('formatVersionPrBody — exceeds limit via large summaries', () => {
     expect(body).toContain('@scope/pkg-0');
     expect(body).toContain('@scope/pkg-29');
     expect(body).toContain('too many changes to summarize');
+  });
+});
+
+describe('formatVersionPrBody — follow-only packages (directBump: false)', () => {
+  const packages = new Map([
+    ['varlock', makePkg('varlock', '1.16.1')],
+    ['@varlock/helper-darwin', makePkg('@varlock/helper-darwin', '1.16.1', { bumpy: { directBump: false } })],
+    ['@varlock/helper-linux', makePkg('@varlock/helper-linux', '1.16.1', { bumpy: { directBump: false } })],
+  ]);
+  const bumpFiles: BumpFile[] = [{ id: 'cs1', releases: [{ name: 'varlock', type: 'minor' }], summary: 'New stuff' }];
+  const config = makeConfig({ fixed: [['varlock', '@varlock/helper-*']] });
+  const plan = assembleReleasePlan(bumpFiles, packages, new DependencyGraph(packages), config);
+
+  const dirs = new Map([
+    ['varlock', 'packages/varlock'],
+    ['@varlock/helper-darwin', 'packages/helper-darwin'],
+    ['@varlock/helper-linux', 'packages/helper-linux'],
+  ]);
+  const body = formatVersionPrBody(plan, 'Release', dirs, 'owner/repo', '42');
+
+  test('followers get no section of their own', () => {
+    expect(body).toContain('#### `varlock` 1.16.1 → **1.17.0**');
+    expect(body).not.toContain('#### `@varlock/helper-darwin`');
+    expect(body).not.toContain('#### `@varlock/helper-linux`');
+  });
+
+  test('followers are listed on a released-together line under the driver', () => {
+    expect(body).toContain('Released together at **1.17.0** (fixed group)');
+    expect(body).toContain('@varlock/helper-darwin');
+    expect(body).toContain('@varlock/helper-linux');
+  });
+
+  test('follower names link to their changelogs', () => {
+    expect(body).toContain('[`@varlock/helper-darwin`](https://github.com/owner/repo/pull/42/changes#diff-');
+  });
+
+  test('a follow-only release with no resolvable driver renders normally', () => {
+    const orphanPlan: ReleasePlan = {
+      bumpFiles: [],
+      warnings: [],
+      releases: [
+        {
+          name: '@varlock/helper-darwin',
+          type: 'patch',
+          oldVersion: '1.0.0',
+          newVersion: '1.0.1',
+          bumpFiles: [],
+          isDependencyBump: true,
+          isCascadeBump: false,
+          isGroupBump: false,
+          bumpSources: [],
+          followOnly: true,
+        },
+      ],
+    };
+    const orphanBody = formatVersionPrBody(orphanPlan, 'Release', dirs, 'owner/repo', '42');
+    expect(orphanBody).toContain('#### `@varlock/helper-darwin` 1.0.0 → **1.0.1**');
   });
 });
 

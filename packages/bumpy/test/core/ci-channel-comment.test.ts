@@ -101,3 +101,34 @@ describe('formatReleasePlanComment — promotion PR (channel-dir bump files, sta
     expect(mixed).not.toContain('`new-fix.md` _(shipped');
   });
 });
+
+describe('formatReleasePlanComment — follow-only packages (directBump: false)', () => {
+  const followerPlan = makeReleasePlan(
+    [
+      makeRelease('varlock', '1.17.0', { type: 'minor', oldVersion: '1.16.1', bumpFiles: ['feat'] }),
+      makeRelease('@varlock/helper-darwin', '1.17.0', {
+        type: 'minor',
+        oldVersion: '1.16.1',
+        isGroupBump: true,
+        followOnly: true,
+        bumpSources: [{ name: 'varlock', newVersion: '1.17.0', bumpType: 'minor' }],
+      }),
+      makeRelease('@varlock/helper-linux', '1.17.0', {
+        type: 'minor',
+        oldVersion: '1.16.1',
+        isGroupBump: true,
+        followOnly: true,
+        bumpSources: [{ name: 'varlock', newVersion: '1.17.0', bumpType: 'minor' }],
+      }),
+    ],
+    [makeBumpFile('feat', [{ name: 'varlock', type: 'minor' }], 'Add a feature')],
+  );
+  const comment = formatReleasePlanComment(followerPlan, followerPlan.bumpFiles, '1', 'feature-branch', 'npm');
+
+  test('followers collapse into a sub-line under the driver', () => {
+    expect(comment).toContain('- `varlock` 1.16.1 → **1.17.0**');
+    expect(comment).toContain('released together (fixed group)');
+    expect(comment).toContain('`@varlock/helper-darwin`, `@varlock/helper-linux`');
+    expect(comment).not.toContain('- `@varlock/helper-darwin` 1.16.1');
+  });
+});

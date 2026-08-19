@@ -394,6 +394,7 @@ export function assembleReleasePlan(
       isDependencyBump: bump.isDependencyBump,
       isCascadeBump: bump.isCascadeBump,
       isGroupBump: bump.isGroupBump,
+      ...(pkg.bumpy?.directBump === false ? { followOnly: true } : {}),
       bumpSources: [...bump.bumpSources].map(([srcName, contributedType]) => {
         const srcBump = planned.get(srcName);
         const srcPkg = packages.get(srcName);
