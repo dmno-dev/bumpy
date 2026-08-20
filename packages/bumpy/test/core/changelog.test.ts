@@ -6,6 +6,8 @@ import {
   generateChangelogEntry,
   loadFormatter,
   prependToChangelog,
+  followOnlyNote,
+  ensureFollowOnlyNote,
 } from '../../src/core/changelog.ts';
 
 describe('defaultFormatter', () => {
@@ -362,5 +364,76 @@ describe('loadFormatter', () => {
 
     expect(result).toContain('## 1.0.0');
     expect(result).toContain('- *(patch)* A fix');
+  });
+});
+
+describe('follow-only changelogs', () => {
+  const followRelease = makeRelease('@varlock/helper-darwin', '1.17.0', {
+    type: 'minor',
+    oldVersion: '1.16.1',
+    isGroupBump: true,
+    followOnly: true,
+    bumpSources: [{ name: 'varlock', newVersion: '1.17.0', bumpType: 'minor' }],
+  });
+
+  test('entry states the lockstep relationship instead of a generic group bump', async () => {
+    const entry = await generateChangelogEntry(followRelease, [], defaultFormatter);
+    expect(entry).toContain('Released in lockstep with `varlock` v1.17.0');
+    expect(entry).not.toContain('Version bump from group');
+  });
+
+  test('a normal group bump keeps the original wording', async () => {
+    const groupRelease = makeRelease('@myorg/types', '1.1.0', {
+      type: 'minor',
+      isGroupBump: true,
+      bumpSources: [{ name: '@myorg/core', newVersion: '1.1.0', bumpType: 'minor' }],
+    });
+    const entry = await generateChangelogEntry(groupRelease, [], defaultFormatter);
+    expect(entry).toContain('Version bump from group with `@myorg/core`');
+  });
+
+  describe('followOnlyNote', () => {
+    test('names a single driver', () => {
+      expect(followOnlyNote(['varlock'])).toBe(
+        '> Released in lockstep with `varlock` — see its changelog for release notes.',
+      );
+    });
+
+    test('pluralizes for multiple drivers', () => {
+      expect(followOnlyNote(['a', 'b'])).toContain('their changelogs');
+    });
+
+    test('returns empty when no driver could be resolved', () => {
+      expect(followOnlyNote([])).toBe('');
+    });
+  });
+
+  describe('ensureFollowOnlyNote', () => {
+    const note = followOnlyNote(['varlock']);
+
+    test('inserts the note directly below the title', () => {
+      const content = '# Changelog\n\n## 1.17.0\n<sub>2026-08-18</sub>\n';
+      const result = ensureFollowOnlyNote(content, note);
+      expect(result).toBe(`# Changelog\n\n${note}\n\n## 1.17.0\n<sub>2026-08-18</sub>\n`);
+    });
+
+    test('is idempotent — a second pass does not stack notes', () => {
+      const once = ensureFollowOnlyNote('# Changelog\n\n## 1.17.0\n', note);
+      const twice = ensureFollowOnlyNote(once, note);
+      expect(twice).toBe(once);
+      expect(twice.match(/Released in lockstep with/g)).toHaveLength(1);
+    });
+
+    test('refreshes an outdated note in place when the driver changes', () => {
+      const stale = ensureFollowOnlyNote('# Changelog\n\n## 1.0.0\n', followOnlyNote(['old-driver']));
+      const fresh = ensureFollowOnlyNote(stale, note);
+      expect(fresh).toContain('`varlock`');
+      expect(fresh).not.toContain('old-driver');
+    });
+
+    test('no-ops when there is no note to write', () => {
+      const content = '# Changelog\n\n## 1.0.0\n';
+      expect(ensureFollowOnlyNote(content, '')).toBe(content);
+    });
   });
 });

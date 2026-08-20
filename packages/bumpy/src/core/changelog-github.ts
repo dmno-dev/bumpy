@@ -130,10 +130,10 @@ export function createGithubFormatter(options: GithubChangelogOptions = {}): Cha
     }
 
     if (release.isGroupBump) {
+      // followOnly packages exist purely to track their group driver — say so plainly
+      const label = release.followOnly ? 'Released in lockstep with' : 'Version bump from group with';
       lines.push(
-        sourceList
-          ? `- *(${release.type})* Version bump from group with ${sourceList}`
-          : `- *(${release.type})* Version bump from group`,
+        sourceList ? `- *(${release.type})* ${label} ${sourceList}` : `- *(${release.type})* Version bump from group`,
       );
     }
 

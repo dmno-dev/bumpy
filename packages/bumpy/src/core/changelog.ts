@@ -261,6 +261,37 @@ export function extractChangelogEntry(changelogContent: string, version: string)
   );
 }
 
+/**
+ * Matches the follow-only explainer note so it can be kept up to date (the driver set
+ * can change) without ever being duplicated.
+ */
+const FOLLOW_ONLY_NOTE_RE = /^> Released in lockstep with .*$/m;
+
+/**
+ * Explainer note placed once at the top of a follow-only package's changelog.
+ * Its per-version entries only point elsewhere, so the file has to say why —
+ * a reader landing here from npm has no other context.
+ */
+export function followOnlyNote(driverNames: string[]): string {
+  if (driverNames.length === 0) return '';
+  const list = driverNames.map((n) => `\`${n}\``).join(', ');
+  const noun = driverNames.length > 1 ? 'their changelogs' : 'its changelog';
+  return `> Released in lockstep with ${list} — see ${noun} for release notes.`;
+}
+
+/**
+ * Insert (or refresh) the follow-only note directly below the changelog title.
+ * Idempotent: an existing note is replaced in place rather than stacked.
+ */
+export function ensureFollowOnlyNote(content: string, note: string): string {
+  if (!note) return content;
+  if (FOLLOW_ONLY_NOTE_RE.test(content)) return content.replace(FOLLOW_ONLY_NOTE_RE, note);
+  const titleMatch = content.match(/^# .*$/m);
+  if (!titleMatch || titleMatch.index === undefined) return `${note}\n\n${content}`;
+  const insertAt = titleMatch.index + titleMatch[0].length;
+  return `${content.slice(0, insertAt)}\n\n${note}${content.slice(insertAt)}`;
+}
+
 /** Prepend a new entry to an existing CHANGELOG.md content */
 export function prependToChangelog(existingContent: string, newEntry: string): string {
   // Try to find the first ## heading and insert before it
@@ -269,7 +300,10 @@ export function prependToChangelog(existingContent: string, newEntry: string): s
     // Find the first ## after the # header
     const afterTitle = existingContent.indexOf('\n##');
     if (afterTitle !== -1) {
-      return existingContent.slice(0, afterTitle + 1) + '\n' + newEntry + '\n' + existingContent.slice(afterTitle + 1);
+      // trimEnd the head so an existing blank line before the first entry doesn't
+      // stack with the one we add (matters for files carrying a note under the title)
+      const head = existingContent.slice(0, afterTitle + 1).trimEnd();
+      return `${head}\n\n${newEntry}\n${existingContent.slice(afterTitle + 1)}`;
     }
     // No existing entries, append after the title
     return existingContent.trimEnd() + '\n\n' + newEntry;

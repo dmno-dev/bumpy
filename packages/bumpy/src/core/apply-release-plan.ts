@@ -9,7 +9,13 @@ import {
   listFiles,
   removeFile,
 } from '../utils/fs.ts';
-import { generateChangelogEntry, prependToChangelog, loadFormatter } from './changelog.ts';
+import {
+  generateChangelogEntry,
+  prependToChangelog,
+  loadFormatter,
+  followOnlyNote,
+  ensureFollowOnlyNote,
+} from './changelog.ts';
 import { getBumpyDir } from './config.ts';
 import type { ReleasePlan, WorkspacePackage, BumpyConfig } from '../types.ts';
 
@@ -47,6 +53,11 @@ export async function applyReleasePlan(
 
   // 2. Update changelogs
   if (formatter) {
+    // A follow-only package's entries only point at its driver, so its changelog
+    // carries a one-time note naming the driver(s). Other follow-only packages in
+    // the same group aren't drivers — filter them out.
+    const followOnlyNames = new Set(releasePlan.releases.filter((r) => r.followOnly).map((r) => r.name));
+
     for (const release of releasePlan.releases) {
       const pkg = packages.get(release.name)!;
       const changelogPath = resolve(pkg.dir, 'CHANGELOG.md');
@@ -56,7 +67,11 @@ export async function applyReleasePlan(
       if (await exists(changelogPath)) {
         existingContent = await readText(changelogPath);
       }
-      const newContent = prependToChangelog(existingContent, entry);
+      let newContent = prependToChangelog(existingContent, entry);
+      if (release.followOnly) {
+        const drivers = release.bumpSources.map((s) => s.name).filter((name) => !followOnlyNames.has(name));
+        newContent = ensureFollowOnlyNote(newContent, followOnlyNote(drivers));
+      }
       await writeText(changelogPath, newContent);
     }
   }
