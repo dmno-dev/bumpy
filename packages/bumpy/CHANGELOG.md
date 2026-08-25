@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.19.0
+
+<sub>2026-08-25</sub>
+
+- [#155](https://github.com/dmno-dev/bumpy/pull/155) _(minor)_
+  Added `directBump: false` per-package config for packages that only receive propagated bumps (e.g. platform binary packages in a fixed group with their core package) — they are excluded from `bumpy add`/`bumpy generate`, rejected when a bump file names them directly, and `bumpy check` points at their fixed-group members instead. Fixed groups now sync drifted members to a bump of the group's highest version so they reconverge.
+- [#158](https://github.com/dmno-dev/bumpy/pull/158) _(patch)_
+  Replaced the `semver` dependency with [verkit](https://github.com/sxzz/verkit) — a smaller, tree-shakeable, zero-dependency SemVer library. No behavior changes, except invalid snapshot versions are now also refused (previously only stable versions were).
+
 ## 1.18.1
 
 <sub>2026-07-03</sub>
