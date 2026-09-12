@@ -349,20 +349,52 @@ export function resolveTargetPrNumber(rootDir: string): string | null {
     const repo = process.env.GITHUB_REPOSITORY;
     // Sanitize both before they reach the gh api path: a 40-hex SHA and an owner/repo slug.
     if (headSha && /^[0-9a-f]{40}$/i.test(headSha) && repo && /^[\w.-]+\/[\w.-]+$/.test(repo)) {
-      const out = tryRunArgs(
-        ['gh', 'api', `repos/${repo}/commits/${headSha}/pulls`, '--jq', '.[] | select(.state == "open") | .number'],
-        { cwd: rootDir },
-      );
-      return (
-        out
-          ?.split('\n')
-          .map((l) => l.trim())
-          .find((l) => /^\d+$/.test(l)) ?? null
-      );
+      return findOpenPrByHeadSha(repo, headSha, rootDir);
     }
     return null;
   }
   return detectPrNumber();
+}
+
+/**
+ * Find the open PR whose head commit is `headSha`.
+ *
+ * `GET commits/{sha}/pulls` is the cheap lookup, but it only knows about commits that
+ * live in the base repo's own branches — for a PR opened from a fork the head commit
+ * isn't there, so it returns `[]`. Fall back to scanning the repo's open PRs and matching
+ * on `head.sha`. Both derive the target purely from the trusted SHA, so the security
+ * model (never trust the artifact, never trust `workflow_run.pull_requests[]`, which
+ * GitHub leaves empty for forks) is preserved.
+ */
+function findOpenPrByHeadSha(repo: string, headSha: string, rootDir: string): string | null {
+  const firstNumber = (out: string | null): string | null =>
+    out
+      ?.split('\n')
+      .map((l) => l.trim())
+      .find((l) => /^\d+$/.test(l)) ?? null;
+
+  const fromCommit = firstNumber(
+    tryRunArgs(
+      ['gh', 'api', `repos/${repo}/commits/${headSha}/pulls`, '--jq', '.[] | select(.state == "open") | .number'],
+      { cwd: rootDir },
+    ),
+  );
+  if (fromCommit) return fromCommit;
+
+  // `--paginate` follows Link headers, so repos with >100 open PRs are still covered.
+  return firstNumber(
+    tryRunArgs(
+      [
+        'gh',
+        'api',
+        '--paginate',
+        `repos/${repo}/pulls?state=open&per_page=100`,
+        '--jq',
+        `.[] | select(.head.sha == "${headSha}") | .number`,
+      ],
+      { cwd: rootDir },
+    ),
+  );
 }
 
 // ---- ci plan ----
