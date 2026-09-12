@@ -28,6 +28,11 @@ function checkIntercept(args: string[], opts?: { cwd?: string; input?: string })
   return _interceptor(args, opts);
 }
 
+// Every spawn passes `env: process.env` explicitly: under Bun a child with no `env`
+// inherits the process's *initial* environment, not the live `process.env`, so the
+// credentials helpers that set GH_TOKEN / git config vars for one call would silently
+// not reach the child.
+
 // ---- String-based commands (for static/trusted command strings only) ----
 
 export function run(cmd: string, opts?: { cwd?: string; input?: string }): string {
@@ -38,6 +43,7 @@ export function run(cmd: string, opts?: { cwd?: string; input?: string }): strin
   }
   return execSync(cmd, {
     cwd: opts?.cwd,
+    env: process.env,
     input: opts?.input,
     encoding: 'utf-8',
     stdio: [opts?.input ? 'pipe' : 'pipe', 'pipe', 'pipe'],
@@ -51,7 +57,7 @@ export function runAsync(cmd: string, opts?: { cwd?: string; input?: string }): 
     return Promise.resolve(result.result);
   }
   return new Promise((resolve, reject) => {
-    const child = exec(cmd, { cwd: opts?.cwd, encoding: 'utf-8' }, (err, stdout, stderr) => {
+    const child = exec(cmd, { cwd: opts?.cwd, env: process.env, encoding: 'utf-8' }, (err, stdout, stderr) => {
       if (err) {
         reject(new Error(`Command failed: ${cmd}\n${stdout}\n${stderr}`.trim()));
       } else {
@@ -85,6 +91,7 @@ export function runStreaming(cmd: string, opts?: { cwd?: string; input?: string 
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, {
       cwd: opts?.cwd,
+      env: process.env,
       shell: true,
       stdio: [opts?.input ? 'pipe' : 'inherit', 'pipe', 'pipe'],
     });
@@ -134,14 +141,22 @@ export function runArgs(args: string[], opts?: { cwd?: string; input?: string })
   const [cmd, ...rest] = args;
   return execFileSync(cmd!, rest, {
     cwd: opts?.cwd,
+    env: process.env,
     input: opts?.input,
     encoding: 'utf-8',
     stdio: [opts?.input ? 'pipe' : 'pipe', 'pipe', 'pipe'],
   }).trim();
 }
 
-/** Async version of runArgs */
-export function runArgsAsync(args: string[], opts?: { cwd?: string; input?: string }): Promise<string> {
+/**
+ * Async version of runArgs. `timeoutMs` kills the child (SIGKILL) and rejects — use it for
+ * anything that may block on a credential helper or a slow registry, so a probe can
+ * never hang a release.
+ */
+export function runArgsAsync(
+  args: string[],
+  opts?: { cwd?: string; input?: string; timeoutMs?: number },
+): Promise<string> {
   const result = checkIntercept(args, opts);
   if (result?.intercepted) {
     if ('error' in result) return Promise.reject(new Error(result.error));
@@ -149,13 +164,20 @@ export function runArgsAsync(args: string[], opts?: { cwd?: string; input?: stri
   }
   const [cmd, ...rest] = args;
   return new Promise((resolve, reject) => {
-    const child = execFile(cmd!, rest, { cwd: opts?.cwd, encoding: 'utf-8' }, (err, stdout, stderr) => {
-      if (err) {
-        reject(new Error(`Command failed: ${args.join(' ')}\n${stdout}\n${stderr}`.trim()));
-      } else {
-        resolve(stdout.trim());
-      }
-    });
+    const child = execFile(
+      cmd!,
+      rest,
+      { cwd: opts?.cwd, env: process.env, encoding: 'utf-8', timeout: opts?.timeoutMs, killSignal: 'SIGKILL' },
+      (err, stdout, stderr) => {
+        if (err) {
+          const timedOut = !!opts?.timeoutMs && (err as { killed?: boolean }).killed === true;
+          const why = timedOut ? `timed out after ${opts!.timeoutMs}ms` : 'failed';
+          reject(new Error(`Command ${why}: ${args.join(' ')}\n${stdout}\n${stderr}`.trim()));
+        } else {
+          resolve(stdout.trim());
+        }
+      },
+    );
     if (opts?.input) {
       child.stdin?.write(opts.input);
       child.stdin?.end();

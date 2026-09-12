@@ -4,13 +4,14 @@ import type { PublishTargetPlugin } from './types.ts';
 
 /**
  * The "custom" target: user-supplied shell command(s), the declarative escape hatch
- * for registries without a built-in target. Also what the legacy `publishCommand` /
- * `checkPublished` package fields map onto.
+ * for registries without a built-in target.
  *
  * Options:
  * - `command` (string | string[], required) — publish command(s); `{{name}}` and
  *   `{{version}}` are substituted (shell-quoted)
  * - `checkPublished` (string) — command printing the currently published version
+ * - `phase` (`"release"` | `"post-release"`, default release) — run after the GitHub
+ *   release is published instead of before (for commands that consume release assets)
  *
  * Capabilities are wide open — the user's command owns the semantics, so bumpy
  * doesn't second-guess prereleases or snapshots here.
@@ -36,7 +37,7 @@ export const customTarget: PublishTargetPlugin = {
   },
 
   async publish(ctx) {
-    const raw = ctx.options.command ?? ctx.options.publishCommand;
+    const raw = ctx.options.command;
     const commands = Array.isArray(raw) ? raw : typeof raw === 'string' ? [raw] : [];
     if (commands.length === 0) {
       throw new Error(`custom target "${ctx.pkg.name}" has no "command" configured`);

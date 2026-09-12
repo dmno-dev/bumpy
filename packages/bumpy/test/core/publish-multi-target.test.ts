@@ -6,7 +6,9 @@ import { writeJson, ensureDir } from '../../src/utils/fs.ts';
 import { makePkg, gitInDir } from '../helpers.ts';
 import { installShellMock, uninstallShellMock, addMockRule, getCallsMatching } from '../helpers-shell-mock.ts';
 import { DependencyGraph } from '../../src/core/dep-graph.ts';
-import { publishPackages } from '../../src/core/publish-pipeline.ts';
+import { publishPackages, releaseShipped, mergePublishResults } from '../../src/core/publish-pipeline.ts';
+import { releaseComplete } from '../../src/core/release-state.ts';
+import { resolvePackageTargets } from '../../src/core/targets/registry.ts';
 import type { WorkspacePackage, ReleasePlan, PlannedRelease } from '../../src/types.ts';
 import { DEFAULT_CONFIG } from '../../src/types.ts';
 
@@ -106,11 +108,80 @@ describe('publishPackages — multi-target', () => {
     // Partial success: counted as published (tag exists) and failed (exit code / retry)
     expect(result.published.map((p) => p.name)).toEqual(['flaky']);
     expect(result.failed.map((f) => f.name)).toEqual(['flaky']);
-    // Tag was created because one target succeeded
-    expect(gitInDir(['tag', '-l', 'flaky@1.0.1'], tmpDir)).toBe('flaky@1.0.1');
+    // One target went out → the version shipped from this commit (the flow tags it)
+    expect(releaseShipped(outcomes)).toBe(true);
   });
 
-  test('completedTargets skips already-published targets (per-target resume)', async () => {
+  test('custom target only honors "command" — no alias spelling ever runs', async () => {
+    const pkgDir = await setupPkg('alias');
+    const pkg = makePkg('alias', '1.0.0', {
+      dir: pkgDir,
+      bumpy: { publishTargets: [{ type: 'custom', name: 'sneaky', publishCommand: 'echo sneaky' }] },
+    });
+
+    const { packages, depGraph, plan } = planFor(pkg);
+    const result = await publishPackages(plan, packages, depGraph, DEFAULT_CONFIG, tmpDir, {});
+
+    const outcomes = result.targetOutcomes.get('alias')!;
+    expect(outcomes[0]!.status).toBe('failed');
+    expect(outcomes[0]!.error).toMatch(/no "command" configured/);
+    expect(getCallsMatching('echo sneaky')).toHaveLength(0);
+  });
+
+  test('preflight validates every distinct instance, not just the first one sharing a name', async () => {
+    // Both inline entries are named "npm" (the type) but carry different options —
+    // the second one's npmStaged validation must still run and abort the whole run
+    const dirA = await setupPkg('plain');
+    const dirB = await setupPkg('staged');
+    const plain = makePkg('plain', '1.0.0', { dir: dirA, bumpy: { publishTargets: [{ type: 'npm' }] } });
+    const staged = makePkg('staged', '1.0.0', {
+      dir: dirB,
+      bumpy: { publishTargets: [{ type: 'npm', npmStaged: true }] },
+    });
+    addMockRule({ match: 'npm --version', response: '10.0.0' });
+    addMockRule({ match: /^npm (pack|publish)/, response: '[]' });
+
+    const { packages, depGraph, plan } = planFor(plain, staged);
+    await expect(publishPackages(plan, packages, depGraph, DEFAULT_CONFIG, tmpDir, {})).rejects.toThrow(
+      /npmStaged requires npm >= 11\.15\.0/,
+    );
+    // Aborted before anything published
+    expect(getCallsMatching(/^npm publish/)).toHaveLength(0);
+  });
+
+  test('public package with no targets (publishTargets: []) still builds and gets its tag', async () => {
+    const pkgDir = await setupPkg('tool');
+    const pkg = makePkg('tool', '1.0.0', {
+      dir: pkgDir,
+      bumpy: { publishTargets: [], buildCommand: 'build-tool' },
+    });
+    addMockRule({ match: 'build-tool', response: '' });
+
+    const { packages, depGraph, plan } = planFor(pkg);
+    const result = await publishPackages(plan, packages, depGraph, DEFAULT_CONFIG, tmpDir, {});
+
+    // Dependents may bundle its build output, so the build runs even though nothing publishes
+    expect(getCallsMatching('build-tool')).toHaveLength(1);
+    expect(result.skipped).toEqual([{ name: 'tool', reason: 'no publish targets' }]);
+    expect(result.failed).toHaveLength(0);
+  });
+
+  test('private package with no targets neither builds nor tags by default', async () => {
+    const pkgDir = await setupPkg('internal');
+    const pkg = makePkg('internal', '1.0.0', {
+      dir: pkgDir,
+      private: true,
+      bumpy: { buildCommand: 'build-internal' },
+    });
+
+    const { packages, depGraph, plan } = planFor(pkg);
+    const result = await publishPackages(plan, packages, depGraph, DEFAULT_CONFIG, tmpDir, {});
+
+    expect(getCallsMatching('build-internal')).toHaveLength(0);
+    expect(result.skipped).toEqual([{ name: 'internal', reason: 'private' }]);
+  });
+
+  test('prior success in release metadata skips the target (per-target resume)', async () => {
     const pkgDir = await setupPkg('resume');
     const pkg = makePkg('resume', '1.0.0', {
       dir: pkgDir,
@@ -124,7 +195,7 @@ describe('publishPackages — multi-target', () => {
 
     const { packages, depGraph, plan } = planFor(pkg);
     const result = await publishPackages(plan, packages, depGraph, DEFAULT_CONFIG, tmpDir, {
-      completedTargets: new Map([['resume', new Set(['done-already'])]]),
+      priorStates: new Map([['resume', { 'done-already': { status: 'success' as const } }]]),
     });
 
     const outcomes = result.targetOutcomes.get('resume')!;
@@ -231,7 +302,6 @@ describe('publishPackages — multi-target', () => {
     };
 
     const result = await publishPackages(plan, packages, depGraph, DEFAULT_CONFIG, tmpDir, {
-      noTag: true,
       releaseKind: 'snapshot',
     });
 
@@ -260,8 +330,117 @@ describe('publishPackages — multi-target', () => {
     expect(outcomes[0]!.skipKind).toBe('registry');
     expect(outcomes[0]!.reason).toBe('already on registry');
     expect(getCallsMatching('publish-cmd')).toHaveLength(0);
-    // Version exists → tag still created (resume semantics)
-    expect(gitInDir(['tag', '-l', 'guarded@1.0.1'], tmpDir)).toBe('guarded@1.0.1');
+    // Version is out even though nothing was published this run → still "shipped"
+    // (the flow ensures the tag) but not "published"
+    expect(result.published).toHaveLength(0);
+    expect(releaseShipped(outcomes)).toBe(true);
+  });
+
+  test('a staged target is re-checked: still pending → left alone, live → recorded as published', async () => {
+    const pkgDir = await setupPkg('stager');
+    const pkg = makePkg('stager', '1.0.0', {
+      dir: pkgDir,
+      bumpy: {
+        publishTargets: [{ type: 'custom', name: 'gated', command: 'publish-cmd', checkPublished: 'check-cmd' }],
+      },
+    });
+    const prior = new Map([['stager', { gated: { status: 'staged' as const, ref: 'stage-123' } }]]);
+    const { packages, depGraph, plan } = planFor(pkg);
+
+    // Not live yet: don't re-run the publish command (would duplicate the staged item)
+    addMockRule({ match: 'check-cmd', response: '1.0.0' });
+    let result = await publishPackages(plan, packages, depGraph, DEFAULT_CONFIG, tmpDir, { priorStates: prior });
+    let outcome = result.targetOutcomes.get('stager')![0]!;
+    expect(outcome.status).toBe('skipped');
+    expect(outcome.skipKind).toBe('staged');
+    expect(outcome.ref).toBe('stage-123');
+    expect(getCallsMatching('publish-cmd')).toHaveLength(0);
+    expect(releaseShipped([outcome])).toBe(false);
+
+    // Approved since: the registry answers first, and the flow records the success
+    addMockRule({ match: 'check-cmd', response: '1.0.1' });
+    result = await publishPackages(plan, packages, depGraph, DEFAULT_CONFIG, tmpDir, { priorStates: prior });
+    outcome = result.targetOutcomes.get('stager')![0]!;
+    expect(outcome.skipKind).toBe('registry');
+    expect(getCallsMatching('publish-cmd')).toHaveLength(0);
+  });
+
+  test('a dependency failing on a target blocks dependents on that same target only', async () => {
+    const dirA = await setupPkg('lib-a');
+    const dirB = await setupPkg('app-b');
+    const a = makePkg('lib-a', '1.0.0', {
+      dir: dirA,
+      bumpy: {
+        publishTargets: [
+          { type: 'custom', name: 'reg-x', command: 'echo a-x' },
+          { type: 'custom', name: 'reg-y', command: 'echo a-y' },
+        ],
+      },
+    });
+    const b = makePkg('app-b', '1.0.0', {
+      dir: dirB,
+      dependencies: { 'lib-a': '^1.0.0' },
+      bumpy: {
+        publishTargets: [
+          { type: 'custom', name: 'reg-x', command: 'echo b-x' },
+          { type: 'custom', name: 'reg-y', command: 'echo b-y' },
+        ],
+      },
+    });
+    addMockRule({ match: 'a-x', error: 'registry x down' });
+
+    const { packages, depGraph, plan } = planFor(a, b);
+    const result = await publishPackages(plan, packages, depGraph, DEFAULT_CONFIG, tmpDir, {});
+
+    const bOutcomes = result.targetOutcomes.get('app-b')!;
+    // app-b@reg-x would reference a lib-a@reg-x that never landed → blocked, not published
+    expect(bOutcomes.find((o) => o.target === 'reg-x')!.status).toBe('failed');
+    expect(bOutcomes.find((o) => o.target === 'reg-x')!.error).toMatch(/blocked: dependency lib-a failed on reg-x/);
+    expect(getCallsMatching('b-x')).toHaveLength(0);
+    // ...while reg-y, where lib-a succeeded, proceeds
+    expect(bOutcomes.find((o) => o.target === 'reg-y')!.status).toBe('success');
+    expect(getCallsMatching('b-y')).toHaveLength(1);
+    expect(result.failed.map((f) => f.name).sort()).toEqual(['app-b', 'lib-a']);
+  });
+
+  describe('marketplace registry guards', () => {
+    async function setupExtension(name: string, targets: string[]) {
+      const pkgDir = await setupPkg(name, { publisher: 'acme', engines: { vscode: '^1.90.0' } });
+      const pkg = makePkg(name, '1.0.0', { dir: pkgDir, private: true, bumpy: { publishTargets: targets } });
+      pkg.packageJson.publisher = 'acme';
+      pkg.packageJson.engines = { vscode: '^1.90.0' };
+      return pkg;
+    }
+
+    test('vscode-marketplace matches any published version, not just the latest', async () => {
+      const pkg = await setupExtension('ext-a', ['vscode-marketplace']);
+      // 1.0.1 is live but a newer 1.2.0 has since shipped (e.g. retrying an old release
+      // whose metadata was lost) — it must still read as published
+      addMockRule({
+        match: /@vscode\/vsce show/,
+        response: JSON.stringify({ versions: [{ version: '1.2.0' }, { version: '1.0.1' }] }),
+      });
+
+      const { packages, depGraph, plan } = planFor(pkg);
+      const result = await publishPackages(plan, packages, depGraph, DEFAULT_CONFIG, tmpDir, {});
+
+      const outcomes = result.targetOutcomes.get('ext-a')!;
+      expect(outcomes[0]!.skipKind).toBe('registry');
+      expect(getCallsMatching(/vsce (package|publish)/)).toHaveLength(0);
+    });
+
+    test('open-vsx falls back to an exact-version query when the latest differs', async () => {
+      const pkg = await setupExtension('ext-b', ['open-vsx']);
+      addMockRule({ match: /ovsx get acme\.ext-b --metadata/, response: JSON.stringify({ version: '1.2.0' }) });
+      addMockRule({ match: /ovsx get acme\.ext-b@1\.0\.1 --metadata/, response: JSON.stringify({ version: '1.0.1' }) });
+
+      const { packages, depGraph, plan } = planFor(pkg);
+      const result = await publishPackages(plan, packages, depGraph, DEFAULT_CONFIG, tmpDir, {});
+
+      const outcomes = result.targetOutcomes.get('ext-b')!;
+      expect(outcomes[0]!.skipKind).toBe('registry');
+      expect(getCallsMatching(/ovsx publish/)).toHaveLength(0);
+    });
   });
 
   describe('jsr target', () => {
@@ -338,6 +517,28 @@ describe('publishPackages — multi-target', () => {
       expect(result.failed).toHaveLength(1);
       expect(result.failed[0]!.error).toContain('not claimed on JSR');
       expect(getCallsMatching('jsr publish')).toHaveLength(0);
+    });
+
+    test('registry queries use the jsr.json name, not the npm name', async () => {
+      // JSR scopes are a separate namespace — the npm package is @myorg/thing but it
+      // publishes to JSR as @jsr-org/thing. Only the JSR scope is claimed.
+      const pkgDir = await setupPkg('@myorg/thing');
+      await writeJson(resolve(pkgDir, 'jsr.json'), {
+        name: '@jsr-org/thing',
+        version: '0.0.0',
+        exports: { '.': './src/index.ts' },
+      });
+      fetchResponses.set(/scopes\/jsr-org\/packages\/thing$/, 200);
+      fetchResponses.set('/versions/', 404);
+      addMockRule({ match: 'jsr publish', response: '' });
+      const pkg = makePkg('@myorg/thing', '1.0.0', { dir: pkgDir, bumpy: { publishTargets: ['jsr'] } });
+
+      const { packages, depGraph, plan } = planFor(pkg);
+      const result = await publishPackages(plan, packages, depGraph, DEFAULT_CONFIG, tmpDir, {});
+
+      // Querying @myorg/thing instead would have failed the claim check (404)
+      expect(result.failed).toHaveLength(0);
+      expect(getCallsMatching('jsr publish')).toHaveLength(1);
     });
 
     test('version already on JSR is skipped via the registry guard', async () => {
@@ -484,5 +685,117 @@ describe('publishPackages — multi-target', () => {
     expect(publishes).toHaveLength(2);
     expect(publishes.some((c) => c.command.includes('--registry https://npm.pkg.github.com'))).toBe(true);
     expect(publishes.some((c) => !c.command.includes('--registry'))).toBe(true);
+  });
+
+  describe('phases (release vs post-release targets)', () => {
+    test('plugins default the phase; an instance option overrides it', () => {
+      const pkg = makePkg('cli', '1.0.0', { private: true });
+      const targets = resolvePackageTargets(
+        pkg,
+        {
+          publishTargets: [
+            { type: 'github-release-assets', files: ['x'] },
+            { type: 'docker', image: 'ghcr.io/a/b' },
+            { type: 'custom', name: 'announce', command: 'echo hi', phase: 'post-release' },
+            { type: 'homebrew', name: 'brew-early', tap: 'a/b', template: 't', phase: 'release' },
+          ],
+        },
+        DEFAULT_CONFIG,
+      );
+      expect(targets.map((t) => [t.name, t.phase])).toEqual([
+        ['github-release-assets', 'release'],
+        ['docker', 'post-release'],
+        ['announce', 'post-release'],
+        ['brew-early', 'release'],
+      ]);
+      expect(() =>
+        resolvePackageTargets(
+          pkg,
+          { publishTargets: [{ type: 'custom', command: 'x', phase: 'later' }] },
+          DEFAULT_CONFIG,
+        ),
+      ).toThrow(/Invalid target "phase"/);
+    });
+
+    test('the release pass builds and runs only release-phase targets; the post-release pass runs the rest without rebuilding', async () => {
+      const pkgDir = await setupPkg('two-phase');
+      const pkg = makePkg('two-phase', '1.0.0', {
+        dir: pkgDir,
+        private: true,
+        bumpy: {
+          buildCommand: 'build-it',
+          publishTargets: [
+            { type: 'custom', name: 'registry', command: 'echo publish-registry' },
+            { type: 'custom', name: 'announce', command: 'echo announce', phase: 'post-release' },
+          ],
+        },
+      });
+      addMockRule({ match: 'build-it', response: '' });
+      const { packages, depGraph, plan } = planFor(pkg);
+
+      const first = await publishPackages(plan, packages, depGraph, DEFAULT_CONFIG, tmpDir, { phase: 'release' });
+      expect(first.targetOutcomes.get('two-phase')!.map((o) => o.target)).toEqual(['registry']);
+      expect(getCallsMatching('build-it')).toHaveLength(1);
+      expect(getCallsMatching('echo announce')).toHaveLength(0);
+
+      const second = await publishPackages(plan, packages, depGraph, DEFAULT_CONFIG, tmpDir, { phase: 'post-release' });
+      expect(second.targetOutcomes.get('two-phase')!.map((o) => o.target)).toEqual(['announce']);
+      expect(getCallsMatching('build-it')).toHaveLength(1); // not rebuilt
+      expect(getCallsMatching('echo announce')).toHaveLength(1);
+
+      const merged = mergePublishResults(first, second);
+      expect(merged.targetOutcomes.get('two-phase')!.map((o) => [o.target, o.status])).toEqual([
+        ['registry', 'success'],
+        ['announce', 'success'],
+      ]);
+      expect(merged.published.map((p) => p.name)).toEqual(['two-phase']);
+    });
+
+    test('a package with only post-release targets still builds in the release pass and is otherwise untouched', async () => {
+      const pkgDir = await setupPkg('img-only');
+      const pkg = makePkg('img-only', '1.0.0', {
+        dir: pkgDir,
+        private: true,
+        bumpy: {
+          buildCommand: 'build-img',
+          publishTargets: [{ type: 'custom', name: 'push-image', command: 'echo push', phase: 'post-release' }],
+        },
+      });
+      addMockRule({ match: 'build-img', response: '' });
+      const { packages, depGraph, plan } = planFor(pkg);
+
+      const first = await publishPackages(plan, packages, depGraph, DEFAULT_CONFIG, tmpDir, { phase: 'release' });
+      expect(getCallsMatching('build-img')).toHaveLength(1);
+      expect(first.targetOutcomes.get('img-only')).toEqual([]);
+      expect(first.published).toHaveLength(0);
+      expect(first.skipped).toHaveLength(0);
+      expect(first.failed).toHaveLength(0);
+    });
+
+    test('releaseComplete gates on release-phase targets only', () => {
+      const pkg = makePkg('cli', '1.0.0', { private: true });
+      const targets = resolvePackageTargets(
+        pkg,
+        {
+          publishTargets: [
+            { type: 'github-release-assets', files: ['x'] },
+            { type: 'docker', image: 'ghcr.io/a/b' },
+          ],
+        },
+        DEFAULT_CONFIG,
+      );
+      const meta = (assets: string, docker: string) => ({
+        version: '1.0.1',
+        targets: { 'github-release-assets': { status: assets as never }, docker: { status: docker as never } },
+      });
+      // docker (post-release) pending never holds the release; assets does
+      expect(releaseComplete(meta('success', 'pending'), targets)).toBe(true);
+      expect(releaseComplete(meta('pending', 'success'), targets)).toBe(false);
+      expect(releaseComplete(meta('staged', 'pending'), targets)).toBe(false);
+      expect(releaseComplete(meta('skipped', 'pending'), targets)).toBe(false); // needs at least one success
+      // nothing gates a post-release-only package
+      const dockerOnly = targets.filter((t) => t.type === 'docker');
+      expect(releaseComplete(meta('pending', 'pending'), dockerOnly)).toBe(true);
+    });
   });
 });

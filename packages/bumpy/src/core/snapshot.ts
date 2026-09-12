@@ -1,7 +1,7 @@
 import semver from 'semver';
 import { tryRunArgs } from '../utils/shell.ts';
 import { fetchPublishedVersions, usesNpmRegistry, npmTargetRegistry } from './prerelease.ts';
-import { packagePublishes } from './targets/registry.ts';
+import { packagePublishesFor } from './targets/registry.ts';
 import type { BumpyConfig, ReleasePlan, PlannedRelease, WorkspacePackage } from '../types.ts';
 
 /**
@@ -129,7 +129,7 @@ export async function buildSnapshotReleasePlan(
       const pkg = packages.get(release.name);
       if (!pkg) return;
       // Unpublishable packages can't be installed from a dist-tag — nothing to snapshot
-      if (pkg.private && !packagePublishes(pkg)) return;
+      if (pkg.private && !packagePublishesFor(pkg, 'snapshot')) return;
 
       const target = release.newVersion; // stable target from the bump files
       const version = snapshotVersion(target, snapshot);

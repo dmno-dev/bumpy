@@ -4,12 +4,12 @@ import semver from 'semver';
 import { readJson, updateJsonNestedField } from '../utils/fs.ts';
 import { runStreaming } from '../utils/shell.ts';
 import { log, colorize } from '../utils/logger.ts';
-import { createTag, tagExists } from './git.ts';
 import { DependencyGraph } from './dep-graph.ts';
 import { stripProtocol } from './semver.ts';
 import { resolveCatalogDep, type CatalogMap } from '../utils/package-manager.ts';
-import { getPackageTargets } from './targets/registry.ts';
-import type { ReleaseKind, ResolvedTarget, TargetPublishContext } from './targets/types.ts';
+import { getPackageTargets, targetSupportsRelease } from './targets/registry.ts';
+import type { ReleaseKind, ResolvedTarget, TargetPhase, TargetPublishContext } from './targets/types.ts';
+import type { PublishTargetState } from './github-release.ts';
 import type { ReleasePlan, PlannedRelease, WorkspacePackage, BumpyConfig, PackageManager } from '../types.ts';
 
 // Re-exported for callers/tests that historically imported these from the pipeline
@@ -18,40 +18,57 @@ export { detectOidcProvider, willUseOidcExclusively } from './targets/npm.ts';
 export interface PublishOptions {
   dryRun?: boolean;
   tag?: string; // npm dist-tag (e.g., "next", "beta")
-  /** Skip creating git tags (snapshot releases are ephemeral and never tagged) */
-  noTag?: boolean;
   /** What kind of release this is — targets can opt out of snapshots/prereleases */
   releaseKind?: ReleaseKind;
   /**
-   * Target instance names that already succeeded in a previous run, per package
-   * (from GitHub release metadata). These are skipped, giving per-target resume:
-   * if npm succeeded and open-vsx failed, the retry only re-runs open-vsx.
+   * Per-package target states recorded by previous runs (from the GitHub release
+   * metadata). Targets already `success` are skipped — per-target resume: if npm
+   * succeeded and open-vsx failed, the retry only re-runs open-vsx. `staged` targets
+   * are re-checked against the registry and skipped while still awaiting approval.
    */
-  completedTargets?: Map<string, Set<string>>;
+  priorStates?: Map<string, Record<string, PublishTargetState>>;
+  /**
+   * Restrict the run to targets of one phase. The publish flow runs the `release`
+   * phase, publishes the GitHub release, then runs `post-release` (targets that need
+   * the release's public URLs). Unset = every target in one pass (snapshots, tests).
+   * Builds and protocol resolution happen in the release pass only.
+   */
+  phase?: TargetPhase;
 }
 
 export interface TargetOutcome {
   /** Target instance name (the release-metadata key) */
   target: string;
   type: string;
-  status: 'success' | 'failed' | 'skipped';
+  /**
+   * - success: live on the registry
+   * - staged: accepted but held by the registry for an out-of-band step (npm 2FA approval)
+   * - failed: errored, or blocked because a dependency failed on this same target
+   * - skipped: see `skipKind`
+   */
+  status: 'success' | 'staged' | 'failed' | 'skipped';
   error?: string;
+  /** Registry handle for a staged publish (e.g. the npm stage id) */
+  ref?: string;
   /** Human-readable skip explanation (display only — logic switches on skipKind) */
   reason?: string;
   /**
    * Why a target was skipped, structurally:
    * - 'metadata': release metadata already records success (per-target resume)
    * - 'registry': the pre-publish guard found the version live on the registry
+   * - 'staged': a previous run staged it and it is still awaiting approval
    * - 'capability': the target opted out of this release kind (snapshot/prerelease)
    * Metadata/registry skips mean the version IS live — consumers treat them as
-   * success for tagging and release-metadata purposes.
+   * success for release-metadata purposes.
    */
-  skipKind?: 'metadata' | 'registry' | 'capability';
+  skipKind?: 'metadata' | 'registry' | 'staged' | 'capability';
 }
 
 export interface PublishResult {
-  /** Packages where at least one target published this run */
+  /** Packages where at least one target went live this run */
   published: { name: string; version: string }[];
+  /** Packages where at least one target was staged (accepted, awaiting approval) this run */
+  staged: { name: string; version: string }[];
   /** Packages that published nothing (no targets, all targets skipped, private, ...) */
   skipped: { name: string; reason: string }[];
   /** Packages where at least one target failed (may also appear in `published`) */
@@ -60,11 +77,51 @@ export interface PublishResult {
   targetOutcomes: Map<string, TargetOutcome[]>;
 }
 
+/** Combine the results of two pipeline passes (release + post-release phases) */
+export function mergePublishResults(a: PublishResult, b: PublishResult): PublishResult {
+  const byName = <T extends { name: string }>(x: T[], y: T[]) => [
+    ...x,
+    ...y.filter((r) => !x.some((s) => s.name === r.name)),
+  ];
+  const targetOutcomes = new Map(a.targetOutcomes);
+  for (const [name, outcomes] of b.targetOutcomes) {
+    targetOutcomes.set(name, [...(targetOutcomes.get(name) ?? []), ...outcomes]);
+  }
+  return {
+    published: byName(a.published, b.published),
+    staged: byName(a.staged, b.staged),
+    skipped: byName(a.skipped, b.skipped).filter((s) => !a.published.some((p) => p.name === s.name)),
+    failed: [
+      ...a.failed.filter((f) => !b.failed.some((g) => g.name === f.name)),
+      ...b.failed.map((f) => {
+        const prior = a.failed.find((g) => g.name === f.name);
+        return prior ? { name: f.name, error: `${prior.error}; ${f.error}` } : f;
+      }),
+    ],
+    targetOutcomes,
+  };
+}
+
+/**
+ * Whether a package's run left the version out on some registry: something went live
+ * or was staged now, or the registry guard found it already live. The release
+ * orchestration uses this to decide that the version's git tag must exist.
+ */
+export function releaseShipped(outcomes: TargetOutcome[]): boolean {
+  return outcomes.some((o) => o.status === 'success' || o.status === 'staged' || o.skipKind === 'registry');
+}
+
 /**
  * Publish all packages in the release plan.
- * Order: topological across packages (dependencies published before dependents),
- * declared order across each package's targets. One target failing is recorded and
- * does not block sibling targets — retries are per-target via release metadata.
+ *
+ * Order: topological across packages (dependencies before dependents), declared
+ * order across each package's targets. One target failing does not block sibling
+ * targets on the same package — but it does block the SAME target on dependents:
+ * `B@jsr` must not go out referencing an `A@jsr` that never landed. Blocked targets
+ * are recorded as failures and retried on the next run, after the dependency.
+ *
+ * The pipeline publishes; it does not tag or touch GitHub releases — the caller
+ * orchestrates those from the outcomes.
  */
 export async function publishPackages(
   releasePlan: ReleasePlan,
@@ -76,7 +133,7 @@ export async function publishPackages(
   catalogs: CatalogMap = new Map(),
   detectedPm: PackageManager = 'npm',
 ): Promise<PublishResult> {
-  const result: PublishResult = { published: [], skipped: [], failed: [], targetOutcomes: new Map() };
+  const result: PublishResult = { published: [], staged: [], skipped: [], failed: [], targetOutcomes: new Map() };
   const releaseKind = opts.releaseKind ?? 'stable';
 
   // Topological sort for correct publish order
@@ -92,12 +149,17 @@ export async function publishPackages(
 
   // Preflight each unique target instance once, before anything publishes.
   // A preflight throw aborts the whole run — better than failing halfway through.
+  // Instances are distinct by name AND options: inline entries in different packages
+  // share a name (it defaults to the type) while carrying different options, and each
+  // combination needs its own validation (npmStaged, provenance, ...).
+  const inPhase = (t: ResolvedTarget) => !opts.phase || t.phase === opts.phase;
   const preflighted = new Set<string>();
   for (const release of ordered) {
     const pkg = packages.get(release.name)!;
-    for (const target of getPackageTargets(pkg, config)) {
-      if (preflighted.has(target.name)) continue;
-      preflighted.add(target.name);
+    for (const target of getPackageTargets(pkg, config).filter(inPhase)) {
+      const key = `${target.name}\0${JSON.stringify(target.options)}`;
+      if (preflighted.has(key)) continue;
+      preflighted.add(key);
       await target.plugin.preflight?.({
         rootDir,
         config,
@@ -107,26 +169,38 @@ export async function publishPackages(
     }
   }
 
+  // Targets that failed (or were blocked) this run, per package — dependents consult
+  // this so a dependency's failure on target T blocks their own publish to T
+  const failedTargets = new Map<string, Set<string>>();
+
   for (const release of ordered) {
     const pkg = packages.get(release.name)!;
     const pkgConfig = pkg.bumpy || {};
-    const targets = getPackageTargets(pkg, config);
-    const completed = opts.completedTargets?.get(release.name);
+    const allTargets = getPackageTargets(pkg, config);
+    const targets = allTargets.filter(inPhase);
+    const prior = opts.priorStates?.get(release.name) ?? {};
+    const buildPass = opts.phase !== 'post-release';
 
-    // Packages with no targets publish nowhere; git tags still apply per config
-    if (targets.length === 0) {
-      if (pkg.private) {
-        if (config.privatePackages.tag) createGitTag(release, rootDir, opts);
-        result.skipped.push({ name: release.name, reason: 'private' });
-      } else {
-        // Legacy skipNpmPublish behavior: no publish, but still tag the version
-        createGitTag(release, rootDir, opts);
-        result.skipped.push({ name: release.name, reason: 'no publish targets' });
-      }
+    // The post-release pass only touches packages with post-release targets
+    if (!buildPass && targets.length === 0) continue;
+
+    // Private packages with no targets publish nowhere and build nothing
+    if (allTargets.length === 0 && pkg.private) {
+      result.skipped.push({ name: release.name, reason: 'private' });
       continue;
     }
 
-    log.step(`Publishing ${colorize(release.name, 'cyan')}@${release.newVersion}`);
+    // A public package with no targets (`publishTargets: []`) still goes through the
+    // build step below — dependents may bundle its output — and is tracked by git tag
+    if (targets.length > 0) {
+      log.step(`Publishing ${colorize(release.name, 'cyan')}@${release.newVersion}`);
+    } else if (allTargets.length === 0) {
+      log.step(`Preparing ${colorize(release.name, 'cyan')}@${release.newVersion} (no publish targets)`);
+    } else {
+      log.step(
+        `Building ${colorize(release.name, 'cyan')}@${release.newVersion} (targets run after the release is published)`,
+      );
+    }
 
     const outcomes: TargetOutcome[] = [];
     result.targetOutcomes.set(release.name, outcomes);
@@ -134,8 +208,8 @@ export async function publishPackages(
     const artifacts = new Map<string, string>();
 
     try {
-      // 1. Build (once per package, before any target)
-      if (pkgConfig.buildCommand) {
+      // 1. Build (once per package, before any target — release pass only)
+      if (pkgConfig.buildCommand && buildPass) {
         log.dim(`  Building...`);
         if (!opts.dryRun) {
           await runStreaming(pkgConfig.buildCommand, { cwd: pkg.dir });
@@ -144,7 +218,8 @@ export async function publishPackages(
 
       // 2. Resolve workspace:/catalog: protocols in-place when any target reads the
       //    manifest from the package dir (custom commands, vsce, npm in-place mode)
-      const needsInPlaceResolve = targets.some((t) => t.plugin.needsProtocolResolution?.(t.options, config));
+      const needsInPlaceResolve =
+        buildPass && allTargets.some((t) => t.plugin.needsProtocolResolution?.(t.options, config));
       if (needsInPlaceResolve) {
         // Always write resolved protocols — dryRun only skips the actual publish commands
         await resolveProtocolsInPlace(pkg, packages, releasePlan, catalogs);
@@ -152,56 +227,71 @@ export async function publishPackages(
 
       // 3. Publish each target
       const isPrerelease = semver.prerelease(release.newVersion) !== null;
+      const inPlanDeps = planDependencies(pkg, releaseMap);
       for (const target of targets) {
-        const outcome = await publishOneTarget(target, {
-          pkg,
-          pkgConfig,
-          release,
-          config,
-          rootDir,
-          opts,
-          releaseKind,
-          isPrerelease,
-          completed,
-          artifacts,
-          detectedPm,
-        });
+        const blockedBy = inPlanDeps.find((dep) => failedTargets.get(dep)?.has(target.name));
+        const outcome = blockedBy
+          ? blockedOutcome(target, blockedBy)
+          : await publishOneTarget(target, {
+              pkg,
+              pkgConfig,
+              release,
+              config,
+              rootDir,
+              opts,
+              releaseKind,
+              isPrerelease,
+              prior: prior[target.name],
+              artifacts,
+              detectedPm,
+            });
         outcomes.push(outcome);
         if (outcome.status === 'failed') {
           log.error(`  Failed to publish ${release.name} → ${target.name}: ${outcome.error}`);
         }
       }
     } catch (err) {
-      // Package-level failure (build / protocol resolution) — no target ran
+      // Package-level failure (build / protocol resolution) — no target ran, so every
+      // target counts as failed for dependents
       const errMsg = err instanceof Error ? err.message : String(err);
       log.error(`  Failed to publish ${release.name}: ${errMsg}`);
       result.failed.push({ name: release.name, error: errMsg });
+      failedTargets.set(release.name, new Set(targets.map((t) => t.name)));
       await cleanupArtifacts(artifacts);
       continue;
     }
 
     await cleanupArtifacts(artifacts);
 
-    // 4. Git tag — the tag asserts "this version exists somewhere", so it is created
-    //    as soon as any target has succeeded (now, in a previous run, or out-of-band
-    //    per the registry guard)
-    const succeededNow = outcomes.filter((o) => o.status === 'success');
-    const failedNow = outcomes.filter((o) => o.status === 'failed');
-    const alreadyLive = (o: TargetOutcome) => o.skipKind === 'metadata' || o.skipKind === 'registry';
-    const anySuccess = succeededNow.length > 0 || (completed?.size ?? 0) > 0 || outcomes.some(alreadyLive);
-    if (anySuccess) {
-      createGitTag(release, rootDir, opts);
+    if (allTargets.length === 0) {
+      result.skipped.push({ name: release.name, reason: 'no publish targets' });
+      continue;
     }
+    if (targets.length === 0) continue; // built; its targets run in the post-release pass
 
     // Package-level classification
+    const succeededNow = outcomes.filter((o) => o.status === 'success');
+    const stagedNow = outcomes.filter((o) => o.status === 'staged');
+    const failedNow = outcomes.filter((o) => o.status === 'failed');
+    if (failedNow.length > 0) {
+      failedTargets.set(release.name, new Set(failedNow.map((o) => o.target)));
+    }
     if (succeededNow.length > 0) {
       result.published.push({ name: release.name, version: release.newVersion });
+    }
+    if (stagedNow.length > 0) {
+      result.staged.push({ name: release.name, version: release.newVersion });
+    }
+    if (succeededNow.length > 0 || stagedNow.length > 0) {
+      const shipped = [...succeededNow, ...stagedNow];
       const summary =
         targets.length === 1
           ? ''
-          : ` (${succeededNow.map((o) => o.target).join(', ')}${failedNow.length ? ` — ${failedNow.length} failed` : ''})`;
-      log.success(`  Published ${release.name}@${release.newVersion}${summary}`);
+          : ` (${shipped.map((o) => o.target).join(', ')}${failedNow.length ? ` — ${failedNow.length} failed` : ''})`;
+      const verb = succeededNow.length > 0 ? 'Published' : 'Staged';
+      log.success(`  ${verb} ${release.name}@${release.newVersion}${summary}`);
     } else if (failedNow.length === 0) {
+      const alreadyLive = (o: TargetOutcome) => o.skipKind === 'metadata' || o.skipKind === 'registry';
       const reason = outcomes.every(alreadyLive) ? 'already published' : (outcomes[0]?.reason ?? 'all targets skipped');
       result.skipped.push({ name: release.name, reason });
     }
@@ -216,6 +306,27 @@ export async function publishPackages(
   return result;
 }
 
+/** Runtime dependencies of `pkg` that are part of this release plan (dev deps aren't installed by consumers) */
+function planDependencies(pkg: WorkspacePackage, releaseMap: Map<string, PlannedRelease>): string[] {
+  const names = new Set<string>();
+  for (const field of ['dependencies', 'peerDependencies', 'optionalDependencies'] as const) {
+    for (const dep of Object.keys(pkg[field])) {
+      if (releaseMap.has(dep)) names.add(dep);
+    }
+  }
+  return [...names];
+}
+
+function blockedOutcome(target: ResolvedTarget, dependency: string): TargetOutcome {
+  log.dim(`  Skipping ${target.name} — dependency ${dependency} failed on ${target.name} this run`);
+  return {
+    target: target.name,
+    type: target.type,
+    status: 'failed',
+    error: `blocked: dependency ${dependency} failed on ${target.name} — retried on the next run`,
+  };
+}
+
 async function publishOneTarget(
   target: ResolvedTarget,
   args: {
@@ -227,40 +338,49 @@ async function publishOneTarget(
     opts: PublishOptions;
     releaseKind: ReleaseKind;
     isPrerelease: boolean;
-    completed: Set<string> | undefined;
+    prior: PublishTargetState | undefined;
     artifacts: Map<string, string>;
     detectedPm: PackageManager;
   },
 ): Promise<TargetOutcome> {
-  const { pkg, release, config, opts, releaseKind, isPrerelease, completed, artifacts } = args;
+  const { pkg, release, config, opts, releaseKind, isPrerelease, prior, artifacts } = args;
   const base = { target: target.name, type: target.type };
 
-  // Already succeeded in a previous run (per release metadata) — don't re-publish
-  if (completed?.has(target.name)) {
+  // Already live per a previous run's release metadata — don't re-publish
+  if (prior?.status === 'success') {
     log.dim(`  Skipping ${target.name} — already published (per release metadata)`);
     return { ...base, status: 'skipped', skipKind: 'metadata', reason: 'already published' };
   }
 
-  // Capability gates
+  // Capability gates (planners drop packages where no target passes these; this is
+  // the per-target guard for mixed packages, e.g. npm + marketplace on a prerelease)
   const caps = target.plugin.capabilities;
-  if (releaseKind === 'snapshot' && !caps.snapshots) {
-    log.dim(`  Skipping ${target.name} — target does not support snapshot releases`);
-    return { ...base, status: 'skipped', skipKind: 'capability', reason: 'snapshots not supported' };
-  }
-  if (isPrerelease && !caps.prereleases) {
-    log.dim(`  Skipping ${target.name} — target does not support prerelease versions`);
-    return { ...base, status: 'skipped', skipKind: 'capability', reason: 'prereleases not supported' };
+  if (!targetSupportsRelease(target, releaseKind, isPrerelease)) {
+    const snapshotGate = releaseKind === 'snapshot' && !caps.snapshots;
+    log.dim(
+      `  Skipping ${target.name} — target does not support ${snapshotGate ? 'snapshot releases' : 'prerelease versions'}`,
+    );
+    const reason = snapshotGate ? 'snapshots not supported' : 'prereleases not supported';
+    return { ...base, status: 'skipped', skipKind: 'capability', reason };
   }
 
-  // Registry-level idempotency guard: even without release metadata (gh unavailable,
-  // draft deleted), never publish a version that's already live — registries reject
-  // republishes with far less helpful errors. Runs before the artifact build so a
-  // fully-published package doesn't rebuild anything.
-  if (!opts.dryRun && target.plugin.checkPublished) {
-    const published = await target.plugin.checkPublished(pkg, release.newVersion, target.options).catch(() => null);
-    if (published === true) {
+  // The registry is the source of truth for "is it live": ask before every publish.
+  // Even without release metadata (gh unavailable, draft deleted), never publish a
+  // version that's already out — registries reject republishes with far less helpful
+  // errors. Runs before the artifact build so a fully-published package doesn't
+  // rebuild anything. Also how a staged publish is promoted once approved.
+  if (!opts.dryRun) {
+    const live = target.plugin.checkPublished
+      ? await target.plugin.checkPublished(pkg, release.newVersion, target.options).catch(() => null)
+      : null;
+    if (live === true) {
       log.dim(`  Skipping ${target.name} — ${release.newVersion} already on registry`);
       return { ...base, status: 'skipped', skipKind: 'registry', reason: 'already on registry' };
+    }
+    if (prior?.status === 'staged') {
+      // Staged by a previous run and not live yet — re-staging would be a duplicate
+      log.dim(`  Skipping ${target.name} — staged, awaiting approval${prior.ref ? ` (stage ${prior.ref})` : ''}`);
+      return { ...base, status: 'skipped', skipKind: 'staged', reason: 'awaiting approval', ref: prior.ref };
     }
   }
 
@@ -301,7 +421,10 @@ async function publishOneTarget(
       ctx.artifactPath = artifacts.get(kind);
     }
 
-    await target.plugin.publish(ctx);
+    const hookResult = await target.plugin.publish(ctx);
+    if (hookResult?.status === 'staged') {
+      return { ...base, status: 'staged', ref: hookResult.ref };
+    }
     return { ...base, status: 'success' };
   } catch (err) {
     return { ...base, status: 'failed', error: err instanceof Error ? err.message : String(err) };
@@ -319,21 +442,6 @@ async function cleanupArtifacts(artifacts: Map<string, string>): Promise<void> {
     }
   }
   artifacts.clear();
-}
-
-function createGitTag(release: PlannedRelease, rootDir: string, opts: PublishOptions): void {
-  if (opts.noTag) return;
-  const tag = `${release.name}@${release.newVersion}`;
-  if (opts.dryRun) {
-    log.dim(`  Would create tag: ${tag}`);
-    return;
-  }
-  if (tagExists(tag, { cwd: rootDir })) {
-    log.dim(`  Tag ${tag} already exists, skipping`);
-    return;
-  }
-  createTag(tag, { cwd: rootDir });
-  log.dim(`  Tagged: ${tag}`);
 }
 
 /**

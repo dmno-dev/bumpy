@@ -57,25 +57,39 @@ export async function loadPackageConfig(
     // ignore
   }
 
-  // Block custom commands from per-package config unless the root explicitly allows them.
-  // Commands defined in the root config's `packages` map are always trusted.
-  const CUSTOM_CMD_KEYS = ['buildCommand', 'publishCommand', 'checkPublished'] as const;
-  const disallowedKeys: string[] = CUSTOM_CMD_KEYS.filter((k) => pkgJsonConfig[k] != null);
-  // Inline publishTargets entries that carry shell commands are custom commands too.
-  // String references and command-free option bags are plain data and always allowed.
-  const TARGET_CMD_KEYS = ['command', 'checkPublished', 'buildCommand'];
-  const hasInlineTargetCommands = (pkgJsonConfig.publishTargets ?? []).some(
-    (entry) => typeof entry === 'object' && TARGET_CMD_KEYS.some((k) => entry[k] != null),
+  // The pre-targets publish fields were removed (breaking) — fail with the migration
+  // rather than silently ignoring them
+  const legacy = (['publishCommand', 'skipNpmPublish', 'checkPublished'] as const).filter(
+    (k) =>
+      (pkgJsonConfig as Record<string, unknown>)[k] != null || (rootPkgConfig as Record<string, unknown>)[k] != null,
   );
-  if (hasInlineTargetCommands) disallowedKeys.push('publishTargets (inline commands)');
-  if (disallowedKeys.length > 0 && !isCustomCommandAllowed(pkgName, rootConfig)) {
-    const fields = disallowedKeys.map((k) => `"${k}"`).join(', ');
+  if (legacy.length > 0) {
     throw new Error(
-      `Package "${pkgName}" defines custom command(s) (${fields}) in its package.json "bumpy" config, ` +
+      `Package "${pkgName}" uses removed config field(s) ${legacy.map((k) => `"${k}"`).join(', ')}. Migrate to "publishTargets":\n` +
+        '  publishCommand + checkPublished → "publishTargets": [{ "type": "custom", "name": "custom", "command": ..., "checkPublished": ... }]\n' +
+        '  skipNpmPublish: true → "publishTargets": []\n' +
+        '(name the custom instance "custom" so an in-flight release keeps resuming from its existing metadata)',
+    );
+  }
+
+  // Trust boundary: a package's own package.json may only *reference* publish targets
+  // by name. Anything that steers the credentialed publish — a build command, or an
+  // inline target definition carrying options (`registry` redirects it, `publishArgs`
+  // injects CLI flags, `command` runs a shell) — requires the root config to opt the
+  // package in. The root config itself (`packages` and `targets` maps) is always trusted.
+  const disallowed: string[] = [];
+  if (pkgJsonConfig.buildCommand != null) disallowed.push('buildCommand');
+  if ((pkgJsonConfig.publishTargets ?? []).some((entry) => typeof entry === 'object')) {
+    disallowed.push('publishTargets (inline target definitions)');
+  }
+  if (disallowed.length > 0 && !isCustomCommandAllowed(pkgName, rootConfig)) {
+    throw new Error(
+      `Package "${pkgName}" defines ${disallowed.map((k) => `"${k}"`).join(', ')} in its package.json "bumpy" config, ` +
         'but the root config does not allow this.\n' +
-        'Custom commands execute shell commands during publishing and must be explicitly enabled.\n\n' +
+        'Build commands and inline target definitions steer publishing with CI credentials and must be explicitly enabled.\n\n' +
         'To fix this, either:\n' +
-        '  1. Move the command(s) to .bumpy/_config.json under "packages" (always trusted)\n' +
+        '  1. Move it to .bumpy/_config.json (always trusted) — under "packages", or as a named ' +
+        'instance in "targets" that the package references by name\n' +
         `  2. Add "allowCustomCommands": true (or ["${pkgName}"]) to .bumpy/_config.json`,
     );
   }
@@ -189,8 +203,10 @@ export function getBumpyDir(rootDir: string): string {
  * 2. `config.ignore` glob match → skip
  * 3. Per-package `managed: true` → include (explicit opt-in, overrides private)
  * 4. `config.include` glob match → include (overrides private)
- * 5. Private package + `config.privatePackages.version` false → skip
- * 6. Otherwise → include
+ * 5. Private package that declares publish targets → include (it ships somewhere:
+ *    a marketplace extension, a PyPI stub, a CLI distributed as release assets)
+ * 6. Private package + `config.privatePackages.version` false → skip
+ * 7. Otherwise → include
  */
 export function isPackageManaged(
   pkgName: string,
@@ -215,9 +231,12 @@ export function isPackageManaged(
   // 4. Included by glob (overrides private)
   if (config.include.some((pattern) => matchGlob(pkgName, pattern))) return true;
 
-  // 5. Private package check
+  // 5. "private": true only means "not npm"; explicit targets mean it publishes anyway
+  if (isPrivate && (pkgBumpy?.publishTargets?.length ?? 0) > 0) return true;
+
+  // 6. Private package check
   if (isPrivate && !config.privatePackages.version) return false;
 
-  // 6. Default: managed
+  // 7. Default: managed
   return true;
 }

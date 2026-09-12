@@ -60,10 +60,19 @@ async function buildVsix(ctx: TargetPublishContext): Promise<string> {
 
 /** Run a CLI and parse the published version out of its JSON output. Null = unknown. */
 async function fetchPublishedVersion(args: string[], extract: (json: unknown) => unknown): Promise<string | null> {
+  const versions = await fetchPublishedVersions(args, (json) => [extract(json)]);
+  return versions?.[0] ?? null;
+}
+
+/** Run a CLI and parse a list of published versions out of its JSON output. Null = unknown. */
+async function fetchPublishedVersions(
+  args: string[],
+  extract: (json: unknown) => unknown[] | undefined,
+): Promise<string[] | null> {
   try {
-    const output = await runArgsAsync(args);
-    const version = extract(JSON.parse(output));
-    return typeof version === 'string' && version ? version : null;
+    const output = await runArgsAsync(args, { timeoutMs: 120_000 }); // npx may install the CLI first
+    const versions = (extract(JSON.parse(output)) ?? []).filter((v): v is string => typeof v === 'string' && !!v);
+    return versions.length > 0 ? versions : null;
   } catch {
     return null;
   }
@@ -90,11 +99,12 @@ export const vscodeMarketplaceTarget: PublishTargetPlugin = {
 
   async checkPublished(pkg, version, _options) {
     if (!looksLikeVscodeExtension(pkg)) return null; // no publisher — can't query
-    const published = await fetchPublishedVersion(
-      [...VSCE_BIN, 'show', extensionId(pkg), '--json'],
-      (json) => (json as { versions?: Array<{ version?: unknown }> })?.versions?.[0]?.version,
+    // `show` lists every published version — match against all of them, not just the
+    // latest, so retrying an older release after a newer one shipped still reads as live
+    const versions = await fetchPublishedVersions([...VSCE_BIN, 'show', extensionId(pkg), '--json'], (json) =>
+      (json as { versions?: Array<{ version?: unknown }> })?.versions?.map((v) => v.version),
     );
-    return published === null ? null : published === version;
+    return versions === null ? null : versions.includes(version);
   },
 
   artifactKind() {
@@ -143,12 +153,16 @@ export const openVsxTarget: PublishTargetPlugin = {
 
   async checkPublished(pkg, version, _options) {
     if (!looksLikeVscodeExtension(pkg)) return null; // no publisher — can't query
-    const publisher = String(pkg.packageJson.publisher ?? '');
-    const published = await fetchPublishedVersion(
-      [...OVSX_BIN, 'get', `${publisher}.${pkg.name}`, '--metadata'],
-      (json) => (json as { version?: unknown })?.version,
-    );
-    return published === null ? null : published === version;
+    const id = extensionId(pkg);
+    const metadataVersion = (json: unknown) => (json as { version?: unknown })?.version;
+    // `get --metadata` describes one version (the latest by default). Fall back to
+    // asking for the exact version so an older-but-live release isn't mistaken for
+    // unpublished; ovsx exits non-zero for a version that doesn't exist.
+    const latest = await fetchPublishedVersion([...OVSX_BIN, 'get', id, '--metadata'], metadataVersion);
+    if (latest === null) return null;
+    if (latest === version) return true;
+    const exact = await fetchPublishedVersion([...OVSX_BIN, 'get', `${id}@${version}`, '--metadata'], metadataVersion);
+    return exact === version;
   },
 
   artifactKind() {

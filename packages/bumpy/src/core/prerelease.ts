@@ -3,7 +3,7 @@ import semver from 'semver';
 import { readText, writeText, updateJsonFields, updateJsonNestedField } from '../utils/fs.ts';
 import { runArgsAsync, tryRunArgs } from '../utils/shell.ts';
 import { listTags } from './git.ts';
-import { getNpmTarget, packagePublishes } from './targets/registry.ts';
+import { getNpmTarget, packagePublishesFor } from './targets/registry.ts';
 import { npmEffectiveRegistry } from './targets/npm.ts';
 import type { ResolvedChannel } from './channels.ts';
 import type { ReleasePlan, PlannedRelease, WorkspacePackage } from '../types.ts';
@@ -101,7 +101,7 @@ export async function getPublishedPrereleaseState(
       stablePublished: versions.includes(target),
     };
   }
-  // Non-npm packages (custom publish command / skipNpmPublish) — derive from git tags,
+  // Packages without an npm target — derive from git tags,
   // matching how the stable flow tracks their published-ness.
   const tagVersions = listTags(`${pkg.name}@${target}-${preid}.*`, { cwd: rootDir }).map((t) =>
     t.slice(pkg.name.length + 1),
@@ -152,8 +152,9 @@ export async function buildChannelReleasePlan(
     stablePlan.releases.map(async (release) => {
       const pkg = packages.get(release.name);
       if (!pkg) return;
-      // Unpublishable packages can't participate in a registry-consumable cycle
-      if (pkg.private && !packagePublishes(pkg)) return;
+      // Unpublishable packages can't participate in a registry-consumable cycle (a
+      // marketplace-only extension counts: its targets don't take prereleases)
+      if (pkg.private && !packagePublishesFor(pkg, 'channel')) return;
 
       const target = release.newVersion; // stable target from the bump files
       const state = await getPublishedPrereleaseState(pkg, target, channel.preid, rootDir);
@@ -253,7 +254,7 @@ export function channelDisplayPlan(
   const releases = stablePlan.releases
     .filter((r) => {
       const pkg = packages.get(r.name);
-      return !!pkg && !(pkg.private && !packagePublishes(pkg));
+      return !!pkg && !(pkg.private && !packagePublishesFor(pkg, 'channel'));
     })
     .map((r) => ({ ...r, newVersion: `${r.newVersion}-${channel.preid}.x` }));
   return { ...stablePlan, releases };

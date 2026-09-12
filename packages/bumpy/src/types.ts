@@ -65,12 +65,11 @@ export const DEP_TYPES: DepType[] = ['dependencies', 'devDependencies', 'peerDep
 // ---- Config ----
 
 /**
- * A target entry in the root config's `targets` map.
- * - Key matches a built-in target type (e.g. "npm", "vscode-marketplace") → type-level
- *   defaults applied to every instance of that type.
- * - Any other key → a named, reusable target instance; `type` is required and the key
- *   becomes the instance name (used in release metadata and `publishTargets` references).
- * Remaining fields are target-type-specific options.
+ * A named target instance in the root config's `targets` map. The key is the instance
+ * name (used in release metadata and `publishTargets` references); `type` names the
+ * target plugin and may be omitted when the key itself is a built-in type name
+ * (`"npm": { "provenance": true }`). Remaining fields are the instance's options.
+ * Instances are complete on their own — nothing is inherited between them.
  */
 export interface TargetDefinition {
   type?: string;
@@ -199,21 +198,20 @@ export interface BumpyConfig {
   dependencyBumpRules: Partial<Record<DepType, DependencyBumpRule | false>>;
   privatePackages: { version: boolean; tag: boolean };
   /**
-   * Allow per-package custom commands (buildCommand, publishCommand, checkPublished)
-   * defined in package.json "bumpy" fields.
-   * Commands defined in the root config's `packages` map are always trusted.
+   * Allow a package's own package.json "bumpy" config to steer publishing: a
+   * `buildCommand`, or inline `publishTargets` entries (objects with options) rather
+   * than plain name references. Everything in the root config is always trusted.
    *
-   * true = allow all packages to define custom commands
+   * true = allow all packages
    * string[] = allow only matching package names/globs
-   * false = only root-config commands are allowed (default)
+   * false = package.json may only reference targets by name (default)
    */
   allowCustomCommands: boolean | string[];
   packages: Record<string, PackageConfig>;
   publish: PublishConfig;
   /**
-   * Publish target configuration shared across packages. Keys matching a built-in
-   * target type set type-level defaults; other keys define named, reusable instances
-   * (must include `type`). See {@link TargetDefinition}.
+   * Named, reusable publish target instances, referenced from `publishTargets` by key.
+   * See {@link TargetDefinition}.
    */
   targets: Record<string, TargetDefinition>;
   /** Git identity used for CI commits. Defaults to bumpy-bot. */
@@ -234,19 +232,12 @@ export interface PackageConfig {
   managed?: boolean;
   access?: 'public' | 'restricted';
   /**
-   * Publish targets for this package. Overrides the implicit default (npm for public
-   * packages) and the legacy `publishCommand`/`skipNpmPublish` fields. See
-   * {@link PublishTargetsInput}.
+   * Publish targets for this package. Defaults to `["npm"]` for public packages and
+   * `[]` for private ones. See {@link PublishTargetsInput}.
    */
   publishTargets?: PublishTargetsInput;
-  /** @deprecated Use `publishTargets: [{ type: "custom", command: ... }]` instead. */
-  publishCommand?: string | string[];
   buildCommand?: string;
   registry?: string;
-  /** @deprecated Use `publishTargets` without an "npm" entry (e.g. `[]`) instead. */
-  skipNpmPublish?: boolean;
-  /** Command to check if a version is already published. Should output the published version string. */
-  checkPublished?: string;
   /** Glob patterns to filter which changed files count toward marking this package as changed */
   changedFilePatterns?: string[];
   dependencyBumpRules?: Partial<Record<DepType, DependencyBumpRule | false>>;
@@ -368,8 +359,8 @@ export interface WorkspacePackage {
   optionalDependencies: Record<string, string>;
   bumpy?: PackageConfig; // per-package config from package.json or .bumpy.config.json
   /**
-   * Publish targets resolved at workspace discovery (from `publishTargets` config,
-   * legacy fields, or the implicit npm default). Attached by `discoverWorkspace` so
+   * Publish targets resolved at workspace discovery (from `publishTargets` config or
+   * the implicit npm default). Attached by `discoverWorkspace` so
    * downstream consumers don't need the root config to answer "where does this
    * package publish". May be absent for hand-constructed packages (tests) — use
    * `getPackageTargets()` from core/targets to resolve lazily.

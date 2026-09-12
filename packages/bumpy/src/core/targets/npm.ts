@@ -164,14 +164,40 @@ function getPackArgs(pm: PackageManager): string[] {
   }
 }
 
+/**
+ * Whether this publish goes through npm staged publishing. Snapshots never stage:
+ * they are throwaway previews that must be installable immediately.
+ */
+function isStagedPublish(ctx: TargetPublishContext): boolean {
+  const o = npmOptions(ctx.config, ctx.options);
+  return !!o.npmStaged && o.publishManager === 'npm' && ctx.releaseKind !== 'snapshot';
+}
+
+/**
+ * Parse the stage id (a UUID) from `npm stage publish --json` output.
+ * npm returns `{ pkg: { name, version, stageId } }`; tolerate minor shape
+ * variations (array wrapper, top-level stageId) and return undefined if absent.
+ */
+export function parseStageId(output: string): string | undefined {
+  try {
+    const parsed = JSON.parse(output);
+    const entry = Array.isArray(parsed) ? parsed[0] : parsed;
+    const stageId = entry?.pkg?.stageId ?? entry?.stageId;
+    return typeof stageId === 'string' && stageId ? stageId : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function buildPublishArgs(ctx: TargetPublishContext, tarball?: string): string[] {
   const o = npmOptions(ctx.config, ctx.options);
   const publishManager = o.publishManager;
   const args: string[] = [];
 
   // Base command
-  if (o.npmStaged && publishManager === 'npm') {
-    args.push('npm', 'stage', 'publish');
+  if (isStagedPublish(ctx)) {
+    // `--json` yields `{ pkg: { stageId } }` so the stage id can be recorded in the release
+    args.push('npm', 'stage', 'publish', '--json');
   } else if (publishManager === 'yarn') {
     args.push('yarn', 'npm', 'publish');
   } else {
@@ -289,7 +315,7 @@ export const npmTarget: PublishTargetPlugin = {
       const args = ['npm', 'info', `${pkg.name}@${version}`, 'version'];
       const registry = npmEffectiveRegistry(pkg, pkg.bumpy || {}, options);
       if (registry) args.push('--registry', registry);
-      const result = await runArgsAsync(args);
+      const result = await runArgsAsync(args, { timeoutMs: 60_000 });
       return result.trim() === version;
     } catch {
       return false;
@@ -322,7 +348,13 @@ export const npmTarget: PublishTargetPlugin = {
       return;
     }
     log.dim(`  Publishing: ${args.join(' ')}`);
-    await runArgsAsync(args, { cwd: ctx.pkg.dir });
+    const output = await runArgsAsync(args, { cwd: ctx.pkg.dir });
+    if (isStagedPublish(ctx)) {
+      // Staged on npmjs.com, not live — the release stays a draft until it's approved
+      const ref = parseStageId(output);
+      log.dim(`  Staged on npm — awaiting 2FA approval${ref ? ` (stage ${ref})` : ''}`);
+      return { status: 'staged', ref };
+    }
   },
 
   publishUrl(pkg, version, options, extra) {

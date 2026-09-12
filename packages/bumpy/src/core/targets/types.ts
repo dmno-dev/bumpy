@@ -5,6 +5,16 @@ export type TargetOptions = Record<string, unknown>;
 
 export type ReleaseKind = 'stable' | 'channel' | 'snapshot';
 
+/**
+ * When a target runs relative to the GitHub release:
+ * - `release`: constitutes the release — the draft is held until it's done (npm, jsr,
+ *   marketplaces, release assets)
+ * - `post-release`: consumes the release — runs only once it's published, because it
+ *   needs public release URLs (a Homebrew formula pointing at release assets, a
+ *   Dockerfile that downloads them). Draft release assets aren't downloadable.
+ */
+export type TargetPhase = 'release' | 'post-release';
+
 export interface TargetCapabilities {
   /** Supports npm-style dist-tags (`--tag next`) */
   distTags: boolean;
@@ -66,6 +76,8 @@ export interface TargetPublishContext {
 export interface PublishTargetPlugin {
   type: string;
   capabilities: TargetCapabilities;
+  /** Default phase for instances of this plugin (an instance can override with a `phase` option). Default: `release`. */
+  phase?: TargetPhase;
   /** Heuristic: does this package look like it should use this target? (used for suggestions, never auto-applied) */
   detect?(pkg: WorkspacePackage): boolean;
   /** Human-readable label for release notes / status output. Falls back to the instance name. */
@@ -80,8 +92,10 @@ export interface PublishTargetPlugin {
    */
   prepare?(ctx: TargetPublishContext): void | Promise<void>;
   /**
-   * Whether `version` is already live on this target.
-   * Return null for "unknown" (caller falls back to git-tag tracking).
+   * Whether `version` is already live on this target. The registry is the source of
+   * truth: the pipeline asks before every publish (idempotency guard) and to promote
+   * `staged` targets once they go live. Return null for "unknown" (caller falls back
+   * to release metadata / git-tag tracking).
    */
   checkPublished?(pkg: WorkspacePackage, version: string, options: TargetOptions): Promise<boolean | null>;
   /**
@@ -98,7 +112,7 @@ export interface PublishTargetPlugin {
    * commands and vsce, need this; npm's pack flow handles it in the tarball).
    */
   needsProtocolResolution?(options: TargetOptions, config: BumpyConfig): boolean;
-  publish(ctx: TargetPublishContext): Promise<void>;
+  publish(ctx: TargetPublishContext): Promise<PublishHookResult>;
   /** Browsable URL for a published version, used in release notes. */
   publishUrl?(
     pkg: WorkspacePackage,
@@ -107,6 +121,15 @@ export interface PublishTargetPlugin {
     extra: { repoSlug?: string },
   ): string | undefined;
 }
+
+/**
+ * What `publish()` reports back. `void` means the version is live. `staged` means the
+ * registry accepted the artifact but holds it for an out-of-band step (npm staged
+ * publishing's 2FA approval, a marketplace review queue, ...): the release stays a
+ * draft and the target is re-checked with `checkPublished` on later runs until it is
+ * live. `ref` is the registry's handle for the pending item (e.g. the npm stage id).
+ */
+export type PublishHookResult = void | { status: 'staged'; ref?: string };
 
 /** A target instance resolved for a specific package: plugin + merged options + stable name */
 export interface ResolvedTarget {
@@ -118,4 +141,5 @@ export interface ResolvedTarget {
   type: string;
   plugin: PublishTargetPlugin;
   options: TargetOptions;
+  phase: TargetPhase;
 }

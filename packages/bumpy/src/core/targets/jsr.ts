@@ -1,5 +1,5 @@
 import { resolve } from 'node:path';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { readJson, updateJsonFields } from '../../utils/fs.ts';
 import { runArgsAsync } from '../../utils/shell.ts';
 import { log } from '../../utils/logger.ts';
@@ -39,9 +39,33 @@ import type { PublishTargetPlugin } from './types.ts';
 const JSR_BIN = ['npx', '--yes', 'jsr'];
 const JSR_API = 'https://api.jsr.io';
 
-function scopeAndName(pkg: WorkspacePackage): { scope: string; name: string } | null {
-  const match = pkg.name.match(/^@([^/]+)\/(.+)$/);
-  return match ? { scope: match[1]!, name: match[2]! } : null;
+function jsrJsonPath(pkg: WorkspacePackage): string {
+  return resolve(pkg.dir, 'jsr.json');
+}
+
+/**
+ * The name the package publishes under on JSR: jsr.json's `name` when it declares one,
+ * otherwise the npm name. JSR scopes are a separate namespace from npm's, so the two
+ * legitimately differ (`@acme/foo` on npm, `@acme-js/foo` on JSR) — every registry
+ * query must use the JSR identity, never package.json's.
+ */
+export function jsrPackageName(pkg: WorkspacePackage): string {
+  const path = jsrJsonPath(pkg);
+  if (existsSync(path)) {
+    try {
+      const { name } = JSON.parse(readFileSync(path, 'utf-8')) as { name?: unknown };
+      if (typeof name === 'string' && name) return name;
+    } catch {
+      // unreadable jsr.json — prepare() reports it; fall back to the npm name here
+    }
+  }
+  return pkg.name;
+}
+
+function scopeAndName(pkg: WorkspacePackage): { full: string; scope: string; name: string } | null {
+  const full = jsrPackageName(pkg);
+  const match = full.match(/^@([^/]+)\/(.+)$/);
+  return match ? { full, scope: match[1]!, name: match[2]! } : null;
 }
 
 /** GET a JSR API path; returns the response status or null on network failure */
@@ -82,15 +106,18 @@ export const jsrTarget: PublishTargetPlugin = {
   },
 
   async prepare(ctx) {
-    const id = scopeAndName(ctx.pkg);
-    if (!id) {
-      throw new Error(`${ctx.pkg.name}: JSR packages must be scoped (@scope/name)`);
-    }
     const jsrJsonPath = resolve(ctx.pkg.dir, 'jsr.json');
     if (!existsSync(jsrJsonPath)) {
       throw new Error(
         `${ctx.pkg.name}: jsr target requires a jsr.json (name + exports; version can stay "0.0.0" — ` +
           `bumpy syncs it at publish time)`,
+      );
+    }
+    const id = scopeAndName(ctx.pkg);
+    if (!id) {
+      throw new Error(
+        `${ctx.pkg.name}: JSR packages must be scoped (@scope/name) — set "name" in jsr.json ` +
+          `(currently "${jsrPackageName(ctx.pkg)}")`,
       );
     }
 
@@ -99,7 +126,7 @@ export const jsrTarget: PublishTargetPlugin = {
     const pkgStatus = await jsrApiStatus(`/scopes/${id.scope}/packages/${id.name}`);
     if (pkgStatus === 404) {
       throw new Error(
-        `${ctx.pkg.name} is not claimed on JSR — create it in the @${id.scope} scope first ` +
+        `${id.full} is not claimed on JSR — create it in the @${id.scope} scope first ` +
           `(jsr.io → scope → Create package), and link the GitHub repo for token-less OIDC publishing`,
       );
     }
@@ -131,6 +158,6 @@ export const jsrTarget: PublishTargetPlugin = {
   },
 
   publishUrl(pkg, version) {
-    return buildPublishUrl(pkg.name, version, 'jsr');
+    return buildPublishUrl(jsrPackageName(pkg), version, 'jsr');
   },
 };

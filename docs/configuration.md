@@ -22,10 +22,10 @@ Bumpy is configured via `.bumpy/_config.json`, created by `bumpy init`. Per-pack
 | `changedFilePatterns`        | `string[]`                             | `["**"]`                         | Glob patterns to filter which changed files count toward marking a package as changed                  |
 | `ignoredPackageJsonFields`   | `string[]`                             | `["devDependencies"]`            | `package.json` fields whose change alone doesn't require a bump file (see below)                       |
 | `publish`                    | `object`                               | see below                        | Publishing pipeline config (npm target defaults)                                                       |
-| `targets`                    | `object`                               | `{}`                             | Publish target defaults + named reusable target instances (see [Publish targets](#publish-targets))    |
+| `targets`                    | `object`                               | `{}`                             | Named, reusable publish target instances (see [Publish targets](#publish-targets))                     |
 | `gitUser`                    | `{ name, email }`                      | bumpy-bot                        | Git identity for CI commits                                                                            |
 | `versionPr`                  | `{ title, branch, preamble }`          | see below                        | Customize the version PR                                                                               |
-| `allowCustomCommands`        | `boolean \| string[]`                  | `false`                          | Allow per-package custom commands from `package.json` (see below)                                      |
+| `allowCustomCommands`        | `boolean \| string[]`                  | `false`                          | Allow a package's `package.json` to define a `buildCommand` / inline publish targets (see below)       |
 | `packages`                   | `object`                               | `{}`                             | Per-package config overrides (keyed by package name)                                                   |
 | `channels`                   | `object`                               | `{}`                             | Prerelease channels, keyed by channel name (see below)                                                 |
 | `snapshot`                   | `{ versionStrategy }`                  | `{ versionStrategy: "sha" }`     | Snapshot release settings — how snapshot versions are made unique (see below)                          |
@@ -35,7 +35,7 @@ Bumpy is configured via `.bumpy/_config.json`, created by `bumpy init`. Per-pack
 These are two different things, and bumpy treats them differently:
 
 - **Publishing to a private registry** (scoped package + `access: "restricted"` and/or a `registry`, _without_ `"private": true`) works like any other publish — bumpy versions, publishes, tags, and snapshots them normally. This is the recommended setup for private/internal packages. See [Publishing to a private registry](snapshots.md#publishing-to-a-private-registry).
-- **`"private": true` in `package.json`** is npm's "never publish" marker (`npm publish` refuses it). bumpy never publishes these. `privatePackages` only controls whether they're _versioned_ (`version`) and _git-tagged_ (`tag`) — not published. Use this for apps and internal tooling you want bumpy to bump but never ship to a registry.
+- **`"private": true` in `package.json`** is npm's "never publish" marker (`npm publish` refuses it). bumpy never publishes these to npm. `privatePackages` controls whether they're _versioned_ (`version`) and _git-tagged_ (`tag`) by default. Use this for apps and internal tooling you want bumpy to bump but never ship to a registry. A private package that declares [`publishTargets`](#publish-targets) (a marketplace extension, a PyPI stub, a CLI shipped as release assets) is always versioned and published to those targets — `"private": true` just keeps it off npm.
 
 ### Change detection and `package.json` fields
 
@@ -103,6 +103,8 @@ The `publish` object controls how packages are packed and published:
 
 When `npmStaged` is enabled, bumpy uses `npm stage publish` instead of `npm publish`. This stages packages on npmjs.com, where they must be manually approved with 2FA before going live. This adds an extra security gate to your release process — even if CI credentials are compromised, packages can't be published without maintainer approval.
 
+A staged publish is recorded as `staged` (🟡) in the draft GitHub release rather than as published, and the draft stays a draft — no dead npmjs.com link, no premature `release: published` event. Once the version is approved, the next `bumpy publish` run sees it live on the registry, records the success and finalizes the release. Snapshots are never staged (they must be installable immediately). The git tag is created at staging time — the staged artifact is already locked to that commit.
+
 Requirements:
 
 - `publishManager` must be `"npm"` (the default)
@@ -122,16 +124,19 @@ Requirements:
 
 A package can publish to any number of **targets** — npm is just the default one. Each target is an instance of a target type; the built-in types are:
 
-| Type                 | Publishes via                       | Auth                              | Notes                                                        |
-| -------------------- | ----------------------------------- | --------------------------------- | ------------------------------------------------------------ |
-| `npm`                | `npm publish` (or configured PM)    | OIDC / `NPM_TOKEN` / `.npmrc`     | Supports dist-tags, prereleases, snapshots, staged publishes |
-| `jsr`                | `npx jsr publish`                   | OIDC (linked GitHub repo)         | Requires a `jsr.json`; no dist-tags, so no snapshots         |
-| `pypi`               | `uv build` + `uv publish`           | OIDC / `UV_PUBLISH_TOKEN`         | Requires a `pyproject.toml`; stable versions only            |
-| `vscode-marketplace` | `vsce publish --packagePath <vsix>` | `VSCE_PAT` (or Azure credentials) | Stable versions only — the Marketplace rejects prereleases   |
-| `open-vsx`           | `ovsx publish <vsix>`               | `OVSX_PAT`                        | Stable versions only                                         |
-| `custom`             | your shell command(s)               | yours                             | The declarative escape hatch for anything else               |
+| Type                    | Publishes via                       | Auth                              | Notes                                                                   |
+| ----------------------- | ----------------------------------- | --------------------------------- | ----------------------------------------------------------------------- |
+| `npm`                   | `npm publish` (or configured PM)    | OIDC / `NPM_TOKEN` / `.npmrc`     | Supports dist-tags, prereleases, snapshots, staged publishes            |
+| `jsr`                   | `npx jsr publish`                   | OIDC (linked GitHub repo)         | Requires a `jsr.json`; no dist-tags, so no snapshots                    |
+| `pypi`                  | `uv build` + `uv publish`           | OIDC / `UV_PUBLISH_TOKEN`         | Requires a `pyproject.toml`; stable versions only                       |
+| `vscode-marketplace`    | `vsce publish --packagePath <vsix>` | `VSCE_PAT` (or Azure credentials) | Stable versions only — the Marketplace rejects prereleases              |
+| `open-vsx`              | `ovsx publish <vsix>`               | `OVSX_PAT`                        | Stable versions only                                                    |
+| `github-release-assets` | `gh release upload`                 | `gh` (`GH_TOKEN`)                 | Attaches binaries/checksums to the `name@version` release; no snapshots |
+| `docker`                | `docker buildx build --push`        | `docker login` (e.g. GHCR)        | Tags `:version`, `:latest` (stable), and the dist-tag                   |
+| `homebrew`              | commit + tag + push to a tap repo   | `HOMEBREW_TAP_TOKEN`              | Renders a formula template; stable versions only                        |
+| `custom`                | your shell command(s)               | yours                             | The declarative escape hatch for anything else                          |
 
-Set a package's targets with `publishTargets` (in the root config's `packages` map or the package's own `"bumpy"` config):
+Set a package's targets with `publishTargets` (in the root config's `packages` map, or — name references only — in the package's own `"bumpy"` config):
 
 ```jsonc
 {
@@ -151,18 +156,16 @@ Set a package's targets with `publishTargets` (in the root config's `packages` m
 }
 ```
 
-Each entry is either a **string** (a built-in type name, or a named instance from the root `targets` map) or an **inline definition** (`{ "type": ..., ...options }`). The instance `name` (defaults to the type) keys the per-target publish state in the GitHub release metadata, so keep it stable.
+Each entry is either a **string** (a built-in type name, or a named instance from the root `targets` map) or an **inline definition** (`{ "type": ..., ...options }`). The instance `name` (defaults to the type) keys the per-target publish state in the GitHub release metadata, so keep it stable. Public packages default to `["npm"]`, private packages to `[]`.
 
-**Shared config (`targets` map).** Root-level `targets` holds two kinds of entries:
-
-- a key matching a built-in type → **type-level defaults** for every instance of that type
-- any other key → a **named, reusable instance** (requires `"type"`), referenced by name from any package
+**Named instances (`targets` map).** Root-level `targets` defines reusable instances, referenced by key from any package. A key that is a built-in type name (`"npm"`, `"jsr"`, …) configures the instance of that name (`"type"` is implied); any other key needs a `"type"`. Instances are complete on their own — nothing is inherited between them. For npm-type instances, the root `publish` block supplies the defaults every instance starts from.
 
 ```jsonc
 {
+  "publish": { "provenance": true }, // defaults for every npm-type instance
   "targets": {
-    "npm": { "provenance": true }, // defaults for all npm instances
-    "ghp": { "type": "npm", "registry": "https://npm.pkg.github.com" }, // named instance
+    "npm": { "access": "public" }, // the instance named "npm"
+    "ghp": { "type": "npm", "registry": "https://npm.pkg.github.com" }, // another npm instance
   },
   "packages": {
     "@myorg/*": { "publishTargets": ["npm", "ghp"] }, // publish to both registries
@@ -170,15 +173,58 @@ Each entry is either a **string** (a built-in type name, or a named instance fro
 }
 ```
 
-The legacy `publish` block is the npm type's default options — `targets.npm` and per-instance options layer on top of it.
+**Execution + retries.** Packages publish in dependency order; within a package, targets run in declared order. One target failing doesn't block its siblings on the same package — but it does block the _same_ target on dependents (`app@jsr` never goes out referencing a `lib@jsr` that didn't land); blocked targets are recorded as failed and retried on the next run. Publish state is tracked per target in the draft GitHub release, so a partial failure (npm succeeded, Open VSX errored) retries only what's missing on the next CI run. Before every publish the registry itself is asked whether the version is already live (`checkPublished`), so a lost draft never causes a duplicate publish.
 
-**Execution + retries.** Targets run in declared order; one target failing doesn't block its siblings. Publish state is tracked per target in the draft GitHub release, so a partial failure (npm succeeded, Open VSX errored) retries only the failed target on the next CI run. The git tag is created as soon as any target succeeds; the release is finalized once every target has succeeded (or been skipped).
+**Tags and finalization.** The git tag `name@version` marks the commit a version's artifacts shipped from: it follows HEAD across failed attempts and freezes the first time anything ships. The draft GitHub release is finalized (published, firing `release: published`) once every _release-phase_ target is live. A [staged npm publish](#staged-publishing) holds the draft open until the version is approved — the next publish run sees it live and finalizes.
+
+**Phases.** Targets run in two passes around the GitHub release. `release`-phase targets _constitute_ it (npm, JSR, PyPI, marketplaces, `github-release-assets`): the draft is held until they're done, then published. `post-release`-phase targets _consume_ it and run only once it's public — a Homebrew formula whose `url`s point at release assets, a Dockerfile that downloads them — because a draft release's assets aren't downloadable. `homebrew` and `docker` default to `post-release`; any target (e.g. a `custom` announcement command) can set `"phase": "post-release"`. If a package's release-phase targets don't all succeed (a failure, or a staged publish awaiting approval), its post-release targets wait for the next run. Builds happen in the release pass only.
 
 **Shared artifacts.** Targets that publish the same artifact share one build: `vscode-marketplace` and `open-vsx` both publish the `.vsix` that `vsce package` produces, so it's built once and uploaded to both registries — the two published extensions are guaranteed byte-identical.
 
 **Capabilities.** Marketplace targets don't participate in [snapshot releases](snapshots.md) or prerelease [channels](prereleases.md) (the VS Code Marketplace only accepts plain `x.y.z` versions), and JSR skips snapshots (no dist-tags to install them from) — those publishes record the target as `skipped` rather than failing.
 
-**Legacy fields.** `publishCommand` maps to a `custom` target and `skipNpmPublish` to an empty target list; both keep working, but `publishTargets` wins if present.
+**Removed fields.** The pre-targets `publishCommand`, `checkPublished` and `skipNpmPublish` package fields are gone — bumpy fails with the migration when it sees them: `publishCommand`/`checkPublished` become a `{ "type": "custom", "name": "custom", "command": ..., "checkPublished": ... }` entry (naming it `custom` lets an in-flight release resume from its existing metadata), `skipNpmPublish: true` becomes `"publishTargets": []`.
+
+#### CLI binaries: release assets, Docker images, Homebrew
+
+A CLI shipped as native binaries typically fans out to three places after npm. `github-release-assets` runs in the release phase; `homebrew` and `docker` are post-release targets, so by the time they run the release is published and the formula's `url`s and the Dockerfile's downloads resolve:
+
+```jsonc
+{
+  "packages": {
+    "varlock": {
+      "buildCommand": "bun run build:binaries", // produces dist-sea/*.tar.gz + checksums.txt
+      "publishTargets": [
+        "npm",
+        {
+          "type": "github-release-assets",
+          "files": ["dist-sea/*.tar.gz", "dist-sea/*.zip", "dist-sea/checksums.txt*"],
+        },
+        {
+          "type": "homebrew",
+          "tap": "dmno-dev/homebrew-tap",
+          "template": "homebrew/varlock.rb.tmpl",
+          "assets": ["dist-sea/*.tar.gz"],
+        },
+        {
+          "type": "docker",
+          "image": "ghcr.io/dmno-dev/varlock",
+          "context": "../..",
+          "dockerfile": "../../Dockerfile",
+          "platforms": ["linux/amd64", "linux/arm64"],
+          "buildArgs": { "VARLOCK_VERSION": "{{version}}" },
+        },
+      ],
+    },
+  },
+}
+```
+
+**`github-release-assets`** uploads the files matching `files` (globs relative to the package dir; `{{version}}`/`{{name}}` substituted) to the package's GitHub release with `--clobber`. Because bumpy owns the release, the upload goes to the _draft_ — the release is only published, firing `release: published`, once the assets (and every other target) are done. Build the files first (`buildCommand`, or an earlier CI step). Needs the `gh` CLI with `contents: write`.
+
+**`docker`** runs `docker buildx build --push` with `--tag image:<version>`, plus `image:latest` for stable releases (`"latest": false` to opt out) and `image:<dist-tag>` on channel/snapshot publishes — so `ghcr.io/org/tool:next` works like `npm install tool@next`. `context`/`dockerfile` are relative to the package dir; `platforms` builds a multi-arch manifest; `buildArgs` values and extra `tags` get `{{version}}` substituted. Auth is the environment's (`docker/login-action` with `GITHUB_TOKEN` + `packages: write` for GHCR). Idempotency uses `docker manifest inspect`.
+
+**`homebrew`** renders a formula template from your repo and pushes it to the tap. The template is yours; bumpy fills `{{version}}`, `{{name}}`, and `{{sha256 <file>}}` (the SHA-256 of a release asset found by basename in the `assets` globs — which is why the assets target goes first). It writes `formula` (default `Formula/<name>.rb`) into a fresh clone of `tap` (or an existing checkout via `tapDir`, e.g. from `actions/checkout`), commits as `name@version`, tags the tap commit the same, and pushes. A workflow's `GITHUB_TOKEN` can't push to another repo: set `HOMEBREW_TAP_TOKEN` (falls back to `BUMPY_GH_TOKEN`/`GH_TOKEN`); it's passed to git through the environment, never on the command line. Idempotency reads the formula's `version` from the tap via the GitHub API.
 
 #### JSR notes
 
@@ -277,11 +323,8 @@ Per-package settings can be defined in two places:
 | `managed`                  | `boolean`                  | Opt this package in or out of versioning                                               |
 | `access`                   | `"public" \| "restricted"` | Override the global access level                                                       |
 | `publishTargets`           | `array`                    | Where this package publishes (see [Publish targets](#publish-targets))                 |
-| `publishCommand`           | `string \| string[]`       | _Legacy_ — custom publish command(s); prefer a `custom` entry in `publishTargets`      |
 | `buildCommand`             | `string`                   | Command to run before publishing                                                       |
 | `registry`                 | `string`                   | Custom npm registry URL                                                                |
-| `skipNpmPublish`           | `boolean`                  | _Legacy_ — don't publish to npm (still creates git tags); prefer `publishTargets: []`  |
-| `checkPublished`           | `string`                   | Custom command that outputs the currently published version                            |
 | `changedFilePatterns`      | `string[]`                 | Glob patterns for changed-file detection (replaces root setting, not merged)           |
 | `dependencyBumpRules`      | `object`                   | Per-package override for dependency propagation rules                                  |
 | `cascadeTo`                | `object`                   | Explicit cascade targets — glob pattern mapped to `{ trigger, bumpAs }`                |
@@ -290,12 +333,12 @@ Per-package settings can be defined in two places:
 
 ### Custom commands and `allowCustomCommands`
 
-The `publishCommand`, `buildCommand`, and `checkPublished` fields — and inline `publishTargets` entries carrying a `command`/`checkPublished` — run shell commands during publishing. Because these execute with CI credentials, bumpy distinguishes between two trust levels:
+A `buildCommand` runs a shell command during publishing, and an inline `publishTargets` definition (`{ "type": "custom", "command": ... }`, `{ "type": "npm", "registry": ... }`, `publishArgs`, …) steers where and how a publish happens. Because these execute with CI credentials, bumpy distinguishes between two trust levels:
 
-- **Root config** (`.bumpy/_config.json` → `packages`): always trusted — repo admins control this file.
-- **Per-package config** (`package.json` → `"bumpy"`): requires opt-in via `allowCustomCommands` in the root config.
+- **Root config** (`.bumpy/_config.json` → `packages` and `targets`): always trusted — repo admins control this file.
+- **Per-package config** (`package.json` → `"bumpy"`): may only **reference** targets by name. A `buildCommand` or an inline target definition there requires opt-in via `allowCustomCommands` in the root config, and fails loudly otherwise.
 
-By default, custom commands defined in `package.json` are **ignored** with a warning. To enable them, set `allowCustomCommands` in `.bumpy/_config.json`:
+To enable them, set `allowCustomCommands` in `.bumpy/_config.json`:
 
 ```json
 {
@@ -311,7 +354,7 @@ Or restrict to specific packages/globs:
 }
 ```
 
-This prevents a contributor from introducing arbitrary shell commands via a package's `package.json` without the root config explicitly allowing it. Referencing built-in or root-defined targets by name (`"publishTargets": ["vscode-marketplace"]`) is plain data and never requires `allowCustomCommands`.
+This prevents a contributor from introducing arbitrary shell commands — or redirecting a publish to another registry, or injecting CLI flags — via a package's `package.json` without the root config explicitly allowing it. Referencing built-in or root-defined targets by name (`"publishTargets": ["vscode-marketplace"]`) is plain data and never requires `allowCustomCommands`. To give a package custom target options without opting in, define a named instance in the root `targets` map and reference it by name.
 
 ### Example: publishing a VSCode extension
 

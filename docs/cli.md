@@ -109,9 +109,8 @@ With `--snapshot <name>`, publish derives a throwaway prerelease version per pen
 
 **How bumpy detects unpublished packages:**
 
-1. Custom `checkPublished` command (if configured per-package — see [`allowCustomCommands`](./configuration.md#custom-commands-and-allowcustomcommands))
-2. Git tags (for packages with `skipNpmPublish` or custom `publishCommand`)
-3. npm registry query (default)
+1. Each publish target that can answer is asked (`npm info` for npm, the JSR/PyPI APIs, a `custom` target's `checkPublished` command) — a package counts as published only when every target says so, so a partial publish re-enters the flow
+2. Git tags, for targets that can't answer and for packages with `"publishTargets": []`
 
 ## `bumpy check`
 

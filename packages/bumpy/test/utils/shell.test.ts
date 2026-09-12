@@ -36,4 +36,10 @@ describe('runArgsAsync error reporting', () => {
       /ARGS_STDOUT_FAILURE/,
     );
   });
+
+  test('runArgsAsync timeoutMs kills a hung command and says so', async () => {
+    const start = Date.now();
+    await expect(runArgsAsync(['sleep', '30'], { timeoutMs: 300 })).rejects.toThrow(/timed out after 300ms: sleep 30/);
+    expect(Date.now() - start).toBeLessThan(5000);
+  });
 });

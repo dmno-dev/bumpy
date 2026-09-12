@@ -18,7 +18,7 @@ export function getHeadSha(rootDir: string): string | null {
  *
  * Any errors are scrubbed so the token never appears in CI logs.
  */
-async function withReleaseToken<T>(fn: () => Promise<T>): Promise<T> {
+export async function withReleaseToken<T>(fn: () => Promise<T>): Promise<T> {
   const token = process.env.BUMPY_GH_TOKEN;
   if (!token) return fn();
   const original = process.env.GH_TOKEN;
@@ -138,7 +138,16 @@ export function isGhAvailable(): boolean {
 const METADATA_START = '<!-- bumpy-metadata';
 const METADATA_END = 'bumpy-metadata -->';
 
-export type PublishTargetStatus = 'pending' | 'success' | 'failed' | 'skipped';
+/**
+ * Per-target publish state in the release metadata:
+ * - pending: not attempted yet
+ * - success: live on the registry
+ * - staged: accepted by the registry but held for an out-of-band step (e.g. npm staged
+ *   publishing's 2FA approval) — promoted to success once `checkPublished` sees it live
+ * - failed: retried on the next run
+ * - skipped: the target opted out of this release kind (or was superseded)
+ */
+export type PublishTargetStatus = 'pending' | 'success' | 'staged' | 'failed' | 'skipped';
 
 export interface PublishTargetState {
   status: PublishTargetStatus;
@@ -148,6 +157,10 @@ export interface PublishTargetState {
   reason?: string;
   supersededBy?: string;
   url?: string;
+  /** Registry handle for a staged publish (e.g. the npm stage id). Present while `status: 'staged'`. */
+  ref?: string;
+  /** ISO timestamp of when the publish was staged (awaiting approval). */
+  stagedAt?: string;
   /** Human-readable label, e.g. "GitHub Packages" for npm targets on a GHP registry. Falls back to the target key. */
   label?: string;
 }
@@ -192,6 +205,9 @@ export function formatPublishedToSection(targets: Record<string, PublishTargetSt
     switch (state.status) {
       case 'success':
         lines.push(state.url ? `- ✅ [${label}](${state.url})` : `- ✅ ${label}`);
+        break;
+      case 'staged':
+        lines.push(`- 🟡 ${label} — staged, awaiting approval`);
         break;
       case 'failed':
         lines.push(`- ❌ ${label} — will retry on next CI run`);

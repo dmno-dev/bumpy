@@ -147,7 +147,7 @@ describe('channelDisplayPlan', () => {
     expect(display.releases.map((r) => r.newVersion)).toEqual(['1.2.0-rc.x']);
   });
 
-  test('drops unpublishable packages, keeps private ones with a publishCommand', () => {
+  test('drops unpublishable packages, keeps private ones with a publish target', () => {
     const plan = makeReleasePlan([
       makeRelease('core', '1.2.0'),
       makeRelease('internal', '0.5.0'),
@@ -156,7 +156,13 @@ describe('channelDisplayPlan', () => {
     const packages = new Map([
       ['core', makePkg('core', '1.1.0')],
       ['internal', makePkg('internal', '0.4.0', { private: true })],
-      ['cli', makePkg('cli', '1.9.0', { private: true, bumpy: { publishCommand: 'cargo publish' } })],
+      [
+        'cli',
+        makePkg('cli', '1.9.0', {
+          private: true,
+          bumpy: { publishTargets: [{ type: 'custom', command: 'cargo publish' }] },
+        }),
+      ],
     ]);
     const display = channelDisplayPlan(plan, channel, packages);
     expect(display.releases.map((r) => r.name)).toEqual(['core', 'cli']);

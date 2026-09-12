@@ -4,6 +4,9 @@ import { customTarget } from './custom.ts';
 import { jsrTarget } from './jsr.ts';
 import { pypiTarget } from './pypi.ts';
 import { vscodeMarketplaceTarget, openVsxTarget } from './vscode.ts';
+import { githubReleaseAssetsTarget } from './github-release-assets.ts';
+import { dockerTarget } from './docker.ts';
+import { homebrewTarget } from './homebrew.ts';
 import type {
   BumpyConfig,
   PackageConfig,
@@ -11,7 +14,7 @@ import type {
   TargetDefinition,
   WorkspacePackage,
 } from '../../types.ts';
-import type { PublishTargetPlugin, ResolvedTarget, TargetOptions } from './types.ts';
+import type { PublishTargetPlugin, ReleaseKind, ResolvedTarget, TargetOptions, TargetPhase } from './types.ts';
 
 /**
  * Built-in publish targets. These register through the same interface external
@@ -25,6 +28,9 @@ const BUILT_IN_TARGETS: Record<string, PublishTargetPlugin> = {
   [pypiTarget.type]: pypiTarget,
   [vscodeMarketplaceTarget.type]: vscodeMarketplaceTarget,
   [openVsxTarget.type]: openVsxTarget,
+  [githubReleaseAssetsTarget.type]: githubReleaseAssetsTarget,
+  [dockerTarget.type]: dockerTarget,
+  [homebrewTarget.type]: homebrewTarget,
 };
 
 export function getTargetPlugin(type: string): PublishTargetPlugin | undefined {
@@ -45,6 +51,20 @@ function requirePlugin(type: string, context: string): PublishTargetPlugin {
   return plugin;
 }
 
+/** The phase an instance runs in: its `phase` option, else the plugin's default */
+function resolvePhase(plugin: PublishTargetPlugin, options: TargetOptions): TargetPhase {
+  const override = options.phase;
+  if (override === 'release' || override === 'post-release') return override;
+  if (override !== undefined) {
+    throw new Error(`Invalid target "phase" ${JSON.stringify(override)} — expected "release" or "post-release"`);
+  }
+  return plugin.phase ?? 'release';
+}
+
+function instance(name: string, type: string, plugin: PublishTargetPlugin, options: TargetOptions): ResolvedTarget {
+  return { name, type, plugin, options, phase: resolvePhase(plugin, options) };
+}
+
 /** Options from a root `targets` map entry, minus the structural `type` key */
 function definitionOptions(def: TargetDefinition | undefined): TargetOptions {
   if (!def) return {};
@@ -52,18 +72,11 @@ function definitionOptions(def: TargetDefinition | undefined): TargetOptions {
   return options;
 }
 
-/**
- * Type-level default options for `type`: the root `targets` map entry whose key IS the
- * type name. (Named instances layer their own options on top of these.)
- */
-function typeDefaults(type: string, config?: BumpyConfig): TargetOptions {
-  return definitionOptions(config?.targets?.[type]);
-}
-
 function resolveStringEntry(ref: string, config: BumpyConfig | undefined, pkgName: string): ResolvedTarget {
   const def = config?.targets?.[ref];
 
-  // A key matching a built-in type is type-level defaults, not a redirection
+  // A key matching a built-in type names an instance of that type (the entry, if any,
+  // holds that instance's options — nothing is inherited by other instances)
   if (BUILT_IN_TARGETS[ref]) {
     if (def?.type && def.type !== ref) {
       throw new Error(
@@ -71,7 +84,7 @@ function resolveStringEntry(ref: string, config: BumpyConfig | undefined, pkgNam
           `rename the entry to define a separate named instance`,
       );
     }
-    return { name: ref, type: ref, plugin: BUILT_IN_TARGETS[ref], options: definitionOptions(def) };
+    return instance(ref, ref, BUILT_IN_TARGETS[ref], definitionOptions(def));
   }
 
   // Named instance from the root targets map
@@ -80,12 +93,7 @@ function resolveStringEntry(ref: string, config: BumpyConfig | undefined, pkgNam
       throw new Error(`targets["${ref}"] must declare a "type" — it doesn't match any built-in target type`);
     }
     const plugin = requirePlugin(def.type, `targets["${ref}"]`);
-    return {
-      name: ref,
-      type: def.type,
-      plugin,
-      options: { ...typeDefaults(def.type, config), ...definitionOptions(def) },
-    };
+    return instance(ref, def.type, plugin, definitionOptions(def));
   }
 
   if (!config) {
@@ -110,45 +118,13 @@ function resolveInlineEntry(
   }
   const plugin = requirePlugin(entry.type, `package "${pkgName}" publishTargets`);
   const { type, name, ...options } = entry;
-  return {
-    name: typeof name === 'string' && name ? name : type,
-    type,
-    plugin,
-    options: { ...typeDefaults(type, config), ...options },
-  };
-}
-
-/**
- * Map the legacy per-package fields (`publishCommand`, `skipNpmPublish`, `private`)
- * onto target instances. Instance names intentionally match the metadata keys the
- * previous pipeline wrote ("npm", "custom") so in-flight releases resume cleanly.
- */
-function resolveLegacyTargets(
-  pkg: Pick<WorkspacePackage, 'private'>,
-  pkgConfig: PackageConfig,
-  config?: BumpyConfig,
-): ResolvedTarget[] {
-  if (pkgConfig.publishCommand) {
-    return [
-      {
-        name: 'custom',
-        type: 'custom',
-        plugin: customTarget,
-        options: {
-          ...typeDefaults('custom', config),
-          command: pkgConfig.publishCommand,
-          ...(pkgConfig.checkPublished ? { checkPublished: pkgConfig.checkPublished } : {}),
-        },
-      },
-    ];
-  }
-  if (pkg.private || pkgConfig.skipNpmPublish) return [];
-  return [{ name: 'npm', type: 'npm', plugin: npmTarget, options: typeDefaults('npm', config) }];
+  return instance(typeof name === 'string' && name ? name : type, type, plugin, options);
 }
 
 /**
  * Resolve the publish targets for a package: explicit `publishTargets` config if
- * present, otherwise derived from the legacy fields / implicit npm default.
+ * present, otherwise the implicit default — npm for public packages, nothing for
+ * private ones.
  *
  * npm-type targets are dropped for `"private": true` packages (npm refuses to publish
  * them) — this is what lets a private VS Code extension publish to the marketplace
@@ -159,14 +135,7 @@ export function resolvePackageTargets(
   pkgConfig: PackageConfig,
   config?: BumpyConfig,
 ): ResolvedTarget[] {
-  const entries = pkgConfig.publishTargets;
-  if (entries === undefined) {
-    return resolveLegacyTargets(pkg as WorkspacePackage, pkgConfig, config);
-  }
-
-  if (pkgConfig.publishCommand || pkgConfig.skipNpmPublish) {
-    log.warn(`  ${pkg.name}: "publishTargets" is set — ignoring legacy "publishCommand"/"skipNpmPublish" fields`);
-  }
+  const entries = pkgConfig.publishTargets ?? (pkg.private ? [] : ['npm']);
 
   const resolved: ResolvedTarget[] = [];
   for (const entry of entries) {
@@ -205,6 +174,28 @@ export function getPackageTargets(pkg: WorkspacePackage, config?: BumpyConfig): 
 /** Whether this package publishes anywhere at all */
 export function packagePublishes(pkg: WorkspacePackage, config?: BumpyConfig): boolean {
   return getPackageTargets(pkg, config).length > 0;
+}
+
+/**
+ * Whether a target participates in this kind of release — the capability gates.
+ * Shared by the pipeline (which records a `capability` skip) and the planners (which
+ * drop packages nothing can publish, so no draft release is ever opened for them).
+ */
+export function targetSupportsRelease(
+  target: ResolvedTarget,
+  releaseKind: ReleaseKind,
+  isPrerelease: boolean,
+): boolean {
+  const caps = target.plugin.capabilities;
+  if (releaseKind === 'snapshot' && !caps.snapshots) return false;
+  if (isPrerelease && !caps.prereleases) return false;
+  return true;
+}
+
+/** Whether any of the package's targets can publish this kind of release (channel/snapshot versions are always prereleases) */
+export function packagePublishesFor(pkg: WorkspacePackage, releaseKind: ReleaseKind, config?: BumpyConfig): boolean {
+  const isPrerelease = releaseKind !== 'stable';
+  return getPackageTargets(pkg, config).some((t) => targetSupportsRelease(t, releaseKind, isPrerelease));
 }
 
 /** First npm-type target instance for a package, if any (registry queries use its options) */

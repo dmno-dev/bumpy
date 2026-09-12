@@ -73,4 +73,12 @@ describe('isPackageManaged', () => {
   test('per-package managed: false overrides everything', () => {
     expect(isPackageManaged('pkg-a', false, makeConfig({ include: ['pkg-a'] }), { managed: false })).toBe(false);
   });
+
+  test('private package with explicit publishTargets is managed; with none it follows privatePackages.version', () => {
+    const config = makeConfig({ privatePackages: { version: false, tag: false } });
+    expect(isPackageManaged('ext', true, config, { publishTargets: ['vscode-marketplace'] })).toBe(true);
+    expect(isPackageManaged('ext', true, config, { publishTargets: [] })).toBe(false);
+    expect(isPackageManaged('app', true, config, {})).toBe(false);
+    expect(isPackageManaged('ext', true, config, { managed: false, publishTargets: ['open-vsx'] })).toBe(false);
+  });
 });

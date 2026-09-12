@@ -93,8 +93,8 @@ export function makeReleasePlan(releases: PlannedRelease[], bumpFiles: BumpFile[
 /** Create a temp directory and initialize a git repo in it */
 export async function createTempGitRepo(): Promise<string> {
   const dir = await mkdtemp(resolve(tmpdir(), 'bumpy-test-'));
-  execFileSync('git', ['init'], { cwd: dir, stdio: 'pipe' });
-  execFileSync('git', ['commit', '--allow-empty', '-m', 'init'], { cwd: dir, stdio: 'pipe' });
+  execFileSync('git', ['init'], { cwd: dir, stdio: 'pipe', env: process.env });
+  execFileSync('git', ['commit', '--allow-empty', '-m', 'init'], { cwd: dir, stdio: 'pipe', env: process.env });
   return dir;
 }
 
@@ -105,5 +105,6 @@ export async function cleanupTempDir(dir: string): Promise<void> {
 
 /** Run a git command in a directory (for test setup only) */
 export function gitInDir(args: string[], cwd: string): string {
-  return execFileSync('git', args, { cwd, encoding: 'utf-8', stdio: 'pipe' }).trim();
+  // env passed explicitly so the hermetic git settings from test/setup.ts reach git under Bun
+  return execFileSync('git', args, { cwd, encoding: 'utf-8', stdio: 'pipe', env: process.env }).trim();
 }

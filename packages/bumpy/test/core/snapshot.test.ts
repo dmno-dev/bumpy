@@ -111,10 +111,10 @@ describe('snapshotVersion', () => {
 });
 
 describe('buildSnapshotReleasePlan', () => {
-  // Use private packages with a custom publishCommand: publishable (kept in the plan) but
+  // Use private packages with a custom target: publishable (kept in the plan) but
   // not registry-backed, so no `npm info` network call happens in tests.
   const publishable = (name: string, version: string) =>
-    makePkg(name, version, { private: true, bumpy: { publishCommand: 'echo publish' } });
+    makePkg(name, version, { private: true, bumpy: { publishTargets: [{ type: 'custom', command: 'echo publish' }] } });
 
   test('applies sha snapshot versions to each release', async () => {
     const packages = new Map([['a', publishable('a', '1.0.0')]]);
@@ -133,7 +133,7 @@ describe('buildSnapshotReleasePlan', () => {
     expect(out.releases[0]!.newVersion).toBe('1.1.0-pr-9-deadbee');
   });
 
-  test('drops unpublishable private packages (no publishCommand)', async () => {
+  test('drops unpublishable private packages (no targets)', async () => {
     const packages = new Map([
       ['a', publishable('a', '1.0.0')],
       ['b', makePkg('b', '2.0.0', { private: true })], // truly unpublishable

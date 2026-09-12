@@ -50,7 +50,7 @@ describe('publishPackages', () => {
       'my-pkg',
       makePkg('my-pkg', '1.0.0', {
         dir: pkgDir,
-        bumpy: { skipNpmPublish: true },
+        bumpy: { publishTargets: [] },
       }),
     );
 
@@ -94,7 +94,7 @@ describe('publishPackages', () => {
       makePkg('my-ext', '2.0.0', {
         dir: pkgDir,
         bumpy: {
-          publishCommand: 'echo published {{name}}@{{version}}',
+          publishTargets: [{ type: 'custom', command: 'echo published {{name}}@{{version}}' }],
         },
       }),
     );
@@ -280,7 +280,7 @@ describe('publishPackages', () => {
 
     // Mock npm --version (for staged validation) and the publish command
     addMockRule({ match: 'npm --version', response: '11.15.0' });
-    addMockRule({ match: 'npm stage publish', response: '' });
+    addMockRule({ match: 'npm stage publish', response: JSON.stringify({ pkg: { stageId: 'stage-uuid-1' } }) });
 
     const packages = new Map<string, WorkspacePackage>();
     packages.set('staged-pkg', makePkg('staged-pkg', '1.0.0', { dir: pkgDir }));
@@ -306,8 +306,54 @@ describe('publishPackages', () => {
 
     const result = await publishPackages(plan, packages, depGraph, STAGED_CONFIG, tmpDir, {});
 
-    expect(result.published).toHaveLength(1);
+    // Staged is not live: reported separately, with the stage id for the release metadata
+    expect(result.published).toHaveLength(0);
+    expect(result.staged).toEqual([{ name: 'staged-pkg', version: '1.0.1' }]);
+    const outcome = result.targetOutcomes.get('staged-pkg')![0]!;
+    expect(outcome.status).toBe('staged');
+    expect(outcome.ref).toBe('stage-uuid-1');
     const publishCalls = getCallsMatching('npm stage publish');
-    expect(publishCalls.length).toBeGreaterThanOrEqual(1);
+    expect(publishCalls).toHaveLength(1);
+    expect(publishCalls[0]!.command).toContain('--json');
+  });
+
+  test('snapshots never stage — they must be installable immediately', async () => {
+    const pkgDir = resolve(tmpDir, 'packages/snap-pkg');
+    await ensureDir(pkgDir);
+    await writeJson(resolve(pkgDir, 'package.json'), { name: 'snap-pkg', version: '1.0.0' });
+    await setupGitRepo();
+    addMockRule({ match: 'npm --version', response: '11.15.0' });
+    addMockRule({ match: /^npm publish/, response: '' });
+
+    const packages = new Map<string, WorkspacePackage>();
+    packages.set('snap-pkg', makePkg('snap-pkg', '1.0.0', { dir: pkgDir }));
+    const depGraph = new DependencyGraph(packages);
+    const plan: ReleasePlan = {
+      bumpFiles: [],
+      warnings: [],
+      releases: [
+        {
+          name: 'snap-pkg',
+          type: 'patch',
+          oldVersion: '1.0.0',
+          newVersion: '1.0.1-pr-9-abc1234',
+          bumpFiles: [],
+          isDependencyBump: false,
+          isCascadeBump: false,
+          isGroupBump: false,
+          bumpSources: [],
+        },
+      ],
+    };
+
+    const result = await publishPackages(plan, packages, depGraph, STAGED_CONFIG, tmpDir, {
+      releaseKind: 'snapshot',
+      tag: 'pr-9',
+    });
+
+    expect(result.staged).toHaveLength(0);
+    expect(result.published).toHaveLength(1);
+    expect(getCallsMatching('npm stage publish')).toHaveLength(0);
+    expect(getCallsMatching(/^npm publish/)[0]!.command).toContain('--tag pr-9');
   });
 });

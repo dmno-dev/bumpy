@@ -3,3 +3,6 @@
 
 [define]
 "__BUMPY_VERSION__" = "'dev'"
+
+[test]
+preload = ["./test/setup.ts"]

@@ -19,7 +19,7 @@ function configWithTargets(targets: BumpyConfig['targets']): BumpyConfig {
   return makeConfig({ targets });
 }
 
-describe('resolvePackageTargets — legacy field mapping', () => {
+describe('resolvePackageTargets — defaults', () => {
   test('default: public package gets the implicit npm target', () => {
     const pkg = makePkg('lib', '1.0.0');
     const targets = resolvePackageTargets(pkg, {}, makeConfig());
@@ -28,38 +28,12 @@ describe('resolvePackageTargets — legacy field mapping', () => {
     expect(targets[0]!.type).toBe('npm');
   });
 
-  test('publishCommand maps to a custom target named "custom" (matches old metadata keys)', () => {
-    const pkg = makePkg('ext', '1.0.0');
-    const targets = resolvePackageTargets(
-      pkg,
-      { publishCommand: 'vsce publish', checkPublished: 'my-check' },
-      makeConfig(),
-    );
-    expect(targets).toHaveLength(1);
-    expect(targets[0]!.name).toBe('custom');
-    expect(targets[0]!.type).toBe('custom');
-    expect(targets[0]!.options.command).toBe('vsce publish');
-    expect(targets[0]!.options.checkPublished).toBe('my-check');
-  });
-
-  test('skipNpmPublish yields no targets', () => {
-    const pkg = makePkg('tool', '1.0.0');
-    expect(resolvePackageTargets(pkg, { skipNpmPublish: true }, makeConfig())).toHaveLength(0);
-  });
-
-  test('private package without publishCommand yields no targets', () => {
+  test('default: private package yields no targets', () => {
     const pkg = makePkg('app', '1.0.0', { private: true });
     expect(resolvePackageTargets(pkg, {}, makeConfig())).toHaveLength(0);
   });
 
-  test('private package with publishCommand keeps its custom target', () => {
-    const pkg = makePkg('ext', '1.0.0', { private: true });
-    const targets = resolvePackageTargets(pkg, { publishCommand: 'do-publish' }, makeConfig());
-    expect(targets).toHaveLength(1);
-    expect(targets[0]!.type).toBe('custom');
-  });
-
-  test('legacy npm target picks up root targets.npm type defaults', () => {
+  test('the implicit npm target picks up the root targets.npm instance options', () => {
     const pkg = makePkg('lib', '1.0.0');
     const config = configWithTargets({ npm: { provenance: true } });
     const targets = resolvePackageTargets(pkg, {}, config);
@@ -105,22 +79,17 @@ describe('resolvePackageTargets — explicit publishTargets', () => {
     expect(targets[1]!.options.registry).toBe('https://npm.pkg.github.com');
   });
 
-  test('named instance inherits type defaults, its own options win', () => {
+  test('instances are complete on their own — nothing is inherited from targets.npm', () => {
     const pkg = makePkg('lib', '1.0.0');
     const config = configWithTargets({
       npm: { provenance: true, access: 'public' },
       ghp: { type: 'npm', registry: 'https://npm.pkg.github.com', access: 'restricted' },
     });
-    const targets = resolvePackageTargets(pkg, { publishTargets: ['ghp'] }, config);
-    expect(targets[0]!.options.provenance).toBe(true); // inherited from targets.npm
-    expect(targets[0]!.options.access).toBe('restricted'); // instance wins
-  });
-
-  test('inline entry options win over type defaults', () => {
-    const pkg = makePkg('lib', '1.0.0');
-    const config = configWithTargets({ npm: { provenance: true } });
-    const targets = resolvePackageTargets(pkg, { publishTargets: [{ type: 'npm', provenance: false }] }, config);
-    expect(targets[0]!.options.provenance).toBe(false);
+    const targets = resolvePackageTargets(pkg, { publishTargets: ['npm', 'ghp'] }, config);
+    expect(targets[0]!.options).toEqual({ provenance: true, access: 'public' });
+    expect(targets[1]!.options).toEqual({ registry: 'https://npm.pkg.github.com', access: 'restricted' });
+    const inline = resolvePackageTargets(pkg, { publishTargets: [{ type: 'npm', provenance: false }] }, config);
+    expect(inline[0]!.options).toEqual({ provenance: false });
   });
 
   test('npm targets are dropped for private packages', () => {
@@ -181,13 +150,13 @@ describe('target helpers', () => {
   test('getPackageTargets prefers targets attached at discovery', () => {
     const pkg = makePkg('lib', '1.0.0');
     pkg.targets = resolvePackageTargets(pkg, { publishTargets: ['npm', 'open-vsx'] }, makeConfig());
-    pkg.bumpy = { skipNpmPublish: true }; // would resolve to [] — must be ignored
+    pkg.bumpy = { publishTargets: [] }; // would resolve to [] — must be ignored
     expect(getPackageTargets(pkg).map((t) => t.type)).toEqual(['npm', 'open-vsx']);
   });
 
   test('packagePublishes / getNpmTarget', () => {
     const npmPkg = makePkg('lib', '1.0.0');
-    const nonePkg = makePkg('tool', '1.0.0', { bumpy: { skipNpmPublish: true } });
+    const nonePkg = makePkg('tool', '1.0.0', { bumpy: { publishTargets: [] } });
     expect(packagePublishes(npmPkg)).toBe(true);
     expect(packagePublishes(nonePkg)).toBe(false);
     expect(getNpmTarget(npmPkg)?.type).toBe('npm');
@@ -281,7 +250,7 @@ describe('publishTargets trust gating (package.json config)', () => {
   test('inline commands in package.json publishTargets are blocked by default', async () => {
     await expect(
       loadFromPkgJson({ publishTargets: [{ type: 'custom', command: 'rm -rf /' }] }, makeConfig()),
-    ).rejects.toThrow(/custom command/);
+    ).rejects.toThrow(/inline target definitions/);
   });
 
   test('inline commands allowed with allowCustomCommands', async () => {
@@ -290,11 +259,42 @@ describe('publishTargets trust gating (package.json config)', () => {
     expect(result.publishTargets).toHaveLength(1);
   });
 
-  test('string references and data-only options are always allowed', async () => {
-    const result = await loadFromPkgJson(
-      { publishTargets: ['vscode-marketplace', { type: 'npm', registry: 'https://example.com' }] },
-      makeConfig(),
-    );
+  test('name references are always allowed', async () => {
+    const result = await loadFromPkgJson({ publishTargets: ['vscode-marketplace', 'ghp'] }, makeConfig());
     expect(result.publishTargets).toHaveLength(2);
+  });
+
+  test('any inline target definition is gated — options steer the publish just like commands', async () => {
+    // A `registry` redirect or injected CLI flags reach the credentialed publish
+    // command — a compromised package.json must not be able to add them
+    await expect(
+      loadFromPkgJson({ publishTargets: [{ type: 'npm', registry: 'https://attacker.example' }] }, makeConfig()),
+    ).rejects.toThrow(/inline target definitions/);
+    await expect(
+      loadFromPkgJson(
+        { publishTargets: [{ type: 'npm', publishArgs: ['--registry', 'https://attacker.example'] }] },
+        makeConfig(),
+      ),
+    ).rejects.toThrow(/inline target definitions/);
+    // ...unless the root config opts the package in
+    const allowed = await loadFromPkgJson(
+      { publishTargets: [{ type: 'npm', registry: 'https://example.com' }] },
+      makeConfig({ allowCustomCommands: ['my-pkg'] }),
+    );
+    expect(allowed.publishTargets).toHaveLength(1);
+  });
+
+  test('buildCommand in package.json is gated', async () => {
+    await expect(loadFromPkgJson({ buildCommand: 'make' }, makeConfig())).rejects.toThrow(/"buildCommand"/);
+  });
+
+  test('removed legacy fields fail with the migration', async () => {
+    await expect(loadFromPkgJson({ publishCommand: 'vsce publish' }, makeConfig())).rejects.toThrow(
+      /removed config field.*"publishCommand".*Migrate/s,
+    );
+    await expect(loadFromPkgJson({ skipNpmPublish: true }, makeConfig())).rejects.toThrow(/"skipNpmPublish"/);
+    // ...also when they come from the root packages map
+    const rootLegacy = makeConfig({ packages: { 'my-pkg': { checkPublished: 'x' } as never } });
+    await expect(loadFromPkgJson({}, rootLegacy)).rejects.toThrow(/"checkPublished"/);
   });
 });
