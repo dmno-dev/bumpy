@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.19.0
+
+<sub>2026-09-17</sub>
+
+- [#155](https://github.com/dmno-dev/bumpy/pull/155) _(minor)_
+  Added `directBump: false` per-package config for packages that only receive propagated bumps (e.g. platform binary packages in a fixed group with their core package) — they are excluded from `bumpy add`/`bumpy generate`, rejected when a bump file names them directly, and `bumpy check` points at their fixed-group members instead. Fixed groups now sync drifted members to a bump of the group's highest version so they reconverge.
+- [#158](https://github.com/dmno-dev/bumpy/pull/158) _(patch)_
+  Replaced the `semver` dependency with [verkit](https://github.com/sxzz/verkit) — a smaller, tree-shakeable, zero-dependency SemVer library. No behavior changes, except invalid snapshot versions are now also refused (previously only stable versions were).
+- [#160](https://github.com/dmno-dev/bumpy/pull/160) _(patch)_
+  Fix `bumpy ci comment` failing to resolve the target PR for fork PRs. Under `workflow_run`, the PR was looked up via `GET commits/{head_sha}/pulls`, which only knows about commits in the base repo's own branches — for a fork PR it returns nothing, so the command exited with "Could not resolve a target PR" (defeating the whole point of the fork-safe `pull_request` + `workflow_run` split). When that lookup is empty, bumpy now scans the repo's open PRs (paginated) and matches `head.sha` against the trusted `workflow_run.head_sha`. The target still derives only from the trusted event, never from the artifact or from `workflow_run.pull_requests[]` (which GitHub leaves empty for forks).
+
 ## 1.18.1
 
 <sub>2026-07-03</sub>
