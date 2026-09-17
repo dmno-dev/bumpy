@@ -59,6 +59,40 @@ describe('resolveTargetPrNumber — workflow_run', () => {
     // It must look up the PR by the event's head_sha — that's the trusted derivation.
     const apiCalls = getCallsMatching(`commits/${HEAD_SHA}/pulls`);
     expect(apiCalls).toHaveLength(1);
+    // Same-repo PR: the commits endpoint answers, so no open-PR scan is needed.
+    expect(getCallsMatching('pulls?state=open')).toHaveLength(0);
+  });
+
+  test('fork PR: falls back to scanning open PRs by head.sha when the commits endpoint is empty', () => {
+    process.env.GITHUB_EVENT_NAME = 'workflow_run';
+    process.env.GITHUB_REPOSITORY = 'owner/repo';
+    process.env.GITHUB_EVENT_PATH = writeEvent({
+      // GitHub leaves pull_requests[] empty for fork PRs — it must not be relied on.
+      workflow_run: { head_sha: HEAD_SHA, pull_requests: [] },
+    });
+    // The fork's head commit isn't in the base repo, so commits/{sha}/pulls yields nothing.
+    addMockRule({ match: /commits\/[0-9a-f]+\/pulls/, response: '' });
+    addMockRule({ match: 'pulls?state=open', response: '1075\n' });
+
+    const pr = resolveTargetPrNumber(tmp);
+
+    expect(pr).toBe('1075');
+    expect(getCallsMatching(`commits/${HEAD_SHA}/pulls`)).toHaveLength(1);
+    const scans = getCallsMatching('pulls?state=open');
+    expect(scans).toHaveLength(1);
+    // The scan matches on the trusted head_sha and paginates past 100 open PRs.
+    expect(scans[0]!.args).toContain('--paginate');
+    expect(scans[0]!.command).toContain(`select(.head.sha == "${HEAD_SHA}")`);
+  });
+
+  test('returns null when neither lookup finds an open PR for the head_sha', () => {
+    process.env.GITHUB_EVENT_NAME = 'workflow_run';
+    process.env.GITHUB_REPOSITORY = 'owner/repo';
+    process.env.GITHUB_EVENT_PATH = writeEvent({ workflow_run: { head_sha: HEAD_SHA } });
+    addMockRule({ match: /commits\/[0-9a-f]+\/pulls/, response: '' });
+    addMockRule({ match: 'pulls?state=open', response: '' });
+
+    expect(resolveTargetPrNumber(tmp)).toBeNull();
   });
 
   test('returns null when the event has no usable head_sha', () => {
