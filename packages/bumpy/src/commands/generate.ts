@@ -10,9 +10,9 @@ import { slugify, randomName } from '../utils/names.ts';
 import { getBaseCompareRef, getBranchCommits, getCurrentBranch, getFilesChangedInCommit } from '../core/git.ts';
 import {
   detectDependencyChanges,
+  planDependencyBumpFiles,
   syncDependencyBumpFiles,
-  depBumpFileId,
-  formatDependencySummary,
+  formatUncoverableError,
 } from '../core/dep-bump-files.ts';
 import type { BumpType, BumpTypeWithNone, BumpyConfig, BumpFileRelease, WorkspacePackage } from '../types.ts';
 
@@ -206,22 +206,25 @@ async function generateDependencyBumpFiles(
   log.step(`Scanning dependency changes (vs ${colorize(opts.from ?? config.baseBranch, 'cyan')})...`);
   const changes = await detectDependencyChanges(rootDir, config, packages, baseRef);
 
+  const plan = planDependencyBumpFiles(changes, packages, config, suffix);
+
   if (opts.dryRun) {
-    if (changes.size === 0) {
-      log.info('No dependency changes detected.');
-      return;
+    if (changes.size === 0) log.info('No dependency changes detected.');
+    for (const file of plan.files) {
+      log.bold(`Would write .bumpy/${file.id}.md (${file.releaseName}: patch)`);
+      for (const line of file.summary.split('\n')) log.dim(`  ${line}`);
     }
-    for (const [name, pkgChanges] of changes) {
-      log.bold(`Would write .bumpy/${depBumpFileId(suffix, name)}.md (${name}: patch)`);
-      for (const line of formatDependencySummary(pkgChanges).split('\n')) log.dim(`  ${line}`);
-    }
-    return;
+  } else {
+    const { written, removed } = await syncDependencyBumpFiles(rootDir, plan, suffix, baseRef);
+    for (const id of written) log.success(`🐸 Wrote bump file: .bumpy/${id}.md`);
+    for (const id of removed) log.dim(`  Removed stale bump file: .bumpy/${id}.md`);
+    if (changes.size === 0 && removed.length === 0) log.info('No dependency changes detected.');
   }
 
-  const { written, removed } = await syncDependencyBumpFiles(rootDir, changes, suffix, baseRef);
-  for (const id of written) log.success(`🐸 Wrote bump file: .bumpy/${id}.md`);
-  for (const id of removed) log.dim(`  Removed stale bump file: .bumpy/${id}.md`);
-  if (written.length === 0 && removed.length === 0) log.info('No dependency changes detected.');
+  if (plan.uncoverable.length > 0) {
+    log.error(formatUncoverableError(plan.uncoverable));
+    process.exit(1);
+  }
 }
 
 /** Merge a bump into the release map, keeping the highest bump level */

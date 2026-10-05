@@ -5,7 +5,12 @@ import { discoverWorkspace } from '../core/workspace.ts';
 import { DependencyGraph } from '../core/dep-graph.ts';
 import { readBumpFiles, filterBranchBumpFiles, recoverDeletedBumpFiles } from '../core/bump-file.ts';
 import { getBaseCompareRef, getChangedFiles, getCurrentBranch, withGitToken } from '../core/git.ts';
-import { detectDependencyChanges, syncDependencyBumpFiles } from '../core/dep-bump-files.ts';
+import {
+  detectDependencyChanges,
+  formatUncoverableError,
+  planDependencyBumpFiles,
+  syncDependencyBumpFiles,
+} from '../core/dep-bump-files.ts';
 import { assembleReleasePlan } from '../core/release-plan.ts';
 import {
   channelNames,
@@ -328,7 +333,9 @@ export async function ciDepsCommand(rootDir: string, opts: DepsOptions): Promise
   const { packages } = await discoverWorkspace(rootDir, config);
   const baseRef = getBaseCompareRef(rootDir, config.baseBranch);
   const changes = await detectDependencyChanges(rootDir, config, packages, baseRef);
-  const { written, removed } = await syncDependencyBumpFiles(rootDir, changes, `pr${prNumber}`, baseRef);
+  const suffix = `pr${prNumber}`;
+  const plan = planDependencyBumpFiles(changes, packages, config, suffix);
+  const { written, removed } = await syncDependencyBumpFiles(rootDir, plan, suffix, baseRef);
   for (const id of written) log.dim(`  .bumpy/${id}.md`);
   for (const id of removed) log.dim(`  removed .bumpy/${id}.md`);
 
@@ -337,9 +344,25 @@ export async function ciDepsCommand(rootDir: string, opts: DepsOptions): Promise
   if (!dirty) {
     log.info(changes.size === 0 ? 'No dependency changes detected.' : 'Dependency bump files are up to date.');
     writeGitHubOutput('changed', 'false');
-    return;
+  } else {
+    commitAndPushDepBumpFiles(rootDir, config, bumpyRelDir, headRef, plan.files.length, opts);
   }
 
+  // Push what we could, then fail on what we couldn't — the PR still needs a manual bump file.
+  if (plan.uncoverable.length > 0) {
+    log.error(formatUncoverableError(plan.uncoverable));
+    process.exit(1);
+  }
+}
+
+function commitAndPushDepBumpFiles(
+  rootDir: string,
+  config: BumpyConfig,
+  bumpyRelDir: string,
+  headRef: string,
+  fileCount: number,
+  opts: DepsOptions,
+): void {
   ensureGitIdentity(rootDir, config);
   runArgs(['git', 'add', '-A', '--', bumpyRelDir], { cwd: rootDir });
   runArgs(['git', 'commit', '--no-verify', '-F', '-'], {
@@ -349,14 +372,14 @@ export async function ciDepsCommand(rootDir: string, opts: DepsOptions): Promise
   writeGitHubOutput('changed', 'true');
 
   if (opts.noPush) {
-    log.success(`🐸 Committed dependency bump files for ${changes.size} package(s) (not pushed).`);
+    log.success(`🐸 Committed ${fileCount} dependency bump file(s) (not pushed).`);
     return;
   }
 
   withGitToken(rootDir, () => {
     runArgs(['git', 'push', '--no-verify', 'origin', `HEAD:refs/heads/${headRef}`], { cwd: rootDir });
   });
-  log.success(`🐸 Pushed dependency bump files for ${changes.size} package(s) to ${headRef}.`);
+  log.success(`🐸 Pushed ${fileCount} dependency bump file(s) to ${headRef}.`);
   if (!process.env.BUMPY_GH_TOKEN && process.env.GITHUB_REPOSITORY) {
     log.warn(
       'BUMPY_GH_TOKEN is not set — CI will not re-run on the new commit, so required checks may stay pending.\n' +

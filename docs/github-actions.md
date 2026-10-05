@@ -111,9 +111,10 @@ Point `workflows: [...]` at the **name** of whatever runs your check (your exist
 
 A dev-only update (`devDependencies`) never needs a bump file — see [change detection](configuration.md#change-detection-and-packagejson-fields). An update to `dependencies`, `peerDependencies` or `optionalDependencies` does, since it changes what your consumers install. Rather than adding those by hand, `bumpy ci deps` writes them for you (the bumpy equivalent of [changesets-dependencies-action](https://github.com/the-guild-org/changesets-dependencies-action)):
 
-- diffs each managed package's dependencies against the base branch (catalog updates included; `workspace:` deps skipped — bumpy's own propagation handles those; `devDependencies` only if listed in [`releaseTriggeringDevDeps`](configuration.md#release-triggering-devdependencies))
+- diffs each managed package's dependencies against the base branch — the same changes `bumpy check` requires a bump file for (catalog updates included; `devDependencies` only if listed in [`releaseTriggeringDevDeps`](configuration.md#release-triggering-devdependencies))
 - writes one **patch** bump file per affected package, `.bumpy/deps-pr<N>-<pkg>.md`, listing each added / updated / removed dependency with a link to npm
-- commits and pushes them to the PR branch — re-running (e.g. after Dependabot rebases) rewrites the files and deletes ones that no longer apply
+- for a [`directBump: false`](configuration.md#directbump-false--packages-that-only-follow) package, puts the bump on a fixed-group member instead (and fails if there isn't one)
+- commits and pushes them to the PR branch — re-running (e.g. after Dependabot rebases) rewrites the files and deletes ones that no longer apply. Generated files carry a marker comment; files without it are never touched
 
 Run it before `ci check`, in the same job, so the check sees the new files:
 

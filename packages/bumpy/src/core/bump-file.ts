@@ -235,6 +235,8 @@ export async function writeBumpFile(
   filename: string,
   releases: BumpFileRelease[],
   summary: string,
+  /** Optional YAML comment line(s) placed at the top of the frontmatter (each prefixed `# `) */
+  frontmatterComment?: string,
 ): Promise<string> {
   const dir = getBumpyDir(rootDir);
   const filePath = resolve(dir, `${filename}.md`);
@@ -250,7 +252,13 @@ export async function writeBumpFile(
   }
 
   const yamlStr = yaml.dump(frontmatter, { lineWidth: -1, quotingType: '"' }).trim();
-  const content = `---\n${yamlStr}\n---\n\n${summary}\n`;
+  const comment = frontmatterComment
+    ? frontmatterComment
+        .split('\n')
+        .map((line) => `# ${line}\n`)
+        .join('')
+    : '';
+  const content = `---\n${comment}${yamlStr}\n---\n\n${summary}\n`;
   await writeText(filePath, content);
   return filePath;
 }
