@@ -107,6 +107,53 @@ Point `workflows: [...]` at the **name** of whatever runs your check (your exist
 
 > **Why can't the fork run post it itself?** A fork's `pull_request` token is read-only at issuance and enforced server-side — REST, GraphQL, `gh`, and raw `curl` all 403 on a comment write, and secrets aren't exposed either. The write has to originate from a privileged base-repo run, which is exactly what `workflow_run` provides.
 
+## Dependency update PRs (Dependabot / Renovate)
+
+A dev-only update (`devDependencies`) never needs a bump file — see [change detection](configuration.md#change-detection-and-packagejson-fields). An update to `dependencies`, `peerDependencies` or `optionalDependencies` does, since it changes what your consumers install. Rather than adding those by hand, `bumpy ci deps` writes them for you (the bumpy equivalent of [changesets-dependencies-action](https://github.com/the-guild-org/changesets-dependencies-action)):
+
+- diffs each managed package's dependencies against the base branch (catalog updates included; `workspace:` deps skipped — bumpy's own propagation handles those; `devDependencies` only if listed in [`releaseTriggeringDevDeps`](configuration.md#release-triggering-devdependencies))
+- writes one **patch** bump file per affected package, `.bumpy/deps-pr<N>-<pkg>.md`, listing each added / updated / removed dependency with a link to npm
+- commits and pushes them to the PR branch — re-running (e.g. after Dependabot rebases) rewrites the files and deletes ones that no longer apply
+
+Run it before `ci check`, in the same job, so the check sees the new files:
+
+```yaml
+# .github/workflows/bumpy-deps.yaml
+name: Bumpy (dependency PRs)
+on: pull_request
+
+jobs:
+  deps:
+    if: github.actor == 'dependabot[bot]' || github.actor == 'renovate[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push the bump-file commit
+      pull-requests: write # ci check comment
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+      - run: bunx @varlock/bumpy ci deps
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUMPY_GH_TOKEN: ${{ secrets.BUMPY_GH_TOKEN }}
+      - run: bunx @varlock/bumpy ci check
+        env:
+          GH_TOKEN: ${{ github.token }}
+```
+
+Then skip bumpy's regular PR check for those actors (`if: github.actor != 'dependabot[bot]' && ...`), or leave it — it will pass on the re-run triggered by the pushed commit.
+
+Things to know:
+
+- **Use `BUMPY_GH_TOKEN` if checks are required.** A commit pushed with the default `GITHUB_TOKEN` doesn't trigger new workflow runs, so required status checks on the new head commit stay pending. Workflows triggered by Dependabot only see **Dependabot secrets** — add `BUMPY_GH_TOKEN` under _Settings → Secrets and variables → Dependabot_ as well as _Actions_. See [Token setup](#token-setup).
+- **Dependabot stops auto-rebasing PRs that have commits from someone else.** Comment `@dependabot recreate` to get a fresh branch; the workflow then regenerates the bump files.
+- **Fork PRs are skipped** — their branch can't be pushed to.
+- `ci deps` sets a `changed` step output (`true` / `false`).
+- Locally, `bumpy generate --deps` writes the same files (named after the branch) without committing.
+
 ## Release workflow (recommended: split jobs)
 
 The recommended release workflow splits version-PR maintenance from publishing into separate jobs. Only the publish job carries `id-token: write` and npm credentials, and it runs inside a GitHub Environment — so a rogue workflow elsewhere in the repo can't request an OIDC token that npm will accept.

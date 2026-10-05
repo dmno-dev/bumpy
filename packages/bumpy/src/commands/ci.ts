@@ -1,10 +1,11 @@
 import { log, colorize } from '../utils/logger.ts';
-import { loadConfig } from '../core/config.ts';
+import { getBumpyDir, loadConfig } from '../core/config.ts';
 import { findChangedPackages } from './check.ts';
 import { discoverWorkspace } from '../core/workspace.ts';
 import { DependencyGraph } from '../core/dep-graph.ts';
 import { readBumpFiles, filterBranchBumpFiles, recoverDeletedBumpFiles } from '../core/bump-file.ts';
-import { getChangedFiles, withGitToken } from '../core/git.ts';
+import { getBaseCompareRef, getChangedFiles, getCurrentBranch, withGitToken } from '../core/git.ts';
+import { detectDependencyChanges, syncDependencyBumpFiles } from '../core/dep-bump-files.ts';
 import { assembleReleasePlan } from '../core/release-plan.ts';
 import {
   channelNames,
@@ -20,7 +21,7 @@ import { randomName } from '../utils/names.ts';
 import { detectPackageManager } from '../utils/package-manager.ts';
 import { createHash } from 'node:crypto';
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { relative, resolve } from 'node:path';
 import { resolveCommitMessage } from '../core/commit-message.ts';
 import type { BumpyConfig, BumpFile, PackageConfig, PackageManager, ReleasePlan, PlannedRelease } from '../types.ts';
 
@@ -282,6 +283,85 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
     const logFn = willFail ? log.error : log.warn;
     logFn(`${missing.length} changed package(s) not covered by bump files: ${missing.join(', ')}`);
     if (willFail) process.exit(1);
+  }
+}
+
+// ---- ci deps ----
+
+interface DepsOptions {
+  noPush?: boolean;
+}
+
+/**
+ * Dependency-update PRs (Dependabot, Renovate, …): write one patch bump file per package
+ * whose release-relevant dependencies changed, then commit + push them to the PR branch.
+ * The bumpy equivalent of the-guild-org/changesets-dependencies-action.
+ *
+ * Files are named `deps-pr<N>-<pkg>.md`, so re-running on a new commit (or after a
+ * Dependabot rebase) rewrites them and removes ones that no longer apply. Run it before
+ * `ci check` in the same job so the check sees the new files.
+ */
+export async function ciDepsCommand(rootDir: string, opts: DepsOptions): Promise<void> {
+  const prNumber = detectPrNumber();
+  const headRef = process.env.GITHUB_HEAD_REF || detectPrBranch(rootDir);
+  if (!prNumber || !headRef) {
+    throw new Error('`bumpy ci deps` must run on a pull request (could not detect the PR number / head branch).');
+  }
+  validatePrNumber(prNumber);
+  validateBranchName(headRef);
+
+  if (isForkPr()) {
+    log.warn('Skipping — this PR is from a fork, so bump files cannot be pushed to its branch.');
+    writeGitHubOutput('changed', 'false');
+    return;
+  }
+
+  const config = await loadConfig(rootDir);
+
+  // `actions/checkout` on pull_request checks out a detached merge commit — move onto
+  // the actual PR branch so the bump-file commit can be pushed to it.
+  if (getCurrentBranch({ cwd: rootDir }) !== headRef) {
+    runArgs(['git', 'fetch', 'origin', `refs/heads/${headRef}`], { cwd: rootDir });
+    runArgs(['git', 'checkout', '-B', headRef, 'FETCH_HEAD'], { cwd: rootDir });
+  }
+
+  const { packages } = await discoverWorkspace(rootDir, config);
+  const baseRef = getBaseCompareRef(rootDir, config.baseBranch);
+  const changes = await detectDependencyChanges(rootDir, config, packages, baseRef);
+  const { written, removed } = await syncDependencyBumpFiles(rootDir, changes, `pr${prNumber}`, baseRef);
+  for (const id of written) log.dim(`  .bumpy/${id}.md`);
+  for (const id of removed) log.dim(`  removed .bumpy/${id}.md`);
+
+  const bumpyRelDir = relative(rootDir, getBumpyDir(rootDir));
+  const dirty = tryRunArgs(['git', 'status', '--porcelain', '--', bumpyRelDir], { cwd: rootDir });
+  if (!dirty) {
+    log.info(changes.size === 0 ? 'No dependency changes detected.' : 'Dependency bump files are up to date.');
+    writeGitHubOutput('changed', 'false');
+    return;
+  }
+
+  ensureGitIdentity(rootDir, config);
+  runArgs(['git', 'add', '-A', '--', bumpyRelDir], { cwd: rootDir });
+  runArgs(['git', 'commit', '--no-verify', '-F', '-'], {
+    cwd: rootDir,
+    input: 'chore(deps): add bump files for dependency updates',
+  });
+  writeGitHubOutput('changed', 'true');
+
+  if (opts.noPush) {
+    log.success(`🐸 Committed dependency bump files for ${changes.size} package(s) (not pushed).`);
+    return;
+  }
+
+  withGitToken(rootDir, () => {
+    runArgs(['git', 'push', '--no-verify', 'origin', `HEAD:refs/heads/${headRef}`], { cwd: rootDir });
+  });
+  log.success(`🐸 Pushed dependency bump files for ${changes.size} package(s) to ${headRef}.`);
+  if (!process.env.BUMPY_GH_TOKEN && process.env.GITHUB_REPOSITORY) {
+    log.warn(
+      'BUMPY_GH_TOKEN is not set — CI will not re-run on the new commit, so required checks may stay pending.\n' +
+        '  For Dependabot PRs, add it under Settings → Secrets → Dependabot. Run `bumpy ci setup` for help.',
+    );
   }
 }
 
