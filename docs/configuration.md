@@ -52,6 +52,8 @@ To relax additional fields (e.g. treat `scripts` changes as non-releasing too), 
 }
 ```
 
+For runtime dependency updates from bots, [`bumpy ci deps`](github-actions.md#dependency-update-prs-dependabot--renovate) can write the bump files automatically.
+
 bumpy errs toward requiring a bump file whenever it can't compare cleanly — a brand-new `package.json`, or one it can't parse.
 
 ### Dependency bump rules

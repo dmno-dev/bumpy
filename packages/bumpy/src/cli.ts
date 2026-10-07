@@ -96,6 +96,7 @@ async function main() {
           from: flags.from as string | undefined,
           dryRun: flags['dry-run'] === true,
           name: flags.name as string | undefined,
+          deps: flags.deps === true,
         });
         break;
       }
@@ -157,6 +158,9 @@ async function main() {
             noFail: ciFlags['no-fail'] === true,
             emitComment: typeof emitComment === 'string' ? emitComment : undefined,
           });
+        } else if (subcommand === 'deps') {
+          const { ciDepsCommand } = await import('./commands/ci.ts');
+          await ciDepsCommand(rootDir, { noPush: ciFlags['no-push'] === true });
         } else if (subcommand === 'plan') {
           const { ciPlanCommand } = await import('./commands/ci.ts');
           await ciPlanCommand(rootDir);
@@ -198,7 +202,7 @@ async function main() {
           await ciSetupCommand(rootDir);
         } else {
           log.error(
-            `Unknown ci subcommand: ${subcommand}. Use "ci check", "ci comment", "ci plan", "ci release", or "ci setup".`,
+            `Unknown ci subcommand: ${subcommand}. Use "ci check", "ci comment", "ci deps", "ci plan", "ci release", or "ci setup".`,
           );
           process.exit(1);
         }
@@ -263,7 +267,7 @@ function printHelp() {
     add                     Create a new bump file
       --none                  Set all changed packages to "none" (acknowledge without bumping)
       --empty                 Create an empty bump file (no releases needed)
-    generate                Generate bump file from branch commits
+    generate                Generate bump file from branch commits (or dependency changes with --deps)
     status                  Show pending releases
     check                   Verify changed packages have bump files (for git hooks)
       --strict                Fail if any changed package is uncovered (default: only fail if no bump files at all)
@@ -277,6 +281,7 @@ function printHelp() {
                             (--snapshot <name>: transient preview publish to a throwaway dist-tag)
     ci check                PR check — report pending releases, comment on PR
     ci comment              Post a pre-rendered comment (workflow_run half of the fork-comment split)
+    ci deps                 Dependabot/Renovate PRs — commit patch bump files for dependency updates
     ci plan                 Report what ci release would do (JSON + GitHub Actions outputs)
     ci release              Release — create version PR or auto-publish
     ci setup                Set up a token for triggering CI on version PRs
@@ -290,7 +295,12 @@ function printHelp() {
   Generate options:
     --from <ref>            Git ref to scan from (default: branch point from baseBranch)
     --dry-run               Preview without creating a bump file
-    --name <name>           Bump file filename
+    --name <name>           Bump file filename (with --deps: file name suffix, default: branch name)
+    --deps                  One patch bump file per package whose dependencies changed
+                            (dependencies/peerDependencies/optionalDependencies + releaseTriggeringDevDeps)
+
+  CI deps options:
+    --no-push               Write + commit the bump files but don't push
 
   Status options:
     --json                  Output as JSON (includes dirs, bumpFiles, packageNames)

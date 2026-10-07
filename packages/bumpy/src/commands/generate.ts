@@ -7,13 +7,20 @@ import { writeBumpFile } from '../core/bump-file.ts';
 import { getBumpyDir } from '../core/config.ts';
 import { ensureDir } from '../utils/fs.ts';
 import { slugify, randomName } from '../utils/names.ts';
-import { getBranchCommits, getFilesChangedInCommit } from '../core/git.ts';
+import { getBaseCompareRef, getBranchCommits, getCurrentBranch, getFilesChangedInCommit } from '../core/git.ts';
+import {
+  detectDependencyChanges,
+  planDependencyBumpFiles,
+  syncDependencyBumpFiles,
+  formatUncoverableError,
+} from '../core/dep-bump-files.ts';
 import type { BumpType, BumpTypeWithNone, BumpyConfig, BumpFileRelease, WorkspacePackage } from '../types.ts';
 
 interface GenerateOptions {
   from?: string; // git ref to start from (default: branch base)
   dryRun?: boolean;
   name?: string;
+  deps?: boolean; // generate from dependency changes instead of commits
 }
 
 interface ConventionalCommit {
@@ -41,6 +48,11 @@ const BUMP_MAP: Record<string, BumpType> = {
 export async function generateCommand(rootDir: string, opts: GenerateOptions): Promise<void> {
   const config = await loadConfig(rootDir);
   const packages = await discoverPackages(rootDir, config);
+
+  if (opts.deps) {
+    await generateDependencyBumpFiles(rootDir, config, packages, opts);
+    return;
+  }
 
   // Get commits — either from explicit ref or from branch divergence point
   let commits: { hash: string; subject: string; body: string }[];
@@ -172,6 +184,46 @@ export async function generateCommand(rootDir: string, opts: GenerateOptions): P
   log.success(`🐸 Created bump file: .bumpy/${filename}.md`);
   for (const r of releases) {
     log.dim(`  ${r.name}: ${r.type}`);
+  }
+}
+
+/**
+ * `generate --deps`: one patch bump file per package whose release-relevant dependencies
+ * changed vs the base branch. Named after the branch (or --name) so re-running updates
+ * the same files. `bumpy ci deps` is the CI equivalent that also commits + pushes.
+ */
+async function generateDependencyBumpFiles(
+  rootDir: string,
+  config: BumpyConfig,
+  packages: Map<string, WorkspacePackage>,
+  opts: GenerateOptions,
+): Promise<void> {
+  const suffix = opts.name ?? getCurrentBranch({ cwd: rootDir });
+  if (!suffix || suffix === 'HEAD') {
+    throw new Error('Cannot name dependency bump files from a detached HEAD — pass --name <name>.');
+  }
+  const baseRef = opts.from ?? getBaseCompareRef(rootDir, config.baseBranch);
+  log.step(`Scanning dependency changes (vs ${colorize(opts.from ?? config.baseBranch, 'cyan')})...`);
+  const changes = await detectDependencyChanges(rootDir, config, packages, baseRef);
+
+  const plan = planDependencyBumpFiles(changes, packages, config, suffix);
+
+  if (opts.dryRun) {
+    if (changes.size === 0) log.info('No dependency changes detected.');
+    for (const file of plan.files) {
+      log.bold(`Would write .bumpy/${file.id}.md (${file.releaseName}: patch)`);
+      for (const line of file.summary.split('\n')) log.dim(`  ${line}`);
+    }
+  } else {
+    const { written, removed } = await syncDependencyBumpFiles(rootDir, plan, suffix, baseRef);
+    for (const id of written) log.success(`🐸 Wrote bump file: .bumpy/${id}.md`);
+    for (const id of removed) log.dim(`  Removed stale bump file: .bumpy/${id}.md`);
+    if (changes.size === 0 && removed.length === 0) log.info('No dependency changes detected.');
+  }
+
+  if (plan.uncoverable.length > 0) {
+    log.error(formatUncoverableError(plan.uncoverable));
+    process.exit(1);
   }
 }
 

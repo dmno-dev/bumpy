@@ -158,13 +158,15 @@ Auto-create bump files from commits on the current branch. Works with any commit
 bumpy generate
 bumpy generate --dry-run
 bumpy generate --from v1.0.0   # override: scan from a specific ref instead of branch base
+bumpy generate --deps          # one patch bump file per package whose dependencies changed
 ```
 
-| Flag            | Description                                                              |
-| --------------- | ------------------------------------------------------------------------ |
-| `--from <ref>`  | Git ref to scan from (default: branch point from `baseBranch` in config) |
-| `--dry-run`     | Preview without creating files                                           |
-| `--name <name>` | Bump file filename                                                       |
+| Flag            | Description                                                                                 |
+| --------------- | ------------------------------------------------------------------------------------------- |
+| `--from <ref>`  | Git ref to scan from (default: branch point from `baseBranch` in config)                    |
+| `--dry-run`     | Preview without creating files                                                              |
+| `--name <name>` | Bump file filename (with `--deps`: filename suffix, default: current branch)                |
+| `--deps`        | Generate from dependency changes instead of commits — see [`bumpy ci deps`](#bumpy-ci-deps) |
 
 **How commits are mapped:**
 
@@ -212,6 +214,19 @@ bumpy ci comment --body-file ./bumpy-comment/comment.md
 | `--pr <number>`      | Target PR number (default: resolved from the `workflow_run` event) |
 
 It needs no checkout and no bumpy project — it only posts. Under `workflow_run` it resolves the target PR from the **trusted** event (`head_sha`), never from the artifact, and treats the body as untrusted text. A missing or empty body file is a no-op. Requires `GH_TOKEN`.
+
+## `bumpy ci deps`
+
+For dependency-update PRs (Dependabot, Renovate). Writes one patch bump file per package whose `dependencies` / `peerDependencies` / `optionalDependencies` (or [`releaseTriggeringDevDeps`](configuration.md#release-triggering-devdependencies)) changed, as `.bumpy/deps-pr<N>-<pkg>.md`, then commits and pushes them to the PR branch. Idempotent — re-running rewrites the files and removes stale ones. See [Dependency update PRs](github-actions.md#dependency-update-prs-dependabot--renovate) for the workflow.
+
+```bash
+bumpy ci deps
+bumpy ci deps --no-push
+```
+
+| Flag        | Description                          |
+| ----------- | ------------------------------------ |
+| `--no-push` | Commit the bump files but don't push |
 
 ## `bumpy ci plan`
 
