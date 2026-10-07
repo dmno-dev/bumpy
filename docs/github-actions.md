@@ -125,7 +125,9 @@ on: pull_request
 
 jobs:
   deps:
-    if: github.actor == 'dependabot[bot]' || github.actor == 'renovate[bot]'
+    # gate on the PR author, not github.actor — so a maintainer's push to a bot PR
+    # (e.g. pinning or reverting the update) regenerates the files too
+    if: contains(fromJSON('["dependabot[bot]", "renovate[bot]"]'), github.event.pull_request.user.login)
     runs-on: ubuntu-latest
     permissions:
       contents: write # push the bump-file commit
@@ -145,13 +147,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 ```
 
-Then skip bumpy's regular PR check for those actors (`if: github.actor != 'dependabot[bot]' && ...`), or leave it — it will pass on the re-run triggered by the pushed commit.
+Then skip bumpy's regular PR check for those PRs (the same condition, negated), or leave it — it will pass on the re-run triggered by the pushed commit. The re-run of this workflow finds the files up to date and commits nothing, so it doesn't loop.
 
 Things to know:
 
 - **Use `BUMPY_GH_TOKEN` if checks are required.** A commit pushed with the default `GITHUB_TOKEN` doesn't trigger new workflow runs, so required status checks on the new head commit stay pending. Workflows triggered by Dependabot only see **Dependabot secrets** — add `BUMPY_GH_TOKEN` under _Settings → Secrets and variables → Dependabot_ as well as _Actions_. See [Token setup](#token-setup).
 - **Dependabot stops auto-rebasing PRs that have commits from someone else.** Comment `@dependabot recreate` to get a fresh branch; the workflow then regenerates the bump files.
 - **Fork PRs are skipped** — their branch can't be pushed to.
+- **PRs into a channel branch** are diffed against that branch (`GITHUB_BASE_REF`), so only this PR's dependency changes get bump files.
 - `ci deps` sets a `changed` step output (`true` / `false`).
 - Locally, `bumpy generate --deps` writes the same files (named after the branch) without committing.
 

@@ -156,7 +156,7 @@ export async function checkCommand(rootDir: string, opts: CheckOptions = {}): Pr
     }
   }
 
-  const changedPackages = await findChangedPackages(changedFiles, packages, rootDir, config);
+  const changedPackages = await findChangedPackages(changedFiles, packages, rootDir, config, baseBranch);
 
   if (changedPackages.length === 0) {
     log.info('No managed packages have changed.');
@@ -281,12 +281,17 @@ export function resolveDirectBumpCoverage(
   return { missing: stillMissing, hints };
 }
 
-/** Map changed files to the packages they belong to */
+/**
+ * Map changed files to the packages they belong to. `compareBranch` must be the branch
+ * `changedFiles` was computed against (e.g. a channel branch for a PR into it), so the
+ * package.json field diff and catalog diff use the same base.
+ */
 export async function findChangedPackages(
   changedFiles: string[],
   packages: Map<string, WorkspacePackage>,
   rootDir: string,
   config: BumpyConfig,
+  compareBranch: string = config.baseBranch,
 ): Promise<string[]> {
   const changed = new Set<string>();
 
@@ -331,7 +336,7 @@ export async function findChangedPackages(
     // package.json was the only thing that matched — only flag if a publish-affecting
     // field actually changed (a dev-only dependency bump shouldn't require a release).
     if (!changed.has(name) && pkgJsonOnlyTrigger) {
-      baseRef ??= getBaseCompareRef(rootDir, config.baseBranch);
+      baseRef ??= getBaseCompareRef(rootDir, compareBranch);
       if (
         await packageJsonAffectsRelease(rootDir, baseRef, pkgRelDir, ignoredFields, pkg.bumpy?.releaseTriggeringDevDeps)
       ) {
@@ -342,7 +347,7 @@ export async function findChangedPackages(
 
   // Catalog change detection: if a catalog file changed, find packages whose
   // catalog: dep references resolve to a changed catalog entry
-  const catalogChanges = await getChangedCatalogEntries(rootDir, config.baseBranch, changedFiles);
+  const catalogChanges = await getChangedCatalogEntries(rootDir, compareBranch, changedFiles);
   if (catalogChanges.size > 0) {
     for (const [name, pkg] of packages) {
       if (changed.has(name)) continue;

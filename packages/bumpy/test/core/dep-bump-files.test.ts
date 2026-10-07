@@ -12,6 +12,9 @@ import {
 import { discoverWorkspace } from '../../src/core/workspace.ts';
 import { getBaseCompareRef } from '../../src/core/git.ts';
 import { loadConfig } from '../../src/core/config.ts';
+import { findChangedPackages } from '../../src/commands/check.ts';
+import { ciDepsCommand } from '../../src/commands/ci.ts';
+import { getChangedFiles } from '../../src/core/git.ts';
 import { createTempGitRepo, cleanupTempDir, gitInDir } from '../helpers.ts';
 
 describe('formatDependencyChange', () => {
@@ -253,5 +256,79 @@ describe('dependency bump files (git integration)', () => {
     const { plan } = await detect();
     expect(plan.files).toEqual([]);
     expect(plan.uncoverable).toEqual(['cli-bin']);
+  });
+
+  describe('PR into a channel branch', () => {
+    const ENV_KEYS = [
+      'GITHUB_HEAD_REF',
+      'GITHUB_BASE_REF',
+      'BUMPY_PR_NUMBER',
+      'GITHUB_EVENT_NAME',
+      'GITHUB_EVENT_PATH',
+      'GITHUB_OUTPUT',
+      'GITHUB_REPOSITORY',
+    ];
+    let savedEnv: Record<string, string | undefined>;
+    beforeEach(() => {
+      savedEnv = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
+      for (const k of ENV_KEYS) delete process.env[k];
+    });
+    afterEach(() => {
+      for (const [k, v] of Object.entries(savedEnv)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    });
+
+    /** main → `dev` (with a merged runtime dep update) → PR branch with a dev-only update */
+    async function setupChannelDrift(): Promise<void> {
+      await setup({
+        app: {
+          name: 'app',
+          version: '1.0.0',
+          dependencies: { react: '^18.0.0' },
+          devDependencies: { vitest: '^1.0.0' },
+        },
+      });
+      gitInDir(['checkout', '-b', 'dev', 'main'], tmpDir);
+      await writeJson('packages/app/package.json', {
+        name: 'app',
+        version: '1.0.0',
+        dependencies: { react: '^18.3.0' },
+        devDependencies: { vitest: '^1.0.0' },
+      });
+      gitInDir(['commit', '-am', 'react (already merged into dev)'], tmpDir);
+      gitInDir(['push', '-u', 'origin', 'dev'], tmpDir);
+      gitInDir(['checkout', '-b', 'dependabot/vitest', 'dev'], tmpDir);
+      await writeJson('packages/app/package.json', {
+        name: 'app',
+        version: '1.0.0',
+        dependencies: { react: '^18.3.0' },
+        devDependencies: { vitest: '^2.0.0' },
+      });
+      gitInDir(['commit', '-am', 'vitest (dev only)'], tmpDir);
+    }
+
+    test('ci deps diffs against the PR base, not baseBranch', async () => {
+      await setupChannelDrift();
+      Object.assign(process.env, {
+        GITHUB_HEAD_REF: 'dependabot/vitest',
+        GITHUB_BASE_REF: 'dev',
+        BUMPY_PR_NUMBER: '9',
+      });
+      await ciDepsCommand(tmpDir, { noPush: true });
+      const files = await readdir(resolve(tmpDir, '.bumpy')).catch(() => [] as string[]);
+      expect(files.filter((f) => f.startsWith('deps-'))).toEqual([]);
+    });
+
+    test('findChangedPackages uses the compare branch for the package.json field diff', async () => {
+      await setupChannelDrift();
+      const config = await loadConfig(tmpDir);
+      const { packages } = await discoverWorkspace(tmpDir, config);
+      const changedFiles = getChangedFiles(tmpDir, 'dev');
+      expect(await findChangedPackages(changedFiles, packages, tmpDir, config, 'dev')).toEqual([]);
+      // vs main, the merged react update shows up as drift
+      expect(await findChangedPackages(changedFiles, packages, tmpDir, config)).toEqual(['app']);
+    });
   });
 });

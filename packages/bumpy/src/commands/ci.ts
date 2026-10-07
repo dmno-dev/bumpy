@@ -191,7 +191,7 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
     }
 
     // Check if any managed packages actually changed — if not, no bump file is needed
-    const changedPackages = await findChangedPackages(changedFiles, packages, rootDir, config);
+    const changedPackages = await findChangedPackages(changedFiles, packages, rootDir, config, compareBranch);
     if (changedPackages.length === 0 && parseErrors.length === 0) {
       log.info('No managed packages have changed — no bump files needed.');
       return;
@@ -281,7 +281,7 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
       coveredPackages.add(release.name);
     }
   }
-  const changedPackages = await findChangedPackages(changedFiles, packages, rootDir, config);
+  const changedPackages = await findChangedPackages(changedFiles, packages, rootDir, config, compareBranch);
   const missing = changedPackages.filter((name) => !coveredPackages.has(name));
   if (missing.length > 0) {
     const willFail = opts.strict && !opts.noFail;
@@ -331,7 +331,10 @@ export async function ciDepsCommand(rootDir: string, opts: DepsOptions): Promise
   }
 
   const { packages } = await discoverWorkspace(rootDir, config);
-  const baseRef = getBaseCompareRef(rootDir, config.baseBranch);
+  // Diff against the branch this PR targets — for a PR into a channel branch, using
+  // baseBranch would attribute the whole cycle's dependency drift to this PR.
+  const compareBranch = process.env.GITHUB_BASE_REF || config.baseBranch;
+  const baseRef = getBaseCompareRef(rootDir, compareBranch);
   const changes = await detectDependencyChanges(rootDir, config, packages, baseRef);
   const suffix = `pr${prNumber}`;
   const plan = planDependencyBumpFiles(changes, packages, config, suffix);
