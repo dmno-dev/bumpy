@@ -7,12 +7,20 @@ on:
   release:
     types: [published]
 
+permissions: {}
+
 jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
       - run: echo "Release event triggered successfully!"
-      - run: |
-          echo "Release tag: ${{ github.event.release.tag_name }}"
-          echo "Release name: ${{ github.event.release.name }}"
-          echo "Created by: ${{ github.event.release.author.login }}"
+      # Pass event data via env rather than interpolating `${{ }}` into the script body,
+      # so a crafted release name/tag can't inject shell.
+      - env:
+          TAG_NAME: ${{ github.event.release.tag_name }}
+          RELEASE_NAME: ${{ github.event.release.name }}
+          AUTHOR: ${{ github.event.release.author.login }}
+        run: |
+          echo "Release tag: $TAG_NAME"
+          echo "Release name: $RELEASE_NAME"
+          echo "Created by: $AUTHOR"

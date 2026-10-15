@@ -26,13 +26,13 @@ These commands facilitate the following:
     GH_TOKEN: ${{ github.token }}
 ```
 
-Give the job `permissions: pull-requests: write`. This runs in the ordinary `pull_request` context — the same trust level as the rest of your CI — so there's nothing special to be careful about: you can `bun install` and run bumpy from your devDeps like any other CLI. (If the job already ran `bun install`, `bunx` picks up your pinned version from `node_modules`; otherwise it fetches the latest.)
+Give the job `permissions: { contents: read, pull-requests: write }` (listing any permission zeroes the rest, and checkout needs `contents: read` on private repos). This runs in the ordinary `pull_request` context — the same trust level as the rest of your CI — so there's nothing special to be careful about: you can `bun install` and run bumpy from your devDeps like any other CLI. (If the job already ran `bun install`, `bunx` picks up your pinned version from `node_modules`; otherwise it fetches the latest.)
 
 **Fork PRs get the check, but not the comment.** GitHub hands `pull_request` runs from forks a **read-only token and no secrets**, so the comment can't be posted there. `ci check` still runs and fails the job (red ✗) on a missing bump file, with the explanation in the job logs — forks stay gated correctly, you just don't get the rendered comment. For most repos that's the right trade. If you want the comment on fork PRs too, add the two-part setup below.
 
 > **Inline step vs. dedicated workflow.** Folding `ci check` into an existing CI job is the least setup and the right default for most repos. Give it its own lightweight `on: pull_request` workflow when either of these applies:
 >
-> - **Slow CI + fork comments.** The fork-comment poster below (`workflow_run`) fires on _whole-workflow_ completion, so if `ci check --emit-comment` rides inside a multi-minute CI workflow, the release-plan comment won't post until everything (lint, typecheck, build, tests) finishes. A dedicated check — no `bun install`, just `bunx bumpy` — completes in seconds, so the comment lands almost immediately.
+> - **Slow CI + fork comments.** The fork-comment poster below (`workflow_run`) fires on _whole-workflow_ completion, so if `ci check --emit-comment` rides inside a multi-minute CI workflow, the release-plan comment won't post until everything (lint, typecheck, build, tests) finishes. A dedicated check — no `bun install`, just `bunx @varlock/bumpy` — completes in seconds, so the comment lands almost immediately.
 > - **A load-bearing gate.** If `ci check` is an early step in your test job, its non-zero exit on a missing bump file fails the job and skips the remaining steps — so a contributor who pushed code before adding the bump file loses all test signal. A separate workflow (or a separate _job_) keeps the gate independent. A separate job doesn't share the test job's `bun install`, so once you're paying for an extra checkout anyway, a dedicated workflow also buys the fast comment above.
 
 ## Commenting on fork PRs
@@ -72,6 +72,7 @@ on:
     workflows: ['CI'] # ← the NAME of the workflow that runs your check
     types: [completed]
 permissions:
+  contents: read # checkout of your default branch (for the bumpy version in package.json)
   pull-requests: write
 
 jobs:
@@ -243,8 +244,8 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - uses: actions/setup-node@v6
         with:
-          node-version: latest
-      - run: npm install -g npm@latest # ensure npm >= 11.15.0 for OIDC/staged publishing
+          node-version: 24
+      - run: npm install -g npm@11 # ensure npm >= 11.15.0 for OIDC/staged publishing
       # Build steps that need to happen before publish go here. If your build
       # needs workspace deps, add `bun install` first:
       #   - run: bun install
@@ -342,8 +343,8 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - uses: actions/setup-node@v6
         with:
-          node-version: latest
-      - run: npm install -g npm@latest
+          node-version: 24
+      - run: npm install -g npm@11
       - run: bun install
       - run: bunx @varlock/bumpy ci release
         env:
@@ -497,6 +498,9 @@ For organizations, a GitHub App avoids tying automation to a personal account:
      with:
        app-id: ${{ secrets.BUMPY_APP_ID }}
        private-key: ${{ secrets.BUMPY_APP_PRIVATE_KEY }}
+       # Mint only what bumpy needs, not everything the App was installed with
+       permission-contents: write
+       permission-pull-requests: write
    - run: bunx @varlock/bumpy ci release
      env:
        GH_TOKEN: ${{ github.token }}

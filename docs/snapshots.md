@@ -32,9 +32,9 @@ jobs:
   preview:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 20 }
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with: { node-version: 24 }
       - run: npm ci
       - run: npm run build
       # Run this exactly once per workflow — it's how pkg.pr.new avoids spam.
@@ -89,19 +89,23 @@ on:
   pull_request:
     types: [opened, synchronize, labeled]
 
+permissions:
+  contents: read
+  pull-requests: write # for the PR comment
+
 jobs:
   snapshot:
     # Opt-in per PR via a label so you don't fill the registry with every PR's builds
     if: contains(github.event.pull_request.labels.*.name, 'snapshot')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with: { fetch-depth: 0 }
       - uses: ./.github/actions/setup # your registry auth (.npmrc / NPM_TOKEN)
-      - run: bunx bumpy ci release --snapshot pr-${{ github.event.pull_request.number }}
+      - run: bunx @varlock/bumpy ci release --snapshot pr-${{ github.event.pull_request.number }}
         env:
           NPM_TOKEN: ${{ secrets.PRIVATE_REGISTRY_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # for the PR comment
+          GH_TOKEN: ${{ github.token }} # for the PR comment
 ```
 
 Label-gating is the recommended default: pkg.pr.new can fire on every commit because its storage expires, but a real registry keeps every snapshot version until a retention policy prunes it. Trigger on whatever event you like — it's just a CLI command.
