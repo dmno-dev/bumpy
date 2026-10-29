@@ -4,7 +4,7 @@ import { tryRunArgs } from '../utils/shell.ts';
 import { loadConfig } from '../core/config.ts';
 import { discoverPackages } from '../core/workspace.ts';
 import { writeBumpFile } from '../core/bump-file.ts';
-import { getBumpyDir } from '../core/config.ts';
+import { getBumpyDir, makeSourcePathsMatcher } from '../core/config.ts';
 import { ensureDir } from '../utils/fs.ts';
 import { slugify, randomName } from '../utils/names.ts';
 import { getBaseCompareRef, getBranchCommits, getCurrentBranch, getFilesChangedInCommit } from '../core/git.ts';
@@ -264,19 +264,24 @@ export async function mapCommitToPackages(
   return [...matched];
 }
 
-/** Map file paths to package names based on directory containment */
+/** Map file paths to package names based on directory containment (plus each package's `sourcePaths`) */
 export function mapFilesToPackages(
   files: string[],
   packages: Map<string, WorkspacePackage>,
   rootDir: string,
 ): string[] {
   const matched = new Set<string>();
+  // `pkg.bumpy.sourcePaths` was resolved to repo-root-relative globs by loadPackageConfig
+  const sourceMatchers = new Map(
+    [...packages].map(([name, pkg]) => [name, makeSourcePathsMatcher(pkg.bumpy?.sourcePaths)]),
+  );
   for (const file of files) {
     for (const [name, pkg] of packages) {
       const pkgRelDir = relative(rootDir, pkg.dir);
       // Root package (single-package repo) has an empty relative dir, so every
-      // file belongs to it. Otherwise the file must live under the package dir.
-      if (pkgRelDir === '' || file.startsWith(pkgRelDir + '/')) {
+      // file belongs to it. Otherwise the file must live under the package dir
+      // or match one of its `sourcePaths`.
+      if (pkgRelDir === '' || file.startsWith(pkgRelDir + '/') || sourceMatchers.get(name)?.(file)) {
         matched.add(name);
       }
     }

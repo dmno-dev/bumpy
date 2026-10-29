@@ -219,6 +219,15 @@ export interface PackageConfig {
   checkPublished?: string;
   /** Glob patterns to filter which changed files count toward marking this package as changed */
   changedFilePatterns?: string[];
+  /**
+   * Extra change-detection globs for sources that live outside this package's directory
+   * (e.g. a binary built from a sibling package). Like every per-package glob, they are
+   * relative to the **package dir** wherever they're declared — use `../` to reach out
+   * (e.g. `"../encryption-binary-swift/**"`). A changed file matching one marks this
+   * package as changed, exactly as if it were inside it. Additive — `changedFilePatterns`
+   * still applies only to files inside the package. Prefix with `!` to exclude.
+   */
+  sourcePaths?: string[];
   dependencyBumpRules?: Partial<Record<DepType, DependencyBumpRule | false>>;
   cascadeTo?: CascadeConfig;
   cascadeFrom?: CascadeConfig;

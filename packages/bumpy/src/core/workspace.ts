@@ -132,7 +132,7 @@ async function loadWorkspacePackage(
   const name = pkg.name as string;
   if (!name) return null;
 
-  const bumpy = await loadPackageConfig(dir, config, name);
+  const bumpy = await loadPackageConfig(dir, config, name, rootDir);
 
   return {
     name,

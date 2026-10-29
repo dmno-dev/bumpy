@@ -132,6 +132,68 @@ describe('findChangedPackages', () => {
     const result = await findChangedPackages(changed, packages, rootDir, makeConfig());
     expect(result).toEqual(['pkg-a']);
   });
+
+  describe('sourcePaths', () => {
+    // sourcePaths are package-relative, so loadPackageConfig reads package.json from disk
+    const tmpRoot = resolve(import.meta.dir, '../../.test-tmp-source-paths');
+    const helperDir = resolve(tmpRoot, 'packages/helpers/darwin');
+    const packages = new Map([
+      ['@x/helper-darwin', makePkg('@x/helper-darwin', '1.0.0', { dir: helperDir })],
+      ['@x/helper-linux', makePkg('@x/helper-linux', '1.0.0', { dir: resolve(tmpRoot, 'packages/helpers/linux') })],
+      ['swift-src', makePkg('swift-src', '1.0.0', { dir: resolve(tmpRoot, 'packages/swift-src') })],
+    ]);
+    const check = (files: string[], config = makeConfig()) =>
+      findChangedPackages(files, packages, tmpRoot, config).then((r) => r.sort());
+
+    afterEach(async () => {
+      await rm(tmpRoot, { recursive: true, force: true });
+    });
+
+    test('a file outside the package matching sourcePaths marks it changed', async () => {
+      const config = makeConfig({ packages: { '@x/helper-darwin': { sourcePaths: ['../../swift-src/**'] } } });
+      expect(await check(['packages/swift-src/Sources/main.swift'], config)).toEqual(['@x/helper-darwin', 'swift-src']);
+    });
+
+    test('a non-matching file does not mark it changed', async () => {
+      const config = makeConfig({ packages: { '@x/helper-darwin': { sourcePaths: ['../../swift-src/**'] } } });
+      expect(await check(['packages/other/index.ts'], config)).toEqual([]);
+    });
+
+    test('globs are package-relative, not repo-root-relative', async () => {
+      const config = makeConfig({ packages: { '@x/helper-darwin': { sourcePaths: ['packages/swift-src/**'] } } });
+      expect(await check(['packages/swift-src/main.swift'], config)).toEqual(['swift-src']);
+    });
+
+    test('negated patterns exclude matches', async () => {
+      const config = makeConfig({
+        packages: { '@x/helper-darwin': { sourcePaths: ['../../swift-src/**', '!../../swift-src/**/*.md'] } },
+      });
+      expect(await check(['packages/swift-src/README.md'], config)).toEqual(['swift-src']);
+      expect(await check(['packages/swift-src/main.swift'], config)).toEqual(['@x/helper-darwin', 'swift-src']);
+    });
+
+    test('works with glob package keys (resolved per package)', async () => {
+      const config = makeConfig({ packages: { '@x/helper-*': { sourcePaths: ['../shared/**'] } } });
+      expect(await check(['packages/helpers/shared/x.c'], config)).toEqual(['@x/helper-darwin', '@x/helper-linux']);
+    });
+
+    test('works when declared in package.json', async () => {
+      await mkdir(helperDir, { recursive: true });
+      await writeFile(
+        resolve(helperDir, 'package.json'),
+        JSON.stringify({ name: '@x/helper-darwin', bumpy: { sourcePaths: ['../../swift-src/**'] } }),
+      );
+      expect(await check(['packages/swift-src/main.swift'])).toEqual(['@x/helper-darwin', 'swift-src']);
+    });
+
+    test('changedFilePatterns does not filter sourcePaths matches', async () => {
+      const config = makeConfig({
+        changedFilePatterns: ['src/**'],
+        packages: { '@x/helper-darwin': { sourcePaths: ['../../swift-src/**'] } },
+      });
+      expect(await check(['packages/swift-src/Package.swift'], config)).toEqual(['@x/helper-darwin']);
+    });
+  });
 });
 
 describe('resolveDirectBumpCoverage', () => {

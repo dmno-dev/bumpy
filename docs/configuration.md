@@ -38,7 +38,7 @@ These are two different things, and bumpy treats them differently:
 
 ### Change detection and `package.json` fields
 
-A package is "changed" (and so needs a bump file) when a changed file inside it matches `changedFilePatterns`. `package.json` is a special case: editing it shouldn't always demand a release — a `devDependencies` bump from Dependabot, for example, doesn't affect what consumers install.
+A package is "changed" (and so needs a bump file) when a changed file inside it matches `changedFilePatterns`, or a changed file anywhere in the repo matches its [`sourcePaths`](#sourcepaths--sources-outside-the-package-directory). `package.json` is a special case: editing it shouldn't always demand a release — a `devDependencies` bump from Dependabot, for example, doesn't affect what consumers install.
 
 So when `package.json` is the **only** changed file in a package, bumpy diffs it against the base branch and only flags the package if a field **outside** `ignoredPackageJsonFields` changed. The default ignore list is `["devDependencies"]`, meaning dev-only dependency updates don't require a bump file. Every other field — `dependencies`, `exports`, `bin`, `files`, `description`, `scripts`, etc. — still counts.
 
@@ -176,6 +176,8 @@ Per-package settings can be defined in two places:
 
 `package.json` settings take precedence over global config.
 
+Globs in per-package options (`changedFilePatterns`, `sourcePaths`) are always relative to the package's directory, wherever they're declared.
+
 | Option                     | Type                       | Description                                                                              |
 | -------------------------- | -------------------------- | ---------------------------------------------------------------------------------------- |
 | `managed`                  | `boolean`                  | Opt this package in or out of versioning                                                 |
@@ -187,10 +189,31 @@ Per-package settings can be defined in two places:
 | `skipNpmPublish`           | `boolean`                  | Don't publish to npm (still creates git tags)                                            |
 | `checkPublished`           | `string`                   | Custom command that outputs the currently published version                              |
 | `changedFilePatterns`      | `string[]`                 | Glob patterns for changed-file detection (replaces root setting, not merged)             |
+| `sourcePaths`              | `string[]`                 | Globs for sources outside the package dir (see below)                                    |
 | `dependencyBumpRules`      | `object`                   | Per-package override for dependency propagation rules                                    |
 | `cascadeTo`                | `object`                   | Explicit cascade targets — glob pattern mapped to `{ trigger, bumpAs }`                  |
 | `cascadeFrom`              | `object`                   | Explicit cascade sources — glob pattern mapped to `{ trigger, bumpAs }`                  |
 | `releaseTriggeringDevDeps` | `string[]`                 | devDependencies that affect published output — a change requires a release (see below)   |
+
+### `sourcePaths` — sources outside the package directory
+
+Change detection normally only looks at files inside a package's directory. When a package is built from sources that live elsewhere — e.g. a published native-binary package whose binary is compiled from a separate (private) package — list those sources in `sourcePaths`. A changed file matching one marks the package as changed exactly as if it lived inside it, so `bumpy check` (and the CI check / PR comment) requires a bump file for it and `bumpy generate` attributes the commit to it.
+
+```jsonc
+{
+  "packages": {
+    "@mycli/native-darwin": {
+      // @mycli/native-darwin lives in packages/native/darwin
+      "sourcePaths": ["../../native-src-swift/**", "!../../native-src-swift/**/*.md"],
+    },
+  },
+}
+```
+
+- Globs are relative to the **package's directory**, like every per-package glob (`changedFilePatterns` too), whether declared in the root `packages` map (by name or glob) or in the package's `package.json` `"bumpy"` field. Use `../` to reach sources outside it.
+- Patterns prefixed with `!` exclude — a file counts when it matches any positive pattern and no negated one. Exclusions are package-relative too, so `"!**/*.md"` would only exclude markdown inside the package itself; anchor them to the source dir as above.
+- `sourcePaths` is additive: `changedFilePatterns` still filters only the files inside the package's own directory and does not apply to `sourcePaths` matches.
+- A file can mark several packages as changed (the source package itself, if versioned, and every package listing it).
 
 ### `directBump: false` — packages that only follow
 

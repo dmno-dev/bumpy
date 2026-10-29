@@ -358,6 +358,11 @@
           "description": "Glob patterns to filter which changed files count toward marking this package as changed (overrides root setting)",
           "items": { "type": "string" }
         },
+        "sourcePaths": {
+          "type": "array",
+          "description": "Extra change-detection globs for sources outside this package's directory, relative to the package dir like every per-package glob (use ../ to reach out). A changed file matching one marks this package as changed. Additive to changedFilePatterns (which only applies inside the package). Prefix with ! to exclude.",
+          "items": { "type": "string" }
+        },
         "dependencyBumpRules": {
           "type": "object",
           "description": "Per-package override for dependency propagation rules",
