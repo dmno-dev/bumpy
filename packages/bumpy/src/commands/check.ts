@@ -173,8 +173,12 @@ export async function checkCommand(rootDir: string, opts: CheckOptions = {}): Pr
     config,
   );
 
-  // `requireBumpFile` packages must be listed in a bump file — nothing else covers them
-  const requiredMissing = missing.filter((name) => packages.get(name)?.bumpy?.requireBumpFile);
+  // `requireBumpFile` packages must be listed in a bump file — nothing else covers them,
+  // including a fixed-group member's bump for a directBump: false package
+  const requiredMissing = changedPackages.filter(
+    (name) => packages.get(name)?.bumpy?.requireBumpFile && !coveredPackages.has(name),
+  );
+  for (const name of requiredMissing) if (!missing.includes(name)) missing.push(name);
 
   // An empty bump file covers all remaining packages (in non-strict mode)
   // It acts as a blanket acknowledgment that non-publishable changes are expected

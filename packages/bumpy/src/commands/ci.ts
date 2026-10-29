@@ -214,6 +214,7 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
       return;
     }
 
+    const requiredMissing = findRequiredMissing(changedPackages, new Set(), packages);
     const willFail = !opts.noFail || parseErrors.length > 0;
     const msg =
       parseErrors.length > 0
@@ -222,7 +223,9 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
     if (willFail) log.error(msg);
     else log.warn(msg);
     // Point at the empty-bump-file escape hatch so the CLI matches the PR comment.
-    if (parseErrors.length === 0 && willFail) {
+    if (parseErrors.length === 0 && requiredMissing.length > 0) {
+      logRequiredMissing(requiredMissing, willFail);
+    } else if (parseErrors.length === 0 && willFail) {
       log.dim('Run `bumpy add` to declare a release, or `bumpy add --empty` to acknowledge that no release is needed.');
     }
 
@@ -231,7 +234,7 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
       const body =
         parseErrors.length > 0
           ? formatBumpFileErrorsComment(parseErrors, prBranch, pm)
-          : formatNoBumpFilesComment(prBranch, pm, willFail, changedPackages);
+          : formatNoBumpFilesComment(prBranch, pm, willFail, changedPackages, requiredMissing);
       if (opts.emitComment) writeCommentArtifact(opts.emitComment, body);
       if (shouldComment) await postOrUpdatePrComment(prNumber, body, rootDir);
     }
@@ -1744,10 +1747,26 @@ export function formatNoBumpFilesComment(
   pm: PackageManager,
   willFail = false,
   changedPackages: string[] = [],
+  requiredMissing: string[] = [],
 ): string {
   const runCmd = pmRunCommand(pm);
   const addLink = buildAddBumpFileLink(prBranch);
   const emptyLink = buildAddEmptyBumpFileLink(prBranch);
+
+  // `--no-fail` with required packages changed — don't say "you're good to go"
+  if (!willFail && requiredMissing.length > 0) {
+    const lines = [
+      `<a href="https://bumpy.varlock.dev"><img src="${FROG_IMG_BASE}/frog-warning.png" alt="bumpy-frog" width="60" align="left" style="image-rendering: pixelated;" title="Hi! I'm bumpy!" /></a>`,
+      '',
+      '**This PR has no bump file, but it changes packages that require their own bump file.**',
+      '<br clear="left" />\n',
+      ...formatRequiredMissingSection(requiredMissing, pm, false),
+    ];
+    if (addLink) lines.push(`Or [click here to add a bump file](${addLink}) directly on GitHub.`);
+    lines.push('\n---');
+    lines.push(`_This comment is maintained by [bumpy](https://bumpy.varlock.dev)._`);
+    return lines.join('\n');
+  }
 
   if (!willFail) {
     const lines = [
@@ -1789,10 +1808,13 @@ export function formatNoBumpFilesComment(
     lines.push('');
   }
 
+  lines.push(...formatRequiredMissingSection(requiredMissing, pm, true));
   lines.push(
     '**If these changes should be released**, add a bump file describing the version bump. ' +
       '**If no release is needed** (e.g. a dependency-only or dev-only change), add an _empty_ ' +
-      'bump file to acknowledge that intent — that satisfies this check without bumping any package.\n',
+      'bump file to acknowledge that intent — that satisfies this check without bumping any package' +
+      (requiredMissing.length > 0 ? ' other than the required ones above' : '') +
+      '.\n',
   );
   lines.push('```bash');
   lines.push(`${runCmd} add            # describe a release`);

@@ -3,7 +3,12 @@ import { resolve } from 'node:path';
 import { mkdir, writeFile, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { checkCommand, requiredBumpFileCommands } from '../../src/commands/check.ts';
-import { ciCheckCommand, formatEmptyBumpFileComment, formatReleasePlanComment } from '../../src/commands/ci.ts';
+import {
+  ciCheckCommand,
+  formatEmptyBumpFileComment,
+  formatNoBumpFilesComment,
+  formatReleasePlanComment,
+} from '../../src/commands/ci.ts';
 import { createTempGitRepo, cleanupTempDir, gitInDir, makeBumpFile, makeReleasePlan } from '../helpers.ts';
 
 /**
@@ -116,6 +121,19 @@ describe('requireBumpFile', () => {
       await commitBumpFiles({ 'app-change': "---\n'app': patch\n---\n\nFix app\n" });
       expect(await run(() => checkCommand(tmpDir, { noFail: true }))).toBe(0);
     });
+
+    test('a fixed-group bump does not cover a required directBump: false package', async () => {
+      await writeAt(
+        '.bumpy/_config.json',
+        JSON.stringify({
+          fixed: [['app', 'helper']],
+          packages: { helper: { requireBumpFile: true, directBump: false } },
+        }),
+      );
+      await commitBumpFiles({ 'app-change': "---\n'app': patch\n---\n\nFix app\n" });
+      expect(await run(() => checkCommand(tmpDir))).toBe(1);
+      expect(output.join('\n')).toContain('helper:none');
+    });
   });
 
   describe('bumpy ci check', () => {
@@ -162,6 +180,16 @@ describe('requireBumpFile PR comments', () => {
     const body = formatEmptyBumpFileComment(['nothing'], '1', null, ['helper'], 'npm', false);
     expect(body).toContain('⚠️ Missing required bump files');
     expect(body).not.toContain('this check is failing');
+  });
+
+  test('no-bump-file comment does not offer an empty bump file as sufficient for required packages', () => {
+    const failing = formatNoBumpFilesComment(null, 'npm', true, ['app', 'helper'], ['helper']);
+    expect(failing).toContain(':x: Missing required bump files');
+    expect(failing).toContain('other than the required ones above');
+    const noFail = formatNoBumpFilesComment(null, 'npm', false, ['app', 'helper'], ['helper']);
+    expect(noFail).not.toContain("you're good to go");
+    expect(noFail).toContain('⚠️ Missing required bump files');
+    expect(noFail).toContain('npx bumpy add --packages "helper:none"');
   });
 
   test('commands list every package', () => {
