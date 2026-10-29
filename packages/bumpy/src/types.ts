@@ -220,7 +220,9 @@ export interface PackageConfig {
   /** Glob patterns to filter which changed files count toward marking this package as changed */
   changedFilePatterns?: string[];
   /**
-   * Extra change-detection globs, relative to the **repo root**, for sources that live
+   * Extra change-detection globs, relative to the **repo root** (or, when starting with
+   * `./` / `../`, relative to where they're written: the package dir in package.json, the
+   * repo root in `.bumpy/_config.json`), for sources that live
    * outside this package's directory (e.g. a binary built from a sibling package). A
    * changed file matching one marks this package as changed, exactly as if it were inside
    * it. Additive — `changedFilePatterns` still applies only to files inside the package.

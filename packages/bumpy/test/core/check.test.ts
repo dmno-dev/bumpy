@@ -171,6 +171,51 @@ describe('findChangedPackages', () => {
       expect(result.sort()).toEqual(['@x/helper-darwin', '@x/helper-linux']);
     });
 
+    test('./ in the root config is relative to the repo root', async () => {
+      const config = makeConfig({
+        packages: { '@x/helper-darwin': { sourcePaths: ['./packages/swift-src/**'] } },
+      });
+      const result = await findChangedPackages(['packages/swift-src/main.swift'], packages, rootDir, config);
+      expect(result.sort()).toEqual(['@x/helper-darwin', 'swift-src']);
+    });
+
+    describe('declared in package.json', () => {
+      const tmpRoot = resolve(import.meta.dir, '../../.test-tmp-source-paths');
+      const helperDir = resolve(tmpRoot, 'packages/helpers/darwin');
+      const pkgs = new Map([
+        ['helper', makePkg('helper', '1.0.0', { dir: helperDir })],
+        ['swift-src', makePkg('swift-src', '1.0.0', { dir: resolve(tmpRoot, 'packages/swift-src') })],
+      ]);
+
+      beforeEach(async () => {
+        await mkdir(helperDir, { recursive: true });
+        await writeFile(
+          resolve(helperDir, 'package.json'),
+          JSON.stringify({
+            name: 'helper',
+            bumpy: { sourcePaths: ['../../swift-src/**', '!../../swift-src/**/*.md', 'shared/**'] },
+          }),
+        );
+      });
+      afterEach(async () => {
+        await rm(tmpRoot, { recursive: true, force: true });
+      });
+
+      test('./ and ../ patterns are relative to the package dir', async () => {
+        const changed = ['packages/swift-src/main.swift'];
+        expect((await findChangedPackages(changed, pkgs, tmpRoot, makeConfig())).sort()).toEqual([
+          'helper',
+          'swift-src',
+        ]);
+        const docs = ['packages/swift-src/README.md'];
+        expect(await findChangedPackages(docs, pkgs, tmpRoot, makeConfig())).toEqual(['swift-src']);
+      });
+
+      test('plain patterns stay repo-root-relative', async () => {
+        expect(await findChangedPackages(['shared/x.c'], pkgs, tmpRoot, makeConfig())).toEqual(['helper']);
+      });
+    });
+
     test('changedFilePatterns does not filter sourcePaths matches', async () => {
       const config = makeConfig({
         changedFilePatterns: ['src/**'],

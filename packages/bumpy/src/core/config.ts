@@ -1,4 +1,4 @@
-import { resolve } from 'node:path';
+import { relative, resolve, sep } from 'node:path';
 import picomatch from 'picomatch';
 import { readJson, readJsonc, exists } from '../utils/fs.ts';
 import { type BumpyConfig, type PackageConfig, DEFAULT_CONFIG, normalizeCascadeConfig } from '../types.ts';
@@ -43,9 +43,10 @@ export async function loadPackageConfig(
   pkgDir: string,
   rootConfig: BumpyConfig,
   pkgName: string,
+  rootDir: string,
 ): Promise<PackageConfig> {
   // Start with what's in the root config's packages map
-  const rootPkgConfig = findPackageConfig(rootConfig, pkgName);
+  const rootPkgConfig = withRootRelativeSourcePaths(findPackageConfig(rootConfig, pkgName), rootDir, rootDir);
 
   // Layer on package.json["bumpy"]
   let pkgJsonConfig: PackageConfig = {};
@@ -75,7 +76,25 @@ export async function loadPackageConfig(
   }
 
   // Merge: root packages map → package.json["bumpy"] (later wins)
-  return mergePackageConfig(rootPkgConfig, pkgJsonConfig);
+  return mergePackageConfig(rootPkgConfig, withRootRelativeSourcePaths(pkgJsonConfig, pkgDir, rootDir));
+}
+
+/**
+ * Normalize `sourcePaths` to repo-root-relative globs. Patterns starting with `./` or
+ * `../` are relative to where they're written — `baseDir` is the package dir for
+ * package.json config, the repo root for the root config. Other patterns are already
+ * repo-root-relative. A leading `!` is preserved.
+ */
+function withRootRelativeSourcePaths(cfg: PackageConfig, baseDir: string, rootDir: string): PackageConfig {
+  if (!cfg.sourcePaths) return cfg;
+  const sourcePaths = cfg.sourcePaths.map((pattern) => {
+    const negated = pattern.startsWith('!');
+    const body = negated ? pattern.slice(1) : pattern;
+    if (!/^\.\.?\//.test(body)) return pattern;
+    const rootRelative = relative(rootDir, resolve(baseDir, body)).split(sep).join('/');
+    return (negated ? '!' : '') + rootRelative;
+  });
+  return { ...cfg, sourcePaths };
 }
 
 /** Find a package config from the root config, supporting glob patterns */

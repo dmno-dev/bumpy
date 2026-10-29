@@ -187,7 +187,7 @@ Per-package settings can be defined in two places:
 | `skipNpmPublish`           | `boolean`                  | Don't publish to npm (still creates git tags)                                            |
 | `checkPublished`           | `string`                   | Custom command that outputs the currently published version                              |
 | `changedFilePatterns`      | `string[]`                 | Glob patterns for changed-file detection (replaces root setting, not merged)             |
-| `sourcePaths`              | `string[]`                 | Repo-root-relative globs for sources outside the package dir (see below)                 |
+| `sourcePaths`              | `string[]`                 | Globs for sources outside the package dir (see below)                                    |
 | `dependencyBumpRules`      | `object`                   | Per-package override for dependency propagation rules                                    |
 | `cascadeTo`                | `object`                   | Explicit cascade targets — glob pattern mapped to `{ trigger, bumpAs }`                  |
 | `cascadeFrom`              | `object`                   | Explicit cascade sources — glob pattern mapped to `{ trigger, bumpAs }`                  |
@@ -210,7 +210,8 @@ Change detection normally only looks at files inside a package's directory. When
 - Patterns prefixed with `!` exclude — a file counts when it matches any positive pattern and no negated one.
 - `sourcePaths` is additive: `changedFilePatterns` still filters only the files inside the package's own directory and does not apply to `sourcePaths` matches.
 - A file can mark several packages as changed (the source package itself, if versioned, and every package listing it).
-- Like other per-package options it can be set in the root `packages` map (by name or glob) or in the package's `package.json` `"bumpy"` field — the globs are always repo-root-relative.
+- Like other per-package options it can be set in the root `packages` map (by name or glob) or in the package's `package.json` `"bumpy"` field.
+- Plain globs are repo-root-relative wherever they're written. Globs starting with `./` or `../` are relative to where they're written: the package's directory in `package.json`, the repo root in `.bumpy/_config.json`. So in `packages/native/darwin/package.json`, `"../../native-src-swift/**"` is the same as `"packages/native-src-swift/**"`.
 
 ### `directBump: false` — packages that only follow
 

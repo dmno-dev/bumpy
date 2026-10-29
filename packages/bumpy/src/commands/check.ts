@@ -301,7 +301,7 @@ export async function findChangedPackages(
   // `sourcePaths` matchers — repo-root-relative globs for sources outside the package dir
   const sourceMatchers = new Map<string, (file: string) => boolean>();
   for (const [name, pkg] of packages) {
-    const pkgConfig = await loadPackageConfig(pkg.dir, config, name);
+    const pkgConfig = await loadPackageConfig(pkg.dir, config, name, rootDir);
     const patterns = pkgConfig.changedFilePatterns ?? config.changedFilePatterns;
     matchers.set(name, picomatch(patterns));
     const sourceMatcher = makeSourcePathsMatcher(pkgConfig.sourcePaths);
