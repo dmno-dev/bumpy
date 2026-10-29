@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.19.0
+
+<sub>2026-10-29</sub>
+
+- [#155](https://github.com/dmno-dev/bumpy/pull/155) _(minor)_
+  Added `directBump: false` per-package config for packages that only receive propagated bumps (e.g. platform binary packages in a fixed group with their core package) — they are excluded from `bumpy add`/`bumpy generate`, rejected when a bump file names them directly, and `bumpy check` points at their fixed-group members instead. Fixed groups now sync drifted members to a bump of the group's highest version so they reconverge.
+- [#161](https://github.com/dmno-dev/bumpy/pull/161) _(minor)_
+  Add `bumpy ci deps` for Dependabot / Renovate PRs (modeled on changesets-dependencies-action). It diffs each package's `dependencies` / `peerDependencies` / `optionalDependencies` (plus `releaseTriggeringDevDeps`, and catalog updates) against the base branch, writes one patch bump file per affected package listing the added / updated / removed deps, and commits + pushes them to the PR branch. Re-running is idempotent and removes stale files. `bumpy generate --deps` does the same locally without committing.
+
+  Also fix `ci check` on PRs into a channel branch: the `package.json` field diff and catalog diff compared against `baseBranch` instead of the PR's base, so dependency drift already merged into the channel was attributed to every later PR.
+
+- [#167](https://github.com/dmno-dev/bumpy/pull/167) _(minor)_
+  New per-package `sourcePaths` option: globs (relative to the package dir like other per-package globs, `../` to reach out, `!` to exclude) for sources outside a package's directory. A changed file matching one marks the package as changed, so `bumpy check` requires a bump file for it and `bumpy generate` attributes the commit to it — e.g. a native-binary package built from a separate source package.
+- [#168](https://github.com/dmno-dev/bumpy/pull/168) _(minor)_
+  Added `requireBumpFile: true` per-package config — `bumpy check` and `bumpy ci check` always fail when such a package changed but no bump file lists it, even if other bump files (or an empty bump file) are present. List it with type `none` to acknowledge a change without releasing.
+- [#158](https://github.com/dmno-dev/bumpy/pull/158) _(patch)_
+  Replaced the `semver` dependency with [verkit](https://github.com/sxzz/verkit) — a smaller, tree-shakeable, zero-dependency SemVer library. No behavior changes, except invalid snapshot versions are now also refused (previously only stable versions were).
+- [#160](https://github.com/dmno-dev/bumpy/pull/160) _(patch)_
+  Fix `bumpy ci comment` failing to resolve the target PR for fork PRs. Under `workflow_run`, the PR was looked up via `GET commits/{head_sha}/pulls`, which only knows about commits in the base repo's own branches — for a fork PR it returns nothing, so the command exited with "Could not resolve a target PR" (defeating the whole point of the fork-safe `pull_request` + `workflow_run` split). When that lookup is empty, bumpy now scans the repo's open PRs (paginated) and matches `head.sha` against the trusted `workflow_run.head_sha`. The target still derives only from the trusted event, never from the artifact or from `workflow_run.pull_requests[]` (which GitHub leaves empty for forks).
+- [#164](https://github.com/dmno-dev/bumpy/pull/164) _(patch)_
+  Fixed prerelease counters restarting at `.0` on registries that don't set a `latest` dist-tag (e.g. GCP Artifact Registry). `npm info <name> versions` resolves through `latest` and prints nothing when it's missing, so bumpy now falls back to the channel's dist-tag and warns if the version list still can't be read. Snapshot idempotency now checks the exact version, and the OIDC new-package check no longer misreports packages without `latest` as missing.
+- [#166](https://github.com/dmno-dev/bumpy/pull/166) _(patch)_
+  `bumpy generate` now maps commits that change a catalog entry (`pnpm-workspace.yaml`, `.yarnrc.yml`, root `package.json`) to the packages consuming it via `catalog:`, so a catalog bump produces the bump file `bumpy check` asks for.
+
 ## 1.18.1
 
 <sub>2026-07-03</sub>
