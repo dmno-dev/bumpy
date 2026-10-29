@@ -1,6 +1,6 @@
 import { log, colorize } from '../utils/logger.ts';
 import { getBumpyDir, loadConfig } from '../core/config.ts';
-import { findChangedPackages } from './check.ts';
+import { findChangedPackages, requiredBumpFileCommands } from './check.ts';
 import { discoverWorkspace } from '../core/workspace.ts';
 import { DependencyGraph } from '../core/dep-graph.ts';
 import { readBumpFiles, filterBranchBumpFiles, recoverDeletedBumpFiles } from '../core/bump-file.ts';
@@ -28,7 +28,15 @@ import { createHash } from 'node:crypto';
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
 import { resolveCommitMessage } from '../core/commit-message.ts';
-import type { BumpyConfig, BumpFile, PackageConfig, PackageManager, ReleasePlan, PlannedRelease } from '../types.ts';
+import type {
+  BumpyConfig,
+  BumpFile,
+  PackageConfig,
+  PackageManager,
+  ReleasePlan,
+  PlannedRelease,
+  WorkspacePackage,
+} from '../types.ts';
 
 // ---- PAT-scoped gh helpers ----
 
@@ -178,15 +186,24 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
   }
 
   if (prBumpFiles.length === 0) {
-    // An empty bump file signals intentionally no releases needed
+    // An empty bump file signals intentionally no releases needed — except for
+    // `requireBumpFile` packages, which must be listed in a bump file
     if (emptyBumpFileIds.length > 0 && parseErrors.length === 0) {
-      log.success('Empty bump file found — no releases needed.');
+      const changedPackages = await findChangedPackages(changedFiles, packages, rootDir, config, compareBranch);
+      const requiredMissing = findRequiredMissing(changedPackages, new Set(), packages);
+      const willFail = requiredMissing.length > 0 && !opts.noFail;
+      if (requiredMissing.length > 0) {
+        logRequiredMissing(requiredMissing, willFail);
+      } else {
+        log.success('Empty bump file found — no releases needed.');
+      }
       if (prNumber && (shouldComment || opts.emitComment)) {
         const prBranch = detectPrBranch(rootDir);
-        const body = formatEmptyBumpFileComment(emptyBumpFileIds, prNumber, prBranch);
+        const body = formatEmptyBumpFileComment(emptyBumpFileIds, prNumber, prBranch, requiredMissing, pm, willFail);
         if (opts.emitComment) writeCommentArtifact(opts.emitComment, body);
         if (shouldComment) await postOrUpdatePrComment(prNumber, body, rootDir);
       }
+      if (willFail) process.exit(1);
       return;
     }
 
@@ -197,6 +214,7 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
       return;
     }
 
+    const requiredMissing = findRequiredMissing(changedPackages, new Set(), packages);
     const willFail = !opts.noFail || parseErrors.length > 0;
     const msg =
       parseErrors.length > 0
@@ -205,7 +223,9 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
     if (willFail) log.error(msg);
     else log.warn(msg);
     // Point at the empty-bump-file escape hatch so the CLI matches the PR comment.
-    if (parseErrors.length === 0 && willFail) {
+    if (parseErrors.length === 0 && requiredMissing.length > 0) {
+      logRequiredMissing(requiredMissing, willFail);
+    } else if (parseErrors.length === 0 && willFail) {
       log.dim('Run `bumpy add` to declare a release, or `bumpy add --empty` to acknowledge that no release is needed.');
     }
 
@@ -214,7 +234,7 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
       const body =
         parseErrors.length > 0
           ? formatBumpFileErrorsComment(parseErrors, prBranch, pm)
-          : formatNoBumpFilesComment(prBranch, pm, willFail, changedPackages);
+          : formatNoBumpFilesComment(prBranch, pm, willFail, changedPackages, requiredMissing);
       if (opts.emitComment) writeCommentArtifact(opts.emitComment, body);
       if (shouldComment) await postOrUpdatePrComment(prNumber, body, rootDir);
     }
@@ -249,6 +269,21 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
     }
   }
 
+  // Check for uncovered packages
+  // Include both released packages and those explicitly listed in bump files (e.g. with 'none')
+  const listedPackages = new Set<string>();
+  for (const bf of prBumpFiles) {
+    for (const release of bf.releases) {
+      listedPackages.add(release.name);
+    }
+  }
+  const coveredPackages = new Set([...plan.releases.map((r) => r.name), ...listedPackages]);
+  const changedPackages = await findChangedPackages(changedFiles, packages, rootDir, config, compareBranch);
+  const missing = changedPackages.filter((name) => !coveredPackages.has(name));
+  // `requireBumpFile` packages need an explicit entry — a propagated bump doesn't count
+  const requiredMissing = findRequiredMissing(changedPackages, listedPackages, packages);
+  const requiredWillFail = requiredMissing.length > 0 && !opts.noFail;
+
   // Comment on PR
   if (prNumber && (shouldComment || opts.emitComment)) {
     const prBranch = detectPrBranch(rootDir);
@@ -263,6 +298,8 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
       emptyBumpFileIds,
       prChannel,
       channels,
+      requiredMissing,
+      requiredWillFail,
     );
     if (opts.emitComment) writeCommentArtifact(opts.emitComment, comment);
     if (shouldComment) await postOrUpdatePrComment(prNumber, comment, rootDir);
@@ -273,22 +310,51 @@ export async function ciCheckCommand(rootDir: string, opts: CheckOptions): Promi
     process.exit(1);
   }
 
-  // Check for uncovered packages
-  // Include both released packages and those explicitly listed in bump files (e.g. with 'none')
-  const coveredPackages = new Set(plan.releases.map((r) => r.name));
-  for (const bf of prBumpFiles) {
-    for (const release of bf.releases) {
-      coveredPackages.add(release.name);
-    }
+  const otherMissing = missing.filter((name) => !requiredMissing.includes(name));
+  if (otherMissing.length > 0) {
+    const logFn = opts.strict && !opts.noFail ? log.error : log.warn;
+    logFn(`${otherMissing.length} changed package(s) not covered by bump files: ${otherMissing.join(', ')}`);
   }
-  const changedPackages = await findChangedPackages(changedFiles, packages, rootDir, config, compareBranch);
-  const missing = changedPackages.filter((name) => !coveredPackages.has(name));
-  if (missing.length > 0) {
-    const willFail = opts.strict && !opts.noFail;
-    const logFn = willFail ? log.error : log.warn;
-    logFn(`${missing.length} changed package(s) not covered by bump files: ${missing.join(', ')}`);
-    if (willFail) process.exit(1);
-  }
+  if (requiredMissing.length > 0) logRequiredMissing(requiredMissing, requiredWillFail);
+  if (requiredWillFail || (missing.length > 0 && opts.strict && !opts.noFail)) process.exit(1);
+}
+
+/** Changed packages with `requireBumpFile: true` that no bump file lists. */
+function findRequiredMissing(
+  changedPackages: string[],
+  listedPackages: Set<string>,
+  packages: Map<string, WorkspacePackage>,
+): string[] {
+  return changedPackages.filter((name) => packages.get(name)?.bumpy?.requireBumpFile && !listedPackages.has(name));
+}
+
+function logRequiredMissing(names: string[], willFail: boolean): void {
+  (willFail ? log.error : log.warn)(
+    `${names.length} changed package(s) require a bump file (requireBumpFile): ${names.join(', ')}`,
+  );
+  for (const line of requiredBumpFileCommands(names)) log.dim(`  ${line}`);
+}
+
+/**
+ * PR comment section for `requireBumpFile` packages that no bump file lists. Shown as
+ * blocking unless the check runs with `--no-fail`.
+ */
+function formatRequiredMissingSection(names: string[], pm: PackageManager, willFail: boolean): string[] {
+  if (names.length === 0) return [];
+  const lines = [
+    willFail ? '#### :x: Missing required bump files' : '#### ⚠️ Missing required bump files',
+    '',
+    `${names.length === 1 ? 'This package requires' : 'These packages require'} a bump file whenever ${names.length === 1 ? 'it changes' : 'they change'} ` +
+      `(\`requireBumpFile\`)${willFail ? ', so this check is failing' : ''}. An empty bump file does not cover ${names.length === 1 ? 'it' : 'them'}.`,
+    '',
+    ...names.map((name) => `- \`${name}\``),
+    '',
+    '```bash',
+    ...requiredBumpFileCommands(names, pmRunCommand(pm)),
+    '```',
+    '',
+  ];
+  return lines;
 }
 
 // ---- ci deps ----
@@ -1466,6 +1532,8 @@ export function formatReleasePlanComment(
   emptyBumpFileIds: string[] = [],
   channel: ResolvedChannel | null = null,
   allChannels: Map<string, ResolvedChannel> | null = null,
+  requiredMissing: string[] = [],
+  requiredWillFail = true,
 ): string {
   const repo = process.env.GITHUB_REPOSITORY;
   const lines: string[] = [];
@@ -1493,6 +1561,7 @@ export function formatReleasePlanComment(
   ].join('\n');
   lines.push(preamble);
   lines.push('');
+  lines.push(...formatRequiredMissingSection(requiredMissing, pm, requiredWillFail));
 
   // Package list grouped by bump type
   const groups: Record<string, PlannedRelease[]> = { major: [], minor: [], patch: [] };
@@ -1616,15 +1685,34 @@ function formatBumpFileErrorsComment(errors: string[], prBranch: string | null, 
   return lines.join('\n');
 }
 
-function formatEmptyBumpFileComment(emptyBumpFileIds: string[], prNumber: string, prBranch: string | null): string {
+export function formatEmptyBumpFileComment(
+  emptyBumpFileIds: string[],
+  prNumber: string,
+  prBranch: string | null,
+  requiredMissing: string[] = [],
+  pm: PackageManager = 'npm',
+  requiredWillFail = true,
+): string {
   const repo = process.env.GITHUB_REPOSITORY;
-  const lines = [
-    `<a href="https://bumpy.varlock.dev"><img src="${FROG_IMG_BASE}/frog-neutral.png" alt="bumpy-frog" width="60" align="left" style="image-rendering: pixelated;" title="Hi! I'm bumpy!" /></a>`,
-    '',
-    '**This PR includes an empty bump file — no version bump is needed.** :white_check_mark:',
-    '<br clear="left" />',
-    '',
-  ];
+  const lines =
+    requiredMissing.length > 0
+      ? [
+          `<a href="https://bumpy.varlock.dev"><img src="${FROG_IMG_BASE}/${requiredWillFail ? 'frog-error' : 'frog-warning'}.png" alt="bumpy-frog" width="60" align="left" style="image-rendering: pixelated;" title="Hi! I'm bumpy!" /></a>`,
+          '',
+          '**This PR includes an empty bump file, but it changes packages that require their own bump file.**',
+          '<br clear="left" />',
+          '',
+          ...formatRequiredMissingSection(requiredMissing, pm, requiredWillFail),
+          '#### Bump files in this PR',
+          '',
+        ]
+      : [
+          `<a href="https://bumpy.varlock.dev"><img src="${FROG_IMG_BASE}/frog-neutral.png" alt="bumpy-frog" width="60" align="left" style="image-rendering: pixelated;" title="Hi! I'm bumpy!" /></a>`,
+          '',
+          '**This PR includes an empty bump file — no version bump is needed.** :white_check_mark:',
+          '<br clear="left" />',
+          '',
+        ];
 
   for (const id of emptyBumpFileIds) {
     const filename = `${id}.md`;
@@ -1659,10 +1747,26 @@ export function formatNoBumpFilesComment(
   pm: PackageManager,
   willFail = false,
   changedPackages: string[] = [],
+  requiredMissing: string[] = [],
 ): string {
   const runCmd = pmRunCommand(pm);
   const addLink = buildAddBumpFileLink(prBranch);
   const emptyLink = buildAddEmptyBumpFileLink(prBranch);
+
+  // `--no-fail` with required packages changed — don't say "you're good to go"
+  if (!willFail && requiredMissing.length > 0) {
+    const lines = [
+      `<a href="https://bumpy.varlock.dev"><img src="${FROG_IMG_BASE}/frog-warning.png" alt="bumpy-frog" width="60" align="left" style="image-rendering: pixelated;" title="Hi! I'm bumpy!" /></a>`,
+      '',
+      '**This PR has no bump file, but it changes packages that require their own bump file.**',
+      '<br clear="left" />\n',
+      ...formatRequiredMissingSection(requiredMissing, pm, false),
+    ];
+    if (addLink) lines.push(`Or [click here to add a bump file](${addLink}) directly on GitHub.`);
+    lines.push('\n---');
+    lines.push(`_This comment is maintained by [bumpy](https://bumpy.varlock.dev)._`);
+    return lines.join('\n');
+  }
 
   if (!willFail) {
     const lines = [
@@ -1704,10 +1808,13 @@ export function formatNoBumpFilesComment(
     lines.push('');
   }
 
+  lines.push(...formatRequiredMissingSection(requiredMissing, pm, true));
   lines.push(
     '**If these changes should be released**, add a bump file describing the version bump. ' +
       '**If no release is needed** (e.g. a dependency-only or dev-only change), add an _empty_ ' +
-      'bump file to acknowledge that intent — that satisfies this check without bumping any package.\n',
+      'bump file to acknowledge that intent — that satisfies this check without bumping any package' +
+      (requiredMissing.length > 0 ? ' other than the required ones above' : '') +
+      '.\n',
   );
   lines.push('```bash');
   lines.push(`${runCmd} add            # describe a release`);

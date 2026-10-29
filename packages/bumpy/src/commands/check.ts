@@ -32,6 +32,7 @@ interface CheckOptions {
  * Designed for pre-push hooks — no GitHub API needed.
  *
  * Default: at least one bump file must exist, uncovered packages are warned.
+ * Packages with `requireBumpFile: true` must always be listed in a bump file.
  * --strict: every changed package must be covered.
  * --no-fail: warn only, never exit 1.
  * --hook pre-commit: only staged + committed bump files count.
@@ -172,10 +173,17 @@ export async function checkCommand(rootDir: string, opts: CheckOptions = {}): Pr
     config,
   );
 
+  // `requireBumpFile` packages must be listed in a bump file — nothing else covers them,
+  // including a fixed-group member's bump for a directBump: false package
+  const requiredMissing = changedPackages.filter(
+    (name) => packages.get(name)?.bumpy?.requireBumpFile && !coveredPackages.has(name),
+  );
+  for (const name of requiredMissing) if (!missing.includes(name)) missing.push(name);
+
   // An empty bump file covers all remaining packages (in non-strict mode)
   // It acts as a blanket acknowledgment that non-publishable changes are expected
   const hasAnyCoverage = effectiveBumpFiles.length > 0 || hasEmptyBumpFile;
-  const allCovered = missing.length === 0 || (hasEmptyBumpFile && !opts.strict);
+  const allCovered = missing.length === 0 || (hasEmptyBumpFile && !opts.strict && requiredMissing.length === 0);
 
   if (allCovered) {
     if (hasEmptyBumpFile && missing.length > 0) {
@@ -197,11 +205,14 @@ export async function checkCommand(rootDir: string, opts: CheckOptions = {}): Pr
   // Determine failure behavior
   // - No coverage at all: fail by default (unless --no-fail)
   // - Partial coverage: fail only with --strict (unless --no-fail)
-  const willFail = !opts.noFail && (opts.strict || !hasAnyCoverage);
+  // - A `requireBumpFile` package is missing: always fail (unless --no-fail)
+  const willFail = !opts.noFail && (opts.strict || !hasAnyCoverage || requiredMissing.length > 0);
 
-  (willFail ? log.error : log.warn)(`${missing.length} changed package(s) missing bump files:\n`);
-  for (const name of missing) {
-    const hint = hints.get(name);
+  // With an empty bump file, only the required packages are still uncovered
+  const reported = hasEmptyBumpFile && !opts.strict ? requiredMissing : missing;
+  (willFail ? log.error : log.warn)(`${reported.length} changed package(s) missing bump files:\n`);
+  for (const name of reported) {
+    const hint = hints.get(name) ?? (requiredMissing.includes(name) ? 'requires a bump file (requireBumpFile)' : '');
     console.log(`  ${colorize(name, 'yellow')}${hint ? ` — ${hint}` : ''}`);
   }
 
@@ -215,6 +226,11 @@ export async function checkCommand(rootDir: string, opts: CheckOptions = {}): Pr
   }
 
   console.log();
+  if (requiredMissing.length > 0) {
+    log.dim('These packages require their own bump file — an empty bump file does not cover them. Run:');
+    for (const line of requiredBumpFileCommands(requiredMissing)) log.dim(`  ${line}`);
+    console.log();
+  }
   if (opts.strict) {
     log.dim(
       "Run `bumpy add` to create a bump file. Use bump type `none` for packages that changed but don't need a bump.",
@@ -244,6 +260,18 @@ function printBumpFileList(
           : '';
     log.dim(`  ${bumpyRelDir}/${id}.md${statusLabel}`);
   }
+}
+
+/**
+ * Commands that satisfy `requireBumpFile` for the given packages — a patch bump, or a
+ * `none` entry to acknowledge the change without releasing.
+ */
+export function requiredBumpFileCommands(names: string[], runCmd = 'bumpy'): string[] {
+  const list = (type: string) => names.map((name) => `${name}:${type}`).join(',');
+  return [
+    `${runCmd} add --packages "${list('patch')}"   # release it`,
+    `${runCmd} add --packages "${list('none')}"    # acknowledge without releasing`,
+  ];
 }
 
 /**

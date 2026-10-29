@@ -210,6 +210,16 @@ export interface PackageConfig {
    *   member of its fixed group, and points there when one is missing
    */
   directBump?: boolean;
+  /**
+   * When `true`, `bumpy check` / `bumpy ci check` always fail if this package changed
+   * but no bump file on the branch lists it — even when other bump files (or an empty
+   * bump file) are present. List it with type `none` to acknowledge a change without a
+   * release. Propagated bumps (cascades, fixed groups, dependency bumps) don't count.
+   *
+   * Use this for packages that are only released when explicitly bumped, where a
+   * forgotten bump file would silently skip a needed release.
+   */
+  requireBumpFile?: boolean;
   access?: 'public' | 'restricted';
   publishCommand?: string | string[];
   buildCommand?: string;

@@ -117,7 +117,7 @@ With `--snapshot <name>`, publish derives a throwaway prerelease version per pen
 
 Verify that changed packages on the current branch have corresponding bump files. Compares your branch to the base branch, maps changed files to packages, and checks for matching bump files.
 
-By default, exits non-zero only if **no** bump files exist at all (matching changesets behavior). Use `--strict` to require every changed package to be covered.
+By default, exits non-zero only if **no** bump files exist at all (matching changesets behavior). Use `--strict` to require every changed package to be covered, or set [`requireBumpFile`](./configuration.md#requirebumpfile--packages-that-must-always-be-bumped) on specific packages.
 
 ```bash
 bumpy check
