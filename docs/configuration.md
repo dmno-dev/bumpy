@@ -178,22 +178,23 @@ Per-package settings can be defined in two places:
 
 Globs in per-package options (`changedFilePatterns`, `sourcePaths`) are always relative to the package's directory, wherever they're declared.
 
-| Option                     | Type                       | Description                                                                              |
-| -------------------------- | -------------------------- | ---------------------------------------------------------------------------------------- |
-| `managed`                  | `boolean`                  | Opt this package in or out of versioning                                                 |
-| `directBump`               | `boolean`                  | When `false`, the package only receives propagated bumps — never direct ones (see below) |
-| `access`                   | `"public" \| "restricted"` | Override the global access level                                                         |
-| `publishCommand`           | `string \| string[]`       | Custom command(s) to publish this package (replaces npm publish)                         |
-| `buildCommand`             | `string`                   | Command to run before publishing                                                         |
-| `registry`                 | `string`                   | Custom npm registry URL                                                                  |
-| `skipNpmPublish`           | `boolean`                  | Don't publish to npm (still creates git tags)                                            |
-| `checkPublished`           | `string`                   | Custom command that outputs the currently published version                              |
-| `changedFilePatterns`      | `string[]`                 | Glob patterns for changed-file detection (replaces root setting, not merged)             |
-| `sourcePaths`              | `string[]`                 | Globs for sources outside the package dir (see below)                                    |
-| `dependencyBumpRules`      | `object`                   | Per-package override for dependency propagation rules                                    |
-| `cascadeTo`                | `object`                   | Explicit cascade targets — glob pattern mapped to `{ trigger, bumpAs }`                  |
-| `cascadeFrom`              | `object`                   | Explicit cascade sources — glob pattern mapped to `{ trigger, bumpAs }`                  |
-| `releaseTriggeringDevDeps` | `string[]`                 | devDependencies that affect published output — a change requires a release (see below)   |
+| Option                     | Type                       | Description                                                                                    |
+| -------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------- |
+| `managed`                  | `boolean`                  | Opt this package in or out of versioning                                                       |
+| `directBump`               | `boolean`                  | When `false`, the package only receives propagated bumps — never direct ones (see below)       |
+| `requireBumpFile`          | `boolean`                  | When `true`, `bumpy check` always fails if the package changed without a bump file (see below) |
+| `access`                   | `"public" \| "restricted"` | Override the global access level                                                               |
+| `publishCommand`           | `string \| string[]`       | Custom command(s) to publish this package (replaces npm publish)                               |
+| `buildCommand`             | `string`                   | Command to run before publishing                                                               |
+| `registry`                 | `string`                   | Custom npm registry URL                                                                        |
+| `skipNpmPublish`           | `boolean`                  | Don't publish to npm (still creates git tags)                                                  |
+| `checkPublished`           | `string`                   | Custom command that outputs the currently published version                                    |
+| `changedFilePatterns`      | `string[]`                 | Glob patterns for changed-file detection (replaces root setting, not merged)                   |
+| `sourcePaths`              | `string[]`                 | Globs for sources outside the package dir (see below)                                          |
+| `dependencyBumpRules`      | `object`                   | Per-package override for dependency propagation rules                                          |
+| `cascadeTo`                | `object`                   | Explicit cascade targets — glob pattern mapped to `{ trigger, bumpAs }`                        |
+| `cascadeFrom`              | `object`                   | Explicit cascade sources — glob pattern mapped to `{ trigger, bumpAs }`                        |
+| `releaseTriggeringDevDeps` | `string[]`                 | devDependencies that affect published output — a change requires a release (see below)         |
 
 ### `sourcePaths` — sources outside the package directory
 
@@ -235,6 +236,29 @@ Effects:
 - `bumpy add` and `bumpy generate` never select or suggest them — you only ever bump `mycli`, and the fixed group pulls the binaries along.
 - A bump file that directly names one (with a type other than `none`) is an error at plan time.
 - `bumpy check` treats changes in a `directBump: false` package as covered when a bump file covers any other member of its fixed group, and points there when one is missing.
+
+### `requireBumpFile` — packages that must always be bumped
+
+By default `bumpy check` only fails when a branch has no bump file at all — a changed package missing from an otherwise-present bump file is just a warning. That's the right default for most packages, but some are only released when explicitly bumped (e.g. native helper binaries versioned independently of the package that uses them), so a forgotten bump silently skips a needed release.
+
+Mark those packages `requireBumpFile: true`:
+
+```jsonc
+{
+  "packages": {
+    "@mycli/native-helper-*": { "requireBumpFile": true },
+  },
+}
+```
+
+When such a package changed on the branch, `bumpy check` and `bumpy ci check` fail unless a bump file lists it — regardless of other bump files on the branch. The PR comment shows it as blocking.
+
+- An empty bump file (`bumpy add --empty`) does **not** cover it.
+- Listing it with type `none` does — use that to acknowledge a change that doesn't need a release.
+- Propagated bumps (cascades, fixed/linked groups, dependency bumps) don't count; it must be listed explicitly.
+- `--no-fail` still downgrades the failure to a warning.
+
+The error names each package and prints the command to fix it, e.g. `bumpy add --packages "@mycli/native-helper-darwin:patch"` (or `:none`).
 
 ### Custom commands and `allowCustomCommands`
 

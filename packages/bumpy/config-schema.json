@@ -322,6 +322,10 @@
           "type": "boolean",
           "description": "When false, this package can never be bumped directly by a bump file — it only receives propagated bumps (fixed/linked group, cascade, dependency). Use for derived artifacts like platform binary packages kept in a fixed group with their core package."
         },
+        "requireBumpFile": {
+          "type": "boolean",
+          "description": "When true, `bumpy check` and `bumpy ci check` always fail if this package changed but no bump file lists it — regardless of other bump files on the branch. An empty bump file does not satisfy it; listing the package with type `none` does. Propagated bumps don't count."
+        },
         "access": {
           "type": "string",
           "enum": ["public", "restricted"],

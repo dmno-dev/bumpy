@@ -125,6 +125,7 @@ It's a file-level flag (a bump file has one shared body), so it applies to every
 - Only include packages that have **actual code changes** — bumpy handles dependency propagation automatically
 - Never list a package configured with `directBump: false` (check `.bumpy/_config.json` `packages` and each `package.json` `"bumpy"` field) — such packages only receive propagated bumps; bump the package that drives them (e.g. their fixed-group member) instead
 - If the user hasn't made any changes yet, ask what they're planning to change
+- Always list changed packages configured with `requireBumpFile: true` — an empty bump file doesn't cover them; use type `none` if they don't need a release
 - If the change doesn't affect any publishable packages (e.g., only root config files), suggest using `bumpy add --empty` to satisfy CI checks
 - One bump file per logical change — don't combine unrelated changes
 - **Keep bump files up to date** — as work continues on a branch, the bump file should reflect the final state of all changes, not just the first commit. If packages were added/removed or the bump level changed (e.g., a patch fix grew into a minor feature), update the existing bump file accordingly
