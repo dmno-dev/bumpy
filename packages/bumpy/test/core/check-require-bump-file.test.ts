@@ -137,6 +137,28 @@ describe('requireBumpFile', () => {
   });
 
   describe('bumpy ci check', () => {
+    // Pin the PR env so the host CI's own PR (e.g. the version PR branch, which
+    // `ci check` skips) doesn't leak into these tests
+    const ENV_KEYS = [
+      'GITHUB_HEAD_REF',
+      'GITHUB_BASE_REF',
+      'BUMPY_PR_NUMBER',
+      'GITHUB_EVENT_NAME',
+      'GITHUB_EVENT_PATH',
+    ];
+    let savedEnv: Record<string, string | undefined>;
+    beforeEach(() => {
+      savedEnv = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
+      for (const k of ENV_KEYS) delete process.env[k];
+      process.env.GITHUB_HEAD_REF = 'feature';
+    });
+    afterEach(() => {
+      for (const [k, v] of Object.entries(savedEnv)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    });
+
     test('fails when a required package is uncovered, even with another bump file', async () => {
       await commitBumpFiles({ 'app-change': "---\n'app': patch\n---\n\nFix app\n" });
       expect(await run(() => ciCheckCommand(tmpDir, { comment: false }))).toBe(1);
