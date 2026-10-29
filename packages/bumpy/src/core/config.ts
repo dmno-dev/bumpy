@@ -1,4 +1,5 @@
 import { resolve } from 'node:path';
+import picomatch from 'picomatch';
 import { readJson, readJsonc, exists } from '../utils/fs.ts';
 import { type BumpyConfig, type PackageConfig, DEFAULT_CONFIG, normalizeCascadeConfig } from '../types.ts';
 
@@ -95,6 +96,20 @@ function findPackageConfig(config: BumpyConfig, pkgName: string): PackageConfig 
 export function resolveFixedGroups(config: BumpyConfig, packageNames: Iterable<string>): string[][] {
   const names = [...packageNames];
   return config.fixed.map((group) => names.filter((name) => group.some((pattern) => matchGlob(name, pattern))));
+}
+
+/**
+ * Build a matcher for a package's `sourcePaths` (repo-root-relative globs). Patterns
+ * starting with `!` exclude — a file counts when it matches any positive pattern and no
+ * negated one. Returns null when there are no positive patterns.
+ */
+export function makeSourcePathsMatcher(sourcePaths: string[] | undefined): ((file: string) => boolean) | null {
+  const include = (sourcePaths ?? []).filter((p) => !p.startsWith('!'));
+  if (include.length === 0) return null;
+  const exclude = (sourcePaths ?? []).filter((p) => p.startsWith('!')).map((p) => p.slice(1));
+  const isIncluded = picomatch(include);
+  const isExcluded = exclude.length > 0 ? picomatch(exclude) : () => false;
+  return (file) => isIncluded(file) && !isExcluded(file);
 }
 
 /** Simple glob matching for package names (supports * and **) */

@@ -1,7 +1,14 @@
 import { relative, resolve } from 'node:path';
 import picomatch from 'picomatch';
 import { log, colorize } from '../utils/logger.ts';
-import { loadConfig, loadPackageConfig, getBumpyDir, matchGlob, resolveFixedGroups } from '../core/config.ts';
+import {
+  loadConfig,
+  loadPackageConfig,
+  getBumpyDir,
+  matchGlob,
+  makeSourcePathsMatcher,
+  resolveFixedGroups,
+} from '../core/config.ts';
 import { discoverWorkspace } from '../core/workspace.ts';
 import { readBumpFiles, filterBranchBumpFiles } from '../core/bump-file.ts';
 import { getChangedFiles, getFileStatuses, getBaseCompareRef, readFileAtRef } from '../core/git.ts';
@@ -215,7 +222,9 @@ export async function checkCommand(rootDir: string, opts: CheckOptions = {}): Pr
   } else {
     log.dim('Run `bumpy add` to create a bump file, or `bumpy add --empty` if no release is needed.');
   }
-  log.dim('To adjust which files trigger change detection, set `changedFilePatterns` in .bumpy/_config.json.');
+  log.dim(
+    'To adjust which files trigger change detection, set `changedFilePatterns` (or per-package `sourcePaths`) in .bumpy/_config.json.',
+  );
   if (willFail) process.exit(1);
 }
 
@@ -289,10 +298,14 @@ export async function findChangedPackages(
 
   // Build per-package matchers (per-package patterns override root patterns)
   const matchers = new Map<string, picomatch.Matcher>();
+  // `sourcePaths` matchers — repo-root-relative globs for sources outside the package dir
+  const sourceMatchers = new Map<string, (file: string) => boolean>();
   for (const [name, pkg] of packages) {
     const pkgConfig = await loadPackageConfig(pkg.dir, config, name);
     const patterns = pkgConfig.changedFilePatterns ?? config.changedFilePatterns;
     matchers.set(name, picomatch(patterns));
+    const sourceMatcher = makeSourcePathsMatcher(pkgConfig.sourcePaths);
+    if (sourceMatcher) sourceMatchers.set(name, sourceMatcher);
   }
 
   const ignoredFields = config.ignoredPackageJsonFields ?? ['devDependencies'];
@@ -306,9 +319,14 @@ export async function findChangedPackages(
     const isRoot = pkgRelDir === '';
     const prefix = `${pkgRelDir}/`;
     const matcher = matchers.get(name)!;
+    const sourceMatcher = sourceMatchers.get(name);
 
     let pkgJsonOnlyTrigger = false;
     for (const file of changedFiles) {
+      if (sourceMatcher?.(file)) {
+        changed.add(name);
+        break;
+      }
       let relToPackage: string;
       if (isRoot) {
         relToPackage = file;

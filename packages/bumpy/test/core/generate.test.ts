@@ -23,6 +23,24 @@ describe('mapFilesToPackages', () => {
     const result = mapFilesToPackages(['packages/pkg-b/src/index.ts'], packages, rootDir);
     expect(result).toEqual(['pkg-b']);
   });
+
+  test('attributes files matching sourcePaths to the package', () => {
+    const packages = new Map([
+      [
+        'helper',
+        makePkg('helper', '1.0.0', {
+          dir: `${rootDir}/packages/helper`,
+          bumpy: { sourcePaths: ['packages/swift-src/**', '!**/*.md'] },
+        }),
+      ],
+      ['swift-src', makePkg('swift-src', '1.0.0', { dir: `${rootDir}/packages/swift-src` })],
+    ]);
+    expect(mapFilesToPackages(['packages/swift-src/main.swift'], packages, rootDir).sort()).toEqual([
+      'helper',
+      'swift-src',
+    ]);
+    expect(mapFilesToPackages(['packages/swift-src/README.md'], packages, rootDir)).toEqual(['swift-src']);
+  });
 });
 
 describe('mapCommitToPackages — catalog changes', () => {

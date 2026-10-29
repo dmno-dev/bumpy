@@ -219,6 +219,14 @@ export interface PackageConfig {
   checkPublished?: string;
   /** Glob patterns to filter which changed files count toward marking this package as changed */
   changedFilePatterns?: string[];
+  /**
+   * Extra change-detection globs, relative to the **repo root**, for sources that live
+   * outside this package's directory (e.g. a binary built from a sibling package). A
+   * changed file matching one marks this package as changed, exactly as if it were inside
+   * it. Additive — `changedFilePatterns` still applies only to files inside the package.
+   * Prefix a pattern with `!` to exclude matches (e.g. `"!packages/foo/docs/**"`).
+   */
+  sourcePaths?: string[];
   dependencyBumpRules?: Partial<Record<DepType, DependencyBumpRule | false>>;
   cascadeTo?: CascadeConfig;
   cascadeFrom?: CascadeConfig;
