@@ -360,7 +360,7 @@
         },
         "sourcePaths": {
           "type": "array",
-          "description": "Extra change-detection globs for sources outside this package's directory. A changed file matching one marks this package as changed. Additive to changedFilePatterns (which only applies inside the package). Relative to the repo root; patterns starting with ./ or ../ are relative to where they're written (the package dir in package.json, the repo root in .bumpy/_config.json). Prefix with ! to exclude.",
+          "description": "Extra change-detection globs for sources outside this package's directory, relative to the package dir like every per-package glob (use ../ to reach out). A changed file matching one marks this package as changed. Additive to changedFilePatterns (which only applies inside the package). Prefix with ! to exclude.",
           "items": { "type": "string" }
         },
         "dependencyBumpRules": {

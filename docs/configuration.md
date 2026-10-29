@@ -176,6 +176,8 @@ Per-package settings can be defined in two places:
 
 `package.json` settings take precedence over global config.
 
+Globs in per-package options (`changedFilePatterns`, `sourcePaths`) are always relative to the package's directory, wherever they're declared.
+
 | Option                     | Type                       | Description                                                                              |
 | -------------------------- | -------------------------- | ---------------------------------------------------------------------------------------- |
 | `managed`                  | `boolean`                  | Opt this package in or out of versioning                                                 |
@@ -195,23 +197,23 @@ Per-package settings can be defined in two places:
 
 ### `sourcePaths` — sources outside the package directory
 
-Change detection normally only looks at files inside a package's directory. When a package is built from sources that live elsewhere — e.g. a published native-binary package whose binary is compiled from a separate (private) package — list those sources in `sourcePaths`. Globs are relative to the **repo root**, and a changed file matching one marks the package as changed exactly as if it lived inside it, so `bumpy check` (and the CI check / PR comment) requires a bump file for it and `bumpy generate` attributes the commit to it.
+Change detection normally only looks at files inside a package's directory. When a package is built from sources that live elsewhere — e.g. a published native-binary package whose binary is compiled from a separate (private) package — list those sources in `sourcePaths`. A changed file matching one marks the package as changed exactly as if it lived inside it, so `bumpy check` (and the CI check / PR comment) requires a bump file for it and `bumpy generate` attributes the commit to it.
 
 ```jsonc
 {
   "packages": {
     "@mycli/native-darwin": {
-      "sourcePaths": ["packages/native-src-swift/**", "!**/*.md"],
+      // @mycli/native-darwin lives in packages/native/darwin
+      "sourcePaths": ["../../native-src-swift/**", "!../../native-src-swift/**/*.md"],
     },
   },
 }
 ```
 
-- Patterns prefixed with `!` exclude — a file counts when it matches any positive pattern and no negated one.
+- Globs are relative to the **package's directory**, like every per-package glob (`changedFilePatterns` too), whether declared in the root `packages` map (by name or glob) or in the package's `package.json` `"bumpy"` field. Use `../` to reach sources outside it.
+- Patterns prefixed with `!` exclude — a file counts when it matches any positive pattern and no negated one. Exclusions are package-relative too, so `"!**/*.md"` would only exclude markdown inside the package itself; anchor them to the source dir as above.
 - `sourcePaths` is additive: `changedFilePatterns` still filters only the files inside the package's own directory and does not apply to `sourcePaths` matches.
 - A file can mark several packages as changed (the source package itself, if versioned, and every package listing it).
-- Like other per-package options it can be set in the root `packages` map (by name or glob) or in the package's `package.json` `"bumpy"` field.
-- Plain globs are repo-root-relative wherever they're written. Globs starting with `./` or `../` are relative to where they're written: the package's directory in `package.json`, the repo root in `.bumpy/_config.json`. So in `packages/native/darwin/package.json`, `"../../native-src-swift/**"` is the same as `"packages/native-src-swift/**"`.
 
 ### `directBump: false` — packages that only follow
 

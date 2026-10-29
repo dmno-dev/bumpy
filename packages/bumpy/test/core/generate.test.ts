@@ -25,6 +25,7 @@ describe('mapFilesToPackages', () => {
   });
 
   test('attributes files matching sourcePaths to the package', () => {
+    // pkg.bumpy holds sourcePaths already resolved to repo-root-relative by loadPackageConfig
     const packages = new Map([
       [
         'helper',

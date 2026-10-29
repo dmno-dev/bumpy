@@ -46,7 +46,7 @@ export async function loadPackageConfig(
   rootDir: string,
 ): Promise<PackageConfig> {
   // Start with what's in the root config's packages map
-  const rootPkgConfig = withRootRelativeSourcePaths(findPackageConfig(rootConfig, pkgName), rootDir, rootDir);
+  const rootPkgConfig = findPackageConfig(rootConfig, pkgName);
 
   // Layer on package.json["bumpy"]
   let pkgJsonConfig: PackageConfig = {};
@@ -76,22 +76,20 @@ export async function loadPackageConfig(
   }
 
   // Merge: root packages map → package.json["bumpy"] (later wins)
-  return mergePackageConfig(rootPkgConfig, withRootRelativeSourcePaths(pkgJsonConfig, pkgDir, rootDir));
+  return withRootRelativeSourcePaths(mergePackageConfig(rootPkgConfig, pkgJsonConfig), pkgDir, rootDir);
 }
 
 /**
- * Normalize `sourcePaths` to repo-root-relative globs. Patterns starting with `./` or
- * `../` are relative to where they're written — `baseDir` is the package dir for
- * package.json config, the repo root for the root config. Other patterns are already
- * repo-root-relative. A leading `!` is preserved.
+ * `sourcePaths` are written relative to the package dir (like every per-package glob,
+ * wherever it's declared) — resolve them to repo-root-relative globs once, so they can be
+ * matched directly against changed files. A leading `!` is preserved.
  */
-function withRootRelativeSourcePaths(cfg: PackageConfig, baseDir: string, rootDir: string): PackageConfig {
+function withRootRelativeSourcePaths(cfg: PackageConfig, pkgDir: string, rootDir: string): PackageConfig {
   if (!cfg.sourcePaths) return cfg;
   const sourcePaths = cfg.sourcePaths.map((pattern) => {
     const negated = pattern.startsWith('!');
     const body = negated ? pattern.slice(1) : pattern;
-    if (!/^\.\.?\//.test(body)) return pattern;
-    const rootRelative = relative(rootDir, resolve(baseDir, body)).split(sep).join('/');
+    const rootRelative = relative(rootDir, resolve(pkgDir, body)).split(sep).join('/');
     return (negated ? '!' : '') + rootRelative;
   });
   return { ...cfg, sourcePaths };
@@ -118,7 +116,8 @@ export function resolveFixedGroups(config: BumpyConfig, packageNames: Iterable<s
 }
 
 /**
- * Build a matcher for a package's `sourcePaths` (repo-root-relative globs). Patterns
+ * Build a matcher for a package's resolved `sourcePaths` (repo-root-relative globs, see
+ * `loadPackageConfig`). Patterns
  * starting with `!` exclude — a file counts when it matches any positive pattern and no
  * negated one. Returns null when there are no positive patterns.
  */

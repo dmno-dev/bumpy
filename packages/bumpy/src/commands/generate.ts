@@ -271,6 +271,7 @@ export function mapFilesToPackages(
   rootDir: string,
 ): string[] {
   const matched = new Set<string>();
+  // `pkg.bumpy.sourcePaths` was resolved to repo-root-relative globs by loadPackageConfig
   const sourceMatchers = new Map(
     [...packages].map(([name, pkg]) => [name, makeSourcePathsMatcher(pkg.bumpy?.sourcePaths)]),
   );
